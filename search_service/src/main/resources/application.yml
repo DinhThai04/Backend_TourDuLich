@@ -1,0 +1,37 @@
+server:
+  port: 8089
+  servlet:
+    context-path: /search
+
+spring:
+  application:
+    name: search-service
+  datasource:
+    url: "jdbc:mysql://localhost:3306/DBtour"
+    driver-class-name: "com.mysql.cj.jdbc.Driver"
+    username: root
+    password: root
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate.dialect: org.hibernate.dialect.MySQLDialect
+  elasticsearch:
+    uris: http://localhost:9200
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      timeout: 2000
+      database: 0
+      client-type: lettuce
+logging:
+  level:
+    org.springframework.data.redis: DEBUG
+    io.lettuce.core: DEBUG
+
+jwt:
+  signerKey: "1TjXchw5FloESb63Kc+DFhTARvpWL4jUGCwfGWxuG5SIf/1y/LgJxHnMqaF6A/ij"
+  valid-duration: 15 # in second
+  refreshable-duration: 36000 # in seconds

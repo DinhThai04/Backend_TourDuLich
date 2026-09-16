@@ -1,0 +1,30 @@
+server:
+  port: 8087
+  servlet:
+    context-path: /file
+spring:
+  application:
+    name: file-service
+  datasource:
+    url: "jdbc:mysql://localhost:3306/DBtour"
+    driver-class-name: "com.mysql.cj.jdbc.Driver"
+    username: root
+    password: root
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: true
+    properties:
+      hibernate.dialect: org.hibernate.dialect.MySQLDialect
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
+app:
+  file:
+    storage-dir: C:/upload
+    download-prefix: http://localhost:8888/api/v1/file/media/download/
+cloudinary:
+  cloud-name: dmxflropu
+  api-key: 446771791415384
+  api-secret: 5ZNw3WZJx0ulBiik2ggcUdMwPYg
