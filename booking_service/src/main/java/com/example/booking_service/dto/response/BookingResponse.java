@@ -5,6 +5,7 @@ import lombok.*;
 import lombok.experimental.FieldDefaults;
 
 import java.util.List;
+import java.util.Map;
 
 @Data
 @Builder
@@ -19,4 +20,12 @@ public class BookingResponse {
     private String status;
     private String tourDepartureId;
     private String message;
+    private String reservationStatus;
+    private String paymentDeadline;
+    private boolean paymentRequiredNow;
+    /** Giá đã chốt tại thời điểm đặt; null với booking cũ chưa có snapshot. */
+    private String totalAmount;
+    private String currency;
+    private String priceSnapshotAt;
+    private Map<String, String> unitPrices;
 }
