@@ -1,6 +1,6 @@
 package com.example.auth_service.controller;
 
-import com.example.auth_service.dto.request.UserCreationRequest;
+import com.example.auth_service.dto.request.RegisterRequest;
 import com.example.auth_service.dto.response.UserResponse;
 import com.example.auth_service.service.UserService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -36,30 +36,27 @@ public class UserControllerTest {
     @Autowired
     private ObjectMapper objectMapper;
 
-    private UserCreationRequest validRequest;
-    private UserCreationRequest invalidRequest;
+    private RegisterRequest validRequest;
+    private RegisterRequest invalidRequest;
     private UserResponse userResponse;
 
     @BeforeEach
     void initData() {
         // ✅ Request hợp lệ
-        validRequest = UserCreationRequest.builder()
-                .username("join")
-                .address("daklak")
-                .email("muoi@gmail.com")
-                .password("123456")
-                .phone("0868166353")
-                
-                .build();
+        validRequest = new RegisterRequest();
+        validRequest.setUsername("join");
+        validRequest.setAddress("daklak");
+        validRequest.setEmail("muoi@gmail.com");
+        validRequest.setPassword("Admin@123456");
+        validRequest.setPhone("0868166353");
 
         // ❌ Request không hợp lệ (username rỗng)
-        invalidRequest = UserCreationRequest.builder()
-                .username("") 
-                .address("daklak")
-                .email("muoi@gmail.com")
-                .password("123456")
-                .phone("0868166353")
-                .build();
+        invalidRequest = new RegisterRequest();
+        invalidRequest.setUsername("");
+        invalidRequest.setAddress("daklak");
+        invalidRequest.setEmail("muoi@gmail.com");
+        invalidRequest.setPassword("Admin@123456");
+        invalidRequest.setPhone("0868166353");
 
         // ✅ Dữ liệu trả về từ service
         userResponse = UserResponse.builder()
@@ -73,7 +70,7 @@ public class UserControllerTest {
 
     @Test
     void createUser_validRequest_success() throws Exception {
-        Mockito.when(userService.createUser(Mockito.any())).thenReturn(userResponse);
+        Mockito.when(userService.registerCustomer(Mockito.any())).thenReturn(userResponse);
 
         mockMvc.perform(MockMvcRequestBuilders
                 .post("/users/register")
@@ -105,14 +102,14 @@ public class UserControllerTest {
                         .phone("0123456789")
                         .build());
 
-        Mockito.when(userService.getAllUser()).thenReturn(mockUsers);;
+        Mockito.when(userService.getAllUser(null, null)).thenReturn(mockUsers);
 
         mockMvc.perform(MockMvcRequestBuilders
                 .get("/users/list")
                 .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(MockMvcResultMatchers.status().isOk())
                 .andExpect(MockMvcResultMatchers.jsonPath("$.result[0].username").value("join"))
-                .andExpect(MockMvcResultMatchers.jsonPath("$.result[1].username").value("hoa123"));
+                .andExpect(MockMvcResultMatchers.jsonPath("$.result[1].username").value("hoa"));
     }
 
 }

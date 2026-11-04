@@ -37,6 +37,12 @@ public class UserServiceTest {
     @Mock
     private UserMapper userMapper;
 
+    @Mock
+    private com.example.auth_service.repository.RoleRepository roleRepository;
+
+    @Mock
+    private com.example.auth_service.config.AccountAccess accountAccess;
+
     @InjectMocks
     private UserService userService;
 
@@ -60,6 +66,7 @@ public class UserServiceTest {
                 .address("daklak")
                 .phone("0868166353")
                 .password("123456")
+                .roleId(1L)
                 .build();
 
         userResponse = UserResponse.builder()
@@ -73,6 +80,12 @@ public class UserServiceTest {
 
     @Test
     void createUser_validRequest_success() {
+        var role = new com.example.auth_service.entity.Role();
+        role.setId(1L);
+        role.setName("staff");
+        role.setActive(true);
+        when(roleRepository.findById(1L)).thenReturn(Optional.of(role));
+        when(accountAccess.can("ROLES_UPDATE")).thenReturn(true);
         when(userMapper.toUser(userCreationRequest)).thenReturn(user);
         when(passwordEncoder.encode("123456")).thenReturn("encoded");
         when(userRepository.save(user)).thenReturn(user);
@@ -92,9 +105,9 @@ public class UserServiceTest {
         // when / then
         assertThatThrownBy(() -> userService.getUserById(999L))
                 .isInstanceOf(AppException.class)
-                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.User_name);
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.USER_NOT_FOUND);
         Throwable thrown = catchThrowable(() -> userService.getUserById(999L));
-        Assertions.assertThat(thrown.getMessage()).isEqualTo("User not existed");
+        Assertions.assertThat(thrown.getMessage()).isEqualTo("Không tìm thấy người dùng");
     }
 
 }

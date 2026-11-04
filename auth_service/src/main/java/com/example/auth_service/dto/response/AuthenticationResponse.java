@@ -14,6 +14,8 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class AuthenticationResponse {
     String token;
+    /** Chỉ dùng cho /users/refresh; không được gửi kèm các request API thường. */
+    String refreshToken;
     Date expiryTime;
     UserResponse user;
 }
