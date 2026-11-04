@@ -11,6 +11,12 @@ WORKDIR /app
 # Copy file .jar từ giai đoạn build
 # Lưu ý: *.jar sẽ lấy file jar bất kỳ, tiện lợi không cần biết tên chính xác
 COPY --from=build /app/target/*.jar app.jar
+# Chạy bằng user không đặc quyền.
+RUN addgroup -S app && adduser -S -G app app \
+    && mkdir -p /app/data && chown -R app:app /app
+USER app
 
-EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+EXPOSE 8081
+# Heap mặc định 320m cho máy dev ~8 GB; override bằng JAVA_XMX khi chạy container
+# (xem docker-compose.yml). Đừng đặt lớn hơn RAM còn trống của host.
+ENTRYPOINT ["sh", "-c", "exec java -Xms64m -Xmx${JAVA_XMX:-320m} -XX:MaxMetaspaceSize=192m -Xss512k -XX:+ExitOnOutOfMemoryError -Dspring.jmx.enabled=false -Djava.security.egd=file:/dev/./urandom -jar app.jar"]

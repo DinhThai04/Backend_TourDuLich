@@ -4,34 +4,31 @@ server:
     context-path: /search
 
 spring:
+  config:
+    import: "optional:file:./.local/search_service.properties,optional:file:../.local/search_service.properties,optional:file:./Backend_TourDuLich/.local/search_service.properties"
   application:
     name: search-service
-  datasource:
-    url: "jdbc:mysql://localhost:3306/DBtour"
-    driver-class-name: "com.mysql.cj.jdbc.Driver"
-    username: root
-    password: root
-  jpa:
-    hibernate:
-      ddl-auto: update
-    show-sql: true
-    properties:
-      hibernate.dialect: org.hibernate.dialect.MySQLDialect
   elasticsearch:
-    uris: http://localhost:9200
+    uris: ${ES_URIS:http://localhost:9200}
   data:
     redis:
-      host: localhost
-      port: 6379
-      timeout: 2000
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      timeout: 5000
       database: 0
       client-type: lettuce
-logging:
-  level:
-    org.springframework.data.redis: DEBUG
-    io.lettuce.core: DEBUG
 
 jwt:
-  signerKey: "1TjXchw5FloESb63Kc+DFhTARvpWL4jUGCwfGWxuG5SIf/1y/LgJxHnMqaF6A/ij"
-  valid-duration: 15 # in second
-  refreshable-duration: 36000 # in seconds
+  signerKey: ${JWT_SIGNER_KEY}
+
+app:
+  auth:
+    # Search has no database connection; protected writes ask auth whether the token was revoked.
+    introspect-url: ${AUTH_INTROSPECT_URL:http://localhost:8080/auth/users/introspect}
+  search:
+    # Each pass reads the whole catalogue over HTTP and verifies the ES index, so a weak machine can
+    # raise SEARCH_SYNC_DELAY_MS (e.g. 300000); POST /search/tours/sync still forces an immediate refresh.
+    sync-initial-delay-ms: ${SEARCH_SYNC_INITIAL_DELAY_MS:2000}
+    sync-delay-ms: ${SEARCH_SYNC_DELAY_MS:60000}
+    # Must match tour_service app.catalog.internal-key when the snapshot is not loopback.
+    source-key: ${SEARCH_SOURCE_KEY:}

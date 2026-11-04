@@ -4,17 +4,43 @@ server:
     context-path: /booking
 
 spring:
+  config:
+    import: "optional:file:./.local/booking_service.properties,optional:file:../.local/booking_service.properties,optional:file:./Backend_TourDuLich/.local/booking_service.properties"
+  mail:
+    host: ${MAIL_SMTP_HOST:smtp.gmail.com}
+    port: ${MAIL_SMTP_PORT:587}
+    username: ${MAIL_SMTP_USERNAME:}
+    password: ${MAIL_SMTP_PASSWORD:}
+    default-encoding: UTF-8
+    properties:
+      "[mail.smtp.auth]": ${MAIL_SMTP_AUTH:true}
+      "[mail.smtp.starttls.enable]": ${MAIL_SMTP_STARTTLS:true}
+      "[mail.smtp.starttls.required]": ${MAIL_SMTP_STARTTLS:true}
+      "[mail.smtp.ssl.checkserveridentity]": true
+      "[mail.smtp.connectiontimeout]": 5000
+      "[mail.smtp.timeout]": 10000
+      "[mail.smtp.writetimeout]": 10000
   application:
     name: booking-service
   datasource:
-    url: "jdbc:mysql://localhost:3306/DBtour"
+    url: "${DB_URL:jdbc:mysql://localhost:3306/dbtour_v2}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
     username: root
-    password: root
+    password: ${DB_PASSWORD}
+    hikari:
+      # One shared MySQL box: 7 services x 10 stays under max_connections (151 by default).
+      maximum-pool-size: ${DB_POOL_MAX:10}
+      minimum-idle: ${DB_POOL_MIN:2}
+      connection-timeout: ${DB_POOL_TIMEOUT_MS:10000}
+      idle-timeout: 300000
+      max-lifetime: 1800000
   jpa:
+    # DTOs are mapped inside the service layer; do not keep a connection while rendering JSON.
+    open-in-view: false
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      ddl-auto: none
+    # Schema is owned by data_seed/database_all.sql; never let Hibernate mutate it.
+    show-sql: false
     properties:
       hibernate.dialect: org.hibernate.dialect.MySQLDialect
 
@@ -33,6 +59,20 @@ spring:
 #      enabled: true
 
 jwt:
-  signerKey: "1TjXchw5FloESb63Kc+DFhTARvpWL4jUGCwfGWxuG5SIf/1y/LgJxHnMqaF6A/ij"
-  valid-duration: 15000 # in second
-  refreshable-duration: 36000 # in seconds
+  signerKey: ${JWT_SIGNER_KEY}
+
+# Phase B: sending is OFF until explicitly enabled after migration/configuration.
+app:
+  mail:
+    enabled: ${MAIL_ENABLED:false}
+    internal-api-key: ${MAIL_INTERNAL_API_KEY:}
+    test-mode: ${MAIL_TEST_MODE:true}
+    test-recipient: ${MAIL_TEST_RECIPIENT:no-reply@sgu-tour.example}
+    from: ${MAIL_FROM:no-reply@sgu-tour.example}
+    brand: ${MAIL_BRAND:SGU Tour}
+    frontend-base-url: ${MAIL_FRONTEND_BASE_URL:http://localhost:5173}
+    batch-size: ${MAIL_BATCH_SIZE:10}
+    max-attempts: ${MAIL_MAX_ATTEMPTS:3}
+    lease: 2m
+    # Each poll drains up to batch-size messages; a backlog above that is rate-limited by this tick.
+    poll-delay-ms: ${MAIL_POLL_DELAY_MS:5000}

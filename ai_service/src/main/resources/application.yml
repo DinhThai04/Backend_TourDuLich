@@ -1,0 +1,61 @@
+server:
+  address: 127.0.0.1
+  port: ${AI_PORT:8091}
+  servlet:
+    context-path: /ai
+  tomcat:
+    threads:
+      max: 8
+      min-spare: 1
+    max-connections: 32
+    accept-count: 16
+    # JSON bodies are bounded by ChatBodyLimit: 16000 code points -> 64000 UTF-8 bytes + envelope.
+    max-swallow-size: 65536
+  error:
+    include-message: never
+    include-stacktrace: never
+    include-binding-errors: never
+spring:
+  application:
+    name: ai-service
+  main:
+    banner-mode: off
+app:
+  ai:
+    enabled: ${AI_ENABLED:${app.ai.local-key-present:false}}
+    provider: groq
+    base-url: https://api.groq.com/openai
+    model: ${AI_MODEL:openai/gpt-oss-120b}
+    api-key: ${GROQ_API_KEY:}
+    connect-timeout: 3s
+    read-timeout: 30s
+    max-completion-tokens: ${AI_MAX_COMPLETION_TOKENS:1024}
+    probe: false
+    faq-approved-version: ${AI_FAQ_APPROVED_VERSION:2026-10-26-v4}
+    # Kênh liên hệ chatbot nêu cho khách; bản demo dùng hộp thư của nhóm, deploy thật thì ghi AI_SUPPORT_EMAIL.
+    support-email: ${AI_SUPPORT_EMAIL:danhcong6205@gmail.com}
+    booking-base-url: ${AI_BOOKING_BASE_URL:http://127.0.0.1:8081/booking}
+    booking-help:
+      # Own lane permits so a long chat turn cannot starve read-only booking lookups.
+      max-concurrent: ${AI_BOOKING_HELP_MAX_CONCURRENT:2}
+    guard:
+      requests-per-minute: 8
+      requests-per-day: 80
+      tokens-per-minute: 7000
+      tokens-per-day: 150000
+      prompt-utf8-bytes: 11000
+      turn-timeout: 38s
+    catalog-base-url: ${AI_CATALOG_BASE_URL:http://127.0.0.1:8888/api/v1/tour}
+    session:
+      ttl: ${AI_SESSION_TTL:30m}
+      max-sessions: 100
+      history-turns: 10
+      dedupe-entries: 20
+logging:
+  level:
+    root: WARN
+    com.example.ai_service: INFO
+    # Upstream failures may contain provider bodies. Our adapter returns sanitized errors.
+    org.springframework.ai: OFF
+    org.springframework.web.client: OFF
+    org.springframework.http.client: OFF
