@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="vi" xmlns:th="http://www.thymeleaf.org" th:fragment="email">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title th:text="${title}">Thông báo tour</title></head>
+<body style="margin:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#172b4d;line-height:1.65">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:28px 12px">
+<table role="presentation" width="600" cellpadding="0" cellspacing="0" style="width:100%;max-width:600px;background:#fff;border-radius:12px;border:1px solid #e2e8f0">
+<tr><td style="padding:24px 28px;background:#0f766e;color:#fff;border-radius:12px 12px 0 0">
+<div style="display:inline-block;max-width:100%;padding:10px 12px;background:#fff;border-radius:8px;margin-bottom:12px"><img src="cid:sgu-tour-logo" alt="SGU Tour — Hành trình bắt đầu từ đây" width="280" style="display:block;width:280px;max-width:100%;height:auto;border:0"></div>
+<h1 style="margin:8px 0 0;font-size:23px;line-height:1.35" th:text="${title}">Thông báo chuyến đi</h1>
+</td></tr>
+<tr><td style="padding:24px 28px">
+<p>Xin chào <strong th:text="${name}">bạn</strong>,</p>
+<p th:text="${explanation}">Thông tin về booking của bạn.</p>
+<p th:if="${tourImage != null}" style="margin:20px 0"><img th:src="${tourImage}" th:alt="${tour}" width="544" style="display:block;width:100%;max-width:544px;height:auto;border:0;border-radius:8px"></p>
+<table th:if="${bookingId != null}" role="presentation" width="100%" cellpadding="8" cellspacing="0" style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px">
+<tr><td style="width:145px;color:#64748b">Mã booking</td><td><strong th:text="${'#' + bookingId}">#1</strong></td></tr>
+<tr><td style="color:#64748b">Tour</td><td th:text="${tour}">Tên tour</td></tr>
+<tr th:if="${oldDeparture != null}"><td style="color:#64748b">Lịch khởi hành gốc</td><td th:text="${oldDeparture}"></td></tr>
+<tr><td style="color:#64748b" th:text="${isChange == true ? 'Lịch đề xuất / xác nhận' : 'Khởi hành'}">Khởi hành</td><td><span th:text="${departure}">Ngày đi</span><br><small>Giờ Việt Nam</small></td></tr>
+<tr><td style="color:#64748b">Số hành khách</td><td th:text="${passengers}">1</td></tr>
+<tr th:if="${transaction != null}"><td style="color:#64748b">Mã giao dịch</td><td style="word-break:break-all" th:text="${transaction}">Mã</td></tr>
+<tr th:if="${paidAt != ''}"><td style="color:#64748b">Thanh toán lúc</td><td th:text="${paidAt}">Thời gian</td></tr>
+</table>
+<p th:if="${showPayment}" style="margin:26px 0"><a th:href="${paymentUrl}" style="display:inline-block;padding:11px 20px;background:#0f766e;color:#fff;text-decoration:none;border-radius:6px">Kiểm tra và tiếp tục thanh toán</a></p>
+<p th:if="${bookingId != null}"><a th:href="${accountUrl}" style="color:#0f766e">Xem lịch sử và chi tiết booking</a>. Bạn cần đăng nhập bằng tài khoản đã đặt tour.</p>
+<p>Nếu cần hỗ trợ hoặc có thông tin chưa chính xác, bạn có thể trả lời email này để chúng tôi kiểm tra và hướng dẫn.</p>
+<p>Cảm ơn bạn đã tin tưởng <strong th:text="${brand}">SGU Tour</strong>.<br>Chúc bạn có những trải nghiệm du lịch đáng nhớ!</p>
+</td></tr>
+<tr><td style="padding:18px 28px;background:#f8fafc;font-size:12px;color:#64748b;border-radius:0 0 12px 12px">
+<span th:text="${brand}">SGU Tour</span> · Hỗ trợ: <span th:text="${support}">Email</span><br>
+Vui lòng không gửi mật khẩu, mã OTP hoặc thông tin thẻ qua email.
+</td></tr>
+</table></td></tr></table>
+</body></html>

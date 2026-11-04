@@ -1,0 +1,15 @@
+# Giữ build context gọn: Dockerfile chỉ cần pom.xml, src/, .mvn và mvnw.
+target/
+.git/
+.gitignore
+.idea/
+.vscode/
+*.iml
+*.log
+.DS_Store
+.env
+.env.*
+!.env.example
+!.env.mail.example
+# Thư mục .local/ chứa các file *.properties override (DB_PASSWORD, JWT, khoá VNPay) — không được vào build context.
+.local/
