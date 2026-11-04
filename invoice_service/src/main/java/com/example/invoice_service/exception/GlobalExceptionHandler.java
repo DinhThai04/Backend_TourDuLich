@@ -18,17 +18,56 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    ResponseEntity<ApiResponse> unreadableBody(Exception exception) {
+        // A truncated or malformed body is a bad request, not a server fault.
+        return ResponseEntity.badRequest().body(ApiResponse.builder()
+                .code(1400).message("Dữ liệu JSON không hợp lệ").build());
+    }
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ApiResponse> invalidParameterType(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException exception) {
+        // Echoing the raw value would reflect hostile input back to the caller.
+        return ResponseEntity.badRequest().body(ApiResponse.builder()
+                .code(1400).message("Tham số không hợp lệ: " + exception.getName()).build());
+    }
+    /** Routing mistakes are the caller's fault; the Exception catch-all would report them as server faults. */
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    ResponseEntity<ApiResponse> missingResource(Exception exception) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND).body(ApiResponse.builder()
+                .code(1404).message("Không tìm thấy tài nguyên").build());
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    ResponseEntity<ApiResponse> unsupportedMethod(Exception exception) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.METHOD_NOT_ALLOWED).body(ApiResponse.builder()
+                .code(1405).message("Phương thức HTTP không được hỗ trợ").build());
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
+    ResponseEntity<ApiResponse> unsupportedMediaType(Exception exception) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(ApiResponse.builder()
+                .code(1415).message("Định dạng nội dung không được hỗ trợ").build());
+    }
+
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    ResponseEntity<ApiResponse> handlingStatus(org.springframework.web.server.ResponseStatusException exception) {
+        // Errors use 1000 + HTTP status (success is 1000), so 404 becomes 1404.
+        return ResponseEntity.status(exception.getStatusCode()).body(ApiResponse.builder()
+                .code(1000 + exception.getStatusCode().value()).message(exception.getReason()).build());
+    }
+
     private static final String MIN_ATTRIBUTE = "min";
 
     @ExceptionHandler(value = Exception.class)
-    ResponseEntity<ApiResponse> handlingRuntimeException(RuntimeException exception) {
+    ResponseEntity<ApiResponse> handlingRuntimeException(Exception exception) {
         log.error("Exception: ", exception);
-        ApiResponse apiResponse = new ApiResponse();
+        ErrorCode errorCode = ErrorCode.UNCATEGORIZED_EXCEPTION;
 
-        apiResponse.setCode(ErrorCode.UNCATEGORIZED_EXCEPTION.getCode());
-        apiResponse.setMessage(ErrorCode.UNCATEGORIZED_EXCEPTION.getMessage());
-
-        return ResponseEntity.badRequest().body(apiResponse);
+        // Unexpected failures are server errors (500), not bad requests sent by the caller.
+        return ResponseEntity.status(errorCode.getStatusCode()).body(ApiResponse.builder()
+                .code(errorCode.getCode())
+                .message(errorCode.getMessage())
+                .build());
     }
 
     @ExceptionHandler(value = AppException.class)
@@ -49,13 +88,25 @@ public class GlobalExceptionHandler {
         return ResponseEntity.status(errorCode.getStatusCode())
                 .body(ApiResponse.builder()
                         .code(errorCode.getCode())
-                        .message(errorCode.getMessage())
+                        .message(denialReason(exception, errorCode))
                         .build());
+    }
+
+    /**
+     * InvoiceAccess composes the reason shown to the user. The method-security interceptor throws the
+     * fixed "Access Denied" text, which says nothing to a customer, so it stays behind the generic
+     * permission message.
+     */
+    private static String denialReason(AccessDeniedException exception, ErrorCode errorCode) {
+        String reason = exception.getMessage();
+        return org.springframework.util.StringUtils.hasText(reason) && !"Access Denied".equals(reason)
+                ? reason : errorCode.getMessage();
     }
 
     @ExceptionHandler(value = MethodArgumentNotValidException.class)
     ResponseEntity<ApiResponse> handlingValidation(MethodArgumentNotValidException exception) {
-        String enumKey = exception.getFieldError().getDefaultMessage();
+        var fieldError = exception.getBindingResult().getFieldError();
+        String enumKey = fieldError == null ? null : fieldError.getDefaultMessage();
 
         ErrorCode errorCode = ErrorCode.INVALID_KEY;
         Map<String, Object> attributes = null;
@@ -66,22 +117,16 @@ public class GlobalExceptionHandler {
                     .unwrap(ConstraintViolation.class);
 
             attributes = constraintViolation.getConstraintDescriptor().getAttributes();
-
-            log.info(attributes.toString());
-
-        } catch (IllegalArgumentException e) {
-
+        } catch (IllegalArgumentException | NullPointerException notAnEnumKey) {
+            // Literal validation messages are already suitable for display to the user.
         }
 
-        ApiResponse apiResponse = new ApiResponse();
-
-        apiResponse.setCode(errorCode.getCode());
-        apiResponse.setMessage(
-                Objects.nonNull(attributes)
+        return ResponseEntity.badRequest().body(ApiResponse.builder()
+                .code(errorCode.getCode())
+                .message(Objects.nonNull(attributes)
                         ? mapAttribute(errorCode.getMessage(), attributes)
-                        : errorCode.getMessage());
-
-        return ResponseEntity.badRequest().body(apiResponse);
+                        : enumKey == null ? errorCode.getMessage() : fieldError.getDefaultMessage())
+                .build());
     }
 
     private String mapAttribute(String message, Map<String, Object> attributes) {
