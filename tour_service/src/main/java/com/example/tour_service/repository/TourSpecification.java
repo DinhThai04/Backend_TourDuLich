@@ -13,11 +13,25 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.stream.Collectors;
 
 @Component
 public class TourSpecification {
-    public static Specification<Tour> build(TourSearchRequest request) {
+
+    /**
+     * Escape character for LIKE, so a user typing "%" or "_" searches for the literal
+     * character instead of matching every tour.
+     */
+    private static final char LIKE_ESCAPE = '\\';
+
+    static String likePattern(String value) {
+        String escaped = value.toLowerCase(java.util.Locale.ROOT)
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_");
+        return "%" + escaped + "%";
+    }
+
+    public static Specification<Tour> build(TourSearchRequest request, LocalDateTime now) {
         return (root, query, criteriaBuilder) -> {
 
             List<Predicate> predicates = new ArrayList<>();
@@ -28,7 +42,8 @@ public class TourSpecification {
 
                 predicates.add(criteriaBuilder.like(
                         criteriaBuilder.lower(destinationLocation.get("city")),
-                        "%" + request.getDest().toLowerCase() + "%"
+                        likePattern(request.getDest()),
+                        LIKE_ESCAPE
                 ));
             }
 
@@ -39,70 +54,55 @@ public class TourSpecification {
 
                 predicates.add(criteriaBuilder.like(
                         criteriaBuilder.lower(departureLocation.get("city")),
-                        "%" + request.getDep().toLowerCase() + "%"
+                        likePattern(request.getDep()),
+                        LIKE_ESCAPE
                 ));
             }
 
             // 3. Lọc theo Ngày khởi hành (chính xác)
             if (request.getDepD() != null) {
 
-                // 3a. Join với bảng TourDeparture
-                Join<Tour, TourDeparture> tourDepartureJoin = root.join("tourDepartures");
-
-                // 3b. Tránh 1 tour lặp lại nhiều lần nếu nó có 2 chuyến trong ngày
-                query.distinct(true);
-
-                // 3c. Lấy thời điểm 00:00:00 của ngày được chọn
-                // (ví dụ: 2025-11-06T00:00:00)
+                // EXISTS avoids duplicate tours and DISTINCT/ORDER BY conflicts when sorting by the joined adult price.
+                var dates = query.subquery(Integer.class);
+                var departure = dates.from(TourDeparture.class);
                 LocalDateTime startOfDay = request.getDepD().atStartOfDay();
-
-                // 3d. Lấy thời điểm 00:00:00 của ngày TIẾP THEO
-                // (ví dụ: 2025-11-07T00:00:00)
                 LocalDateTime endOfDay = request.getDepD().plusDays(1).atStartOfDay();
-
-                // 3e. Tìm tất cả các chuyến có 'departureDate' >= startOfDay VÀ < endOfDay
-                Predicate datePredicate = criteriaBuilder.and(
-                        criteriaBuilder.greaterThanOrEqualTo(tourDepartureJoin.get("departureDate"), startOfDay),
-                        criteriaBuilder.lessThan(tourDepartureJoin.get("departureDate"), endOfDay)
-                );
-
-                predicates.add(datePredicate);
+                dates.select(criteriaBuilder.literal(1)).where(
+                        criteriaBuilder.equal(departure.get("tour"), root),
+                        criteriaBuilder.equal(departure.get("operationalStatus"), "OPEN"),
+                        // A past date must not match: the catalog sorts and labels by the next bookable
+                        // departure, so including departed schedules would list tours with no date.
+                        criteriaBuilder.greaterThan(departure.get("departureDate"), now),
+                        criteriaBuilder.greaterThanOrEqualTo(departure.get("departureDate"), startOfDay),
+                        criteriaBuilder.lessThan(departure.get("departureDate"), endOfDay));
+                predicates.add(criteriaBuilder.exists(dates));
             }
 
             // 4. Lọc theo Phương tiện
             if (request.getVeh() != null && !request.getVeh().isEmpty()) {
-
-
-                // 1. Tách chuỗi thành List<String>
-                List<String> vehicleIdStrings = Arrays.asList(request.getVeh().split(","));
-
-                // 2. Chuyển đổi List<String> thành List<Integer> (hoặc Long)
-                // (Giả sử ID của Vehicle là Integer, nếu là Long thì dùng Long::parseLong)
-                List<Integer> vehicleIds = vehicleIdStrings.stream()
-                        .map(Integer::parseInt)
-                        .collect(Collectors.toList());
-
-                // 3. Tạo một Join từ Tour (root) đến Vehicle
-                // "vehicle" là tên trường trong Entity Tour
-                Join<Tour, Vehicle> vehicleJoin = root.join("vehicle");
-
-                // 4. Lọc trên trường "id" của Vehicle
-                // "id" là tên trường trong Entity Vehicle
-                predicates.add(vehicleJoin.get("id").in(vehicleIds));
+                List<String> vehicleIds = Arrays.stream(request.getVeh().split(","))
+                        .map(String::trim)
+                        .filter(id -> !id.isEmpty())
+                        .toList();
+                if (!vehicleIds.isEmpty()) {
+                    Join<Tour, Vehicle> vehicleJoin = root.join("vehicle");
+                    predicates.add(vehicleJoin.get("id").in(vehicleIds));
+                }
             }
 
             // 7. Lọc theo Tên tour
             if (request.getTitle() != null  && !request.getTitle().isEmpty()) {
                 predicates.add(criteriaBuilder.like(
                         criteriaBuilder.lower(root.get("tourTitle")),
-                        "%" + request.getTitle().toLowerCase() + "%"
+                        likePattern(request.getTitle()),
+                        LIKE_ESCAPE
                 ));
             }
 
             // 5. Lọc theo Giá thấp nhất (basePrice >= minPrice)
             if (request.getMinP() != null) {
                 predicates.add(criteriaBuilder.greaterThanOrEqualTo(
-                        root.get("basePrice"),
+                        root.join("priceView").get("adultPrice"),
                         request.getMinP()
                 ));
             }
@@ -110,7 +110,7 @@ public class TourSpecification {
             // 6. Lọc theo Giá cao nhất (basePrice <= maxPrice)
             if (request.getMaxP() != null) {
                 predicates.add(criteriaBuilder.lessThanOrEqualTo(
-                        root.get("basePrice"),
+                        root.join("priceView").get("adultPrice"),
                         request.getMaxP()
                 ));
             }

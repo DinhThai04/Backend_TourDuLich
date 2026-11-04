@@ -3,13 +3,12 @@ package com.example.tour_service.controller;
 import com.example.tour_service.dto.request.ApiResponse;
 import com.example.tour_service.dto.request.LocationRequest;
 import com.example.tour_service.dto.response.LocationResponse;
-import com.example.tour_service.repository.LocationRepository;
 import com.example.tour_service.service.LocationService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
-import javax.xml.stream.Location;
 
 @RestController
 @RequestMapping("locations")
@@ -17,8 +16,8 @@ import javax.xml.stream.Location;
 public class LocationController {
     private final LocationService locationService;
 
-    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE) // Chỉ định rõ nhận Multipart
-    public ApiResponse<LocationResponse> createLocation(@ModelAttribute LocationRequest request) { // Đổi thành @ModelAttribute
+    @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<LocationResponse> createLocation(@Valid @ModelAttribute LocationRequest request) {
         return ApiResponse.<LocationResponse>builder()
                 .result(locationService.createLocation(request))
                 .message("Created Successfully")
@@ -26,20 +25,12 @@ public class LocationController {
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<LocationResponse> updateLocation(@PathVariable int id, @ModelAttribute LocationRequest request) {
+    public ApiResponse<LocationResponse> updateLocation(@PathVariable int id, @Valid @ModelAttribute LocationRequest request) {
         return ApiResponse.<LocationResponse>builder()
                 .result(locationService.updateLocation(id, request))
                 .message("Updated Successfully")
                 .build();
     }
-
-//    @DeleteMapping("/{id}")
-//    public ApiResponse<Void> deleteLocation(@PathVariable int id) {
-//        locationService.deleteLocation(id);
-//        return ApiResponse.<Void>builder()
-//                .message("Deleted Successfully")
-//                .build();
-//    }
 
     @GetMapping("/all")
     public ApiResponse<List<LocationResponse>> getAllLocation() {
@@ -65,23 +56,14 @@ public class LocationController {
                 .build();
     }
 
-    /**
-     * API tìm kiếm các điểm đi (departures) theo từ khóa.
-     * Ví dụ: GET /locations/departures/search?keyword=Hà
-     */
     @GetMapping("/departures/search")
     public ApiResponse<List<LocationResponse>> searchDepartureLocations(@RequestParam(name = "keyword") String keyword) {
         return ApiResponse.<List<LocationResponse>>builder()
-                // 1. Bạn cần tạo phương thức này trong LocationService
                 .result(locationService.searchDepartureLocations(keyword))
                 .message("Searched departure locations successfully")
                 .build();
     }
 
-    /**
-     * API tìm kiếm các điểm đến (destinations) theo từ khóa.
-     * Ví dụ: GET /locations/destinations/search?keyword=Đà
-     */
     @GetMapping("/destinations/search")
     public ApiResponse<List<LocationResponse>> searchDestinationLocations(@RequestParam(name = "keyword") String keyword) {
         return ApiResponse.<List<LocationResponse>>builder()

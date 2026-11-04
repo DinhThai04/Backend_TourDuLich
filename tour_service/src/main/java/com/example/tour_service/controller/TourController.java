@@ -6,6 +6,7 @@ import com.example.tour_service.dto.request.TourSearchRequest;
 import com.example.tour_service.dto.request.UpdateTourRequest;
 import com.example.tour_service.dto.response.TourResponse;
 import com.example.tour_service.service.TourService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -38,16 +39,17 @@ public class TourController {
     }
 
     @GetMapping("/random-3")
-    public ApiResponse<List<TourResponse>> getRandom3Tours() {
+    public ApiResponse<List<TourResponse>> getRandom3Tours(
+            @RequestParam(required = false) Integer excludeId) {
         return ApiResponse.<List<TourResponse>>builder()
-                .result(tourService.getRandom3Tours())
+                .result(tourService.getRandom3Tours(excludeId))
                 .message("Fetched 3 random tours successfully")
                 .build();
     }
 
 
     @PostMapping()
-        public ApiResponse<TourResponse> createTour(@ModelAttribute TourRequest request) {
+        public ApiResponse<TourResponse> createTour(@Valid @ModelAttribute TourRequest request) {
         return ApiResponse.<TourResponse>builder()
                 .result(tourService.createTour(request))
                 .message("Created successfully")
@@ -55,11 +57,18 @@ public class TourController {
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<TourResponse> updateTourALl(@PathVariable int id,  @ModelAttribute TourRequest request) {
+    public ApiResponse<TourResponse> updateTourAll(@PathVariable int id, @Valid @ModelAttribute UpdateTourRequest request) {
         return ApiResponse.<TourResponse>builder()
                 .result(tourService.updateTour(id, request))
                 .message("Updated successfully")
                 .build();
+    }
+
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyAuthority('SGU_SUPER_ADMIN', 'PERM:TOURS_CREATE', 'PERM:TOURS_UPDATE')")
+    @PostMapping(value="/{id}/images", consumes=org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<TourResponse> retryImages(@PathVariable int id,
+            @RequestPart("files") List<org.springframework.web.multipart.MultipartFile> files) {
+        return ApiResponse.<TourResponse>builder().result(tourService.retryTourImages(id, files)).message("Đã cập nhật ảnh tour").build();
     }
 
     @DeleteMapping("/{id}")
@@ -87,12 +96,4 @@ public class TourController {
                 .message("Search completed successfully")
                 .build();
     }
-//    @DeleteMapping("/{id}")
-//    public ApiResponse<Void> deleteTour(@PathVariable int id) {
-//        tourService.deleteTour(id);
-//        return ApiResponse.<Void>builder()
-//                .message("Deleted successfully")
-//                .build();
-//    }
-
 }

@@ -14,4 +14,5 @@ public class ItineraryResponse {
     String title;
     String description;
     String meal;
+    int tourId;
 }

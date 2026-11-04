@@ -4,6 +4,7 @@ import com.example.tour_service.dto.request.ItineraryRequest;
 import com.example.tour_service.dto.response.ApiResponse;
 import com.example.tour_service.dto.response.ItineraryResponse;
 import com.example.tour_service.service.ItineraryService;
+import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.*;
 
@@ -40,7 +41,7 @@ public class ItineraryController {
      }
 
     @PostMapping
-    public ApiResponse<ItineraryResponse> create(@RequestBody ItineraryRequest request) {
+    public ApiResponse<ItineraryResponse> create(@Valid @RequestBody ItineraryRequest request) {
         return ApiResponse.<ItineraryResponse>builder()
                 .result(itineraryService.create(request))
                 .message("Created successfully")
@@ -48,7 +49,7 @@ public class ItineraryController {
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<ItineraryResponse> update(@PathVariable int id, @RequestBody ItineraryRequest request) {
+    public ApiResponse<ItineraryResponse> update(@PathVariable int id, @Valid @RequestBody ItineraryRequest request) {
         return ApiResponse.<ItineraryResponse>builder()
                 .result(itineraryService.update(id, request))
                 .message("Updated successfully")
