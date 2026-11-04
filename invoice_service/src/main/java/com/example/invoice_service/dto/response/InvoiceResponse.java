@@ -22,5 +22,4 @@ public class InvoiceResponse {
     private String message;
     private String totalExtraFee;
     private String totalBookingTourExpense;
-    private MoMoResponse moMoResponse;
 }
