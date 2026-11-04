@@ -33,14 +33,6 @@ public class TourPriceController {
                 .build();
     }
 
-//    @DeleteMapping("/{id}")
-//    public ApiResponse<Void> delete(@PathVariable Long id) {
-//        service.deletePrice(id);
-//        return ApiResponse.<Void>builder()
-//                .message("Deleted successfully")
-//                .build();
-//    }
-
     @GetMapping
     public ApiResponse<List<TourPriceResponse>> getAll() {
         return ApiResponse.<List<TourPriceResponse>>builder()
@@ -58,7 +50,7 @@ public class TourPriceController {
     }
 
     @PostMapping("/batch")
-    public ApiResponse<List<TourPriceResponse>> getPricesBatch(@RequestBody TourPriceBatchRequest request) {
+    public ApiResponse<List<TourPriceResponse>> getPricesBatch(@jakarta.validation.Valid @RequestBody TourPriceBatchRequest request) {
         List<TourPriceResponse> prices = service.getPricesBatch(request.getIds());
         return ApiResponse.<List<TourPriceResponse>>builder()
                 .result(prices)
