@@ -1,8 +1,8 @@
 package com.example.auth_service.controller;
 
-import java.text.ParseException;
-
 import jakarta.validation.Valid;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.web.bind.annotation.*;
 
 import com.example.auth_service.dto.request.ApiResponse;
@@ -14,7 +14,6 @@ import com.example.auth_service.dto.request.RefreshRequest;
 import com.example.auth_service.dto.response.AuthenticationResponse;
 import com.example.auth_service.dto.response.IntrospectResponse;
 import com.example.auth_service.service.AuthService;
-import com.nimbusds.jose.JOSEException;
 
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
@@ -40,29 +39,30 @@ public class AuthController {
     }
 
      @PostMapping("/refresh")
-    ApiResponse<AuthenticationResponse> authenticate(@RequestBody RefreshRequest request)
-            throws ParseException, JOSEException {
+    ApiResponse<AuthenticationResponse> authenticate(@RequestBody RefreshRequest request) {
         var result = authService.refreshToken(request);
         return ApiResponse.<AuthenticationResponse>builder().result(result).build();
     }
 
     @PostMapping("/logout")
-    ApiResponse<Void> logout(@RequestBody LogoutRequest request) throws ParseException, JOSEException {
+    ApiResponse<Void> logout(@RequestBody LogoutRequest request) {
         authService.logout(request);
         return ApiResponse.<Void>builder().build();
     }
 
     @PostMapping("/Change-password")
-    ApiResponse<Void> changePassword(@RequestBody ChangePasswordRequest request) throws ParseException, JOSEException {
-        authService.changePassword(request);
+    ApiResponse<Void> changePassword(@Valid @RequestBody ChangePasswordRequest request,
+            @AuthenticationPrincipal Jwt jwt) {
+        authService.changePassword(jwt.getSubject(), jwt.getClaimAsString("credentialVersion"), request);
         return ApiResponse.<Void>builder().message("Change password successfully").build();
     }
 
     @PostMapping("/google")
-    ApiResponse<AuthenticationResponse>  loginWithGG(@RequestHeader("Authorization") String header) throws Exception {
+    ApiResponse<AuthenticationResponse> loginWithGG(@RequestHeader("Authorization") String header) throws Exception {
         var result = authService.authenticatedWithGG(header);
         return ApiResponse.<AuthenticationResponse>builder()
-                .result(result).build();
+                .result(result)
+                .build();
     }
 
 
