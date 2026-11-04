@@ -28,6 +28,16 @@ public class TourDeparture {
     @Column(nullable = false)
     private Short availableSeats;
 
+    private Integer capacity;
+
+    @Builder.Default
+    @Column(nullable=false)
+    private String operationalStatus="OPEN";
+
+    @Version
+    @Column(nullable = false)
+    private long version;
+
     @ManyToOne
     @JoinColumn(nullable = false, name = "tour_id")
     private Tour tour;
