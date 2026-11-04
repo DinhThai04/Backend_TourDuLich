@@ -29,9 +29,12 @@ public class CustomerController {
     }
 
     @GetMapping("/all")
-    public ApiResponse<List<CustomerResponse>> getAllCustomers() {
+    public ApiResponse<List<CustomerResponse>> getAllCustomers(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false, defaultValue = "false") boolean mine) {
         return ApiResponse.<List<CustomerResponse>>builder()
-                .result(customerService.getAllCustomers())
+                .result(customerService.getAllCustomers(page, size, mine))
                 .message("Got successfully")
                 .build();
     }
