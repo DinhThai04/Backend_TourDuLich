@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class VnPayResponse {
     private String status;
+    private boolean alreadyProcessed;
     private String orderId;
     private String amount;
     private String bankCode;

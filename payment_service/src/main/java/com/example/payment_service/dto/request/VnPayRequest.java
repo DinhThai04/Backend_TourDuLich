@@ -4,5 +4,7 @@ import lombok.Data;
 
 @Data
 public class VnPayRequest {
-    private String amount;
+    private Integer bookingId;
+    private String expectedAmount;
+    private String amount; // Legacy endpoint only; booking endpoint ignores client amounts.
 }
