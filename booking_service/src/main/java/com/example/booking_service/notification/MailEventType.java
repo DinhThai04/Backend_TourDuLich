@@ -1,0 +1,6 @@
+package com.example.booking_service.notification;
+
+public enum MailEventType {
+    TEST_MAIL, BOOKING_CREATED, PAYMENT_SUCCEEDED, BOOKING_CANCELLED, BOOKING_EXPIRED,
+    PAYMENT_REMINDER, DEPARTURE_REMINDER, BOOKING_CHANGE_UPDATED
+}
