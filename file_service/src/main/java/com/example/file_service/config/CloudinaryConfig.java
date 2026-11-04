@@ -24,7 +24,9 @@ public class CloudinaryConfig {
                 "cloud_name", cloudName,
                 "api_key", apiKey,
                 "api_secret", apiSecret,
-                "secure", true
+                "secure", true,
+                // Fail fast instead of holding a request open when Cloudinary is slow.
+                "timeout", 15
         ));
     }
 }

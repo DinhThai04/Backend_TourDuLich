@@ -10,7 +10,7 @@ import com.example.file_service.entity.FileMgmt;
 public interface FileMgmtMapper {
 
 //   FileMgmt  toUserResponse(FileMgmt user);
-    @Mapping(target = "id", source = "name")
+    @Mapping(target = "id", ignore = true)
     FileMgmt toFileMgmt(FileInfo fileInfo);
 
     

@@ -22,12 +22,13 @@ public class FileRepository {
     private Cloudinary cloudinary;
 
     public FileInfo store(MultipartFile file) throws IOException {
+        com.example.file_service.service.ImageUploadPolicy.validate(java.util.List.of(file));
         // Upload lên Cloudinary
         Map uploadResult = cloudinary.uploader().upload(
                 file.getBytes(),
                 ObjectUtils.asMap(
                         "public_id", UUID.randomUUID().toString(),
-                        "resource_type", "auto" // auto: ảnh/video/pdf đều được
+                        "resource_type", "image"
                 ));
 
         return FileInfo.builder()
@@ -42,26 +43,31 @@ public class FileRepository {
     public Resource read(FileMgmt fileMgmt) throws IOException {
         // Cloudinary không cần đọc file từ local.
         // Nếu bạn muốn tải file từ URL của Cloudinary:
-        byte[] data = new java.net.URL(fileMgmt.getUrl()).openStream().readAllBytes();
+        byte[] data = new CloudinaryImageReader().read(fileMgmt.getUrl(), cloudinary.config.cloudName);
         return new ByteArrayResource(data);
     }
 
 
     public void delete(FileMgmt fileMgmt) {
+        if (!canDelete(fileMgmt)) throw new IllegalArgumentException("Chưa xác minh được public_id của ảnh trong tài khoản Cloudinary này; cần kiểm tra thủ công");
         try {
-            String publicId = extractPublicId(fileMgmt.getUrl());
-            cloudinary.uploader().destroy(publicId, ObjectUtils.emptyMap());
+            Map result = cloudinary.uploader().destroy(fileMgmt.getPath(), ObjectUtils.asMap("resource_type", "image", "invalidate", true));
+            if (!java.util.Set.of("ok", "not found").contains(Objects.toString(result.get("result"), "")))
+                throw new com.example.file_service.exception.MediaStorageException("Cloudinary chưa xác nhận xóa ảnh; dữ liệu ảnh được giữ lại để thử lại");
         } catch (IOException e) {
-            throw new RuntimeException("Không thể xóa file khỏi Cloudinary", e);
+            throw new com.example.file_service.exception.MediaStorageException("Chưa xóa được ảnh trên Cloudinary; dữ liệu ảnh được giữ lại để thử lại", e);
         }
     }
     
-    private String extractPublicId(String url) {
-        if (url == null || !url.contains("/upload/"))
-            return null;
-        String[] parts = url.split("/upload/");
-        String publicIdPart = parts[1];
-        return publicIdPart.substring(0, publicIdPart.lastIndexOf('.')); // bỏ phần đuôi .jpg/.png
+    public boolean canDelete(FileMgmt file) {
+        if (file.getPath() == null || file.getPath().isBlank() || file.getUrl() == null) return false;
+        try {
+            var uri = java.net.URI.create(file.getUrl());
+            String expected = "/" + java.util.regex.Pattern.quote(cloudinary.config.cloudName) + "/image/upload/v[0-9]+/"
+                    + java.util.regex.Pattern.quote(file.getPath()) + "\\.[A-Za-z0-9]+";
+            return "https".equals(uri.getScheme()) && "res.cloudinary.com".equals(uri.getHost())
+                    && uri.getRawPath().matches(expected) && uri.getUserInfo() == null && uri.getPort() == -1;
+        } catch (IllegalArgumentException invalid) { return false; }
     }
 
 }

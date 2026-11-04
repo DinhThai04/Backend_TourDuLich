@@ -20,6 +20,7 @@ public class SecurityConfig {
 
     private final String[] PUBLIC_URLS = {
             "/media/download/**",
+            // Avatar lookup for anonymous review listings; returns only url/contentType/size.
             "/owner/**",
             "/media/tours"
 
