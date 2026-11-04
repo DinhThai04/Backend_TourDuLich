@@ -31,3 +31,8 @@ build/
 
 ### VS Code ###
 .vscode/
+
+# Local SMTP credentials; commit only the example without secrets.
+.env
+.env.*
+!.env.mail.example
