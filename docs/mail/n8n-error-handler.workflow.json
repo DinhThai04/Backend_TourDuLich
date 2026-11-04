@@ -1,0 +1,118 @@
+{
+  "name": "Tour — xử lý lỗi nhắc",
+  "nodes": [
+    {
+      "id": "error-trigger",
+      "name": "Khi workflow lỗi",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "summarize",
+      "name": "Tóm tắt lỗi",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        280,
+        200
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "workflow-name",
+              "name": "workflow",
+              "value": "={{ $json.workflow.name }}",
+              "type": "string"
+            },
+            {
+              "id": "execution-id",
+              "name": "executionId",
+              "value": "={{ $json.execution.id }}",
+              "type": "string"
+            },
+            {
+              "id": "execution-url",
+              "name": "executionUrl",
+              "value": "={{ $json.execution.url }}",
+              "type": "string"
+            },
+            {
+              "id": "failed-node",
+              "name": "failedNode",
+              "value": "={{ $json.execution.lastNodeExecuted }}",
+              "type": "string"
+            },
+            {
+              "id": "error-message",
+              "name": "errorMessage",
+              "value": "={{ $json.execution.error.message }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "ack",
+      "name": "Đã ghi nhận",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        560,
+        200
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "note",
+      "name": "Hướng dẫn",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -30,
+        -180
+      ],
+      "parameters": {
+        "content": "## Gắn cảnh báo\n1. Import file này, Save.\n2. Thêm node gửi tin (Slack / Telegram / Gmail / webhook nội bộ)\n   nối sau \"Tóm tắt lỗi\" và cấu hình credential.\n3. Mở workflow nhắc nhở → Settings → Error Workflow → chọn workflow này.\n\nMặc định file không kèm credential để không lộ khóa.\nKhông đặt retry ở đây; lỗi hạ tầng đã có retry 3 lần trong workflow chính.\nXem docs/mail/README.md mục \"Theo dõi kết quả\"."
+      }
+    }
+  ],
+  "connections": {
+    "Khi workflow lỗi": {
+      "main": [
+        [
+          {
+            "node": "Tóm tắt lỗi",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tóm tắt lỗi": {
+      "main": [
+        [
+          {
+            "node": "Đã ghi nhận",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}

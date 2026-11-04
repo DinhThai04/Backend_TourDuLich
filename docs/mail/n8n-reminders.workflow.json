@@ -1,0 +1,281 @@
+{
+  "name": "Tour — nhắc thanh toán và khởi hành",
+  "nodes": [
+    {
+      "id": "manual-trigger",
+      "name": "Chạy thủ công",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        120
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "schedule-trigger",
+      "name": "Mỗi giờ",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        340
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 * * * *"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "config",
+      "name": "Cấu hình",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        260,
+        220
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "base-url",
+              "name": "baseUrl",
+              "value": "http://api_gateway:8888",
+              "type": "string"
+            },
+            {
+              "id": "dry-run",
+              "name": "dryRun",
+              "value": true,
+              "type": "boolean"
+            },
+            {
+              "id": "batch-size",
+              "name": "batchSize",
+              "value": 50,
+              "type": "number"
+            },
+            {
+              "id": "cursor",
+              "name": "afterBookingId",
+              "value": 0,
+              "type": "number"
+            },
+            {
+              "id": "max-pages",
+              "name": "maxPages",
+              "value": 50,
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "dispatch",
+      "name": "Lập lượt nhắc",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        540,
+        220
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Cấu hình').first().json.baseUrl + '/api/v1/booking/internal/mail/reminders/dispatch' }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ dryRun: $('Cấu hình').first().json.dryRun, batchSize: $('Cấu hình').first().json.batchSize, afterBookingId: $json.afterBookingId || 0 }) }}",
+        "options": {
+          "timeout": 30000
+        }
+      }
+    },
+    {
+      "id": "more",
+      "name": "Còn trang tiếp?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        220
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-more",
+              "leftValue": "={{ $json.result.hasMore }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "loop-guard",
+              "leftValue": "={{ $runIndex }}",
+              "rightValue": "={{ $('Cấu hình').first().json.maxPages }}",
+              "operator": {
+                "type": "number",
+                "operation": "smaller",
+                "singleValue": false
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "cursor-next",
+      "name": "Trang tiếp",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        800,
+        460
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cursor-next-value",
+              "name": "afterBookingId",
+              "value": "={{ $json.result.nextCursor }}",
+              "type": "number"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "done",
+      "name": "Đã quét xong",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1080,
+        220
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "instructions",
+      "name": "Hướng dẫn",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -30,
+        -280
+      ],
+      "parameters": {
+        "content": "## Cấu hình một lần\n1. Node Lập lượt nhắc: chọn credential Header Auth.\n   Name: X-Internal-Mail-Key; Value: khóa giống backend/gateway.\n2. Node Cấu hình: giữ dryRun=true để kiểm tra, sau đó đổi false.\n3. Save + Publish; timezone workflow: Asia/Ho_Chi_Minh.\n4. Workflow Settings → Error Workflow: chọn \"Tour — xử lý lỗi nhắc\"\n   (import n8n-error-handler.workflow.json) để nhận cảnh báo khi lần chạy lỗi.\n\nSpring Email gửi thư, không thêm node Send Email.\nHTTP chỉ lập hàng đợi; created không có nghĩa đã vào inbox.\nBackend trả 200 khi quét xong kể cả có booking lỗi (xem failed trong payload),\n500 chỉ khi lỗi hạ tầng để retry.\nmaxPages=50 chặn vòng lặp vô hạn nếu backend trả cursor không tiến.\nbatchSize mặc định 50 để vừa timeout 30s trên máy yếu.\nLịch mỗi giờ; backend chỉ chọn mốc tới hạn (08:00) còn phù hợp.\nbaseUrl dùng tên service khi n8n chạy trong compose; n8n chạy trực tiếp Windows thì đổi thành http://localhost:8888.\nXem docs/mail/README.md."
+      }
+    }
+  ],
+  "connections": {
+    "Chạy thủ công": {
+      "main": [
+        [
+          {
+            "node": "Cấu hình",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mỗi giờ": {
+      "main": [
+        [
+          {
+            "node": "Cấu hình",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Cấu hình": {
+      "main": [
+        [
+          {
+            "node": "Lập lượt nhắc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lập lượt nhắc": {
+      "main": [
+        [
+          {
+            "node": "Còn trang tiếp?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Còn trang tiếp?": {
+      "main": [
+        [
+          {
+            "node": "Trang tiếp",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Đã quét xong",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trang tiếp": {
+      "main": [
+        [
+          {
+            "node": "Lập lượt nhắc",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Asia/Ho_Chi_Minh"
+  },
+  "active": false,
+  "pinData": {},
+  "tags": []
+}
