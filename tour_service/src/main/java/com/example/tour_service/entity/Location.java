@@ -4,8 +4,11 @@ import com.example.tour_service.enums.LocationType;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.BatchSize;
 
 @Entity
+// Tour pages reference many locations at once; batch their proxies instead of one select each.
+@BatchSize(size = 50)
 @Getter
 @Setter
 @AllArgsConstructor
