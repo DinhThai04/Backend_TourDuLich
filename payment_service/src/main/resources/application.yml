@@ -4,30 +4,45 @@ server:
     context-path: /payment
 
 spring:
+  config:
+    import: "optional:file:./.local/payment_service.properties,optional:file:../.local/payment_service.properties,optional:file:./Backend_TourDuLich/.local/payment_service.properties"
   application:
     name: payment-service
   datasource:
-    url: "jdbc:mysql://localhost:3306/DBtour"
+    url: "${DB_URL:jdbc:mysql://localhost:3306/dbtour_v2}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
     username: root
-    password: root
+    password: ${DB_PASSWORD}
+    hikari:
+      # One shared MySQL box: 7 services x 10 stays under max_connections (151 by default).
+      maximum-pool-size: ${DB_POOL_MAX:10}
+      minimum-idle: ${DB_POOL_MIN:2}
+      connection-timeout: ${DB_POOL_TIMEOUT_MS:10000}
+      idle-timeout: 300000
+      max-lifetime: 1800000
   jpa:
+    # DTOs are mapped inside the service layer; do not keep a connection while rendering JSON.
+    open-in-view: false
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      ddl-auto: none
+    # Schema is owned by data_seed/database_all.sql; never let Hibernate mutate it.
+    show-sql: false
     properties:
       hibernate.dialect: org.hibernate.dialect.MySQLDialect
 
-momo:
-  partner-code: MOMO
-  access-key: F8BBA842ECF85
-  secret-key: K951B6PE1waDMi640xX08PD3vg6EkVlz
-  return-url: http://localhost:3000/
-  ipn-url: https://localhost:8080/api/momo/ipn-handler
-  end-point: https://test-payment.momo.vn/v2/gateway/api
-  request-type: captureWallet
-
 jwt:
-  signerKey: "1TjXchw5FloESb63Kc+DFhTARvpWL4jUGCwfGWxuG5SIf/1y/LgJxHnMqaF6A/ij"
-  valid-duration: 1800         # seconds (30 phút)
-  refreshable-duration: 36000  # seconds (10 giờ)
+  signerKey: ${JWT_SIGNER_KEY}
+
+vnpay:
+  secret-key: ${VNPAY_HASH_SECRET}
+  tmn-code: ${VNPAY_TMN_CODE:}
+  return-url: ${VNPAY_RETURN_URL:http://localhost:5173/payment/vnpay/callback}
+  pay-url: ${VNPAY_PAY_URL:https://sandbox.vnpayment.vn/paymentv2/vpcpay.html}
+
+momo:
+  partner-code: ${MOMO_PARTNER_CODE:}
+  access-key: ${MOMO_ACCESS_KEY:}
+  secret-key: ${MOMO_SECRET_KEY:}
+  pay-url: ${MOMO_PAY_URL:https://test-payment.momo.vn/v2/gateway/api/create}
+  return-url: ${MOMO_RETURN_URL:http://localhost:5173/payment/momo/callback}
+  ipn-url: ${MOMO_IPN_URL:http://localhost:8083/payment/momo/ipn}

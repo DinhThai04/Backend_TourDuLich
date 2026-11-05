@@ -17,5 +17,7 @@ import lombok.Setter;
 public class RoleResponse {
     private long id;
     private String name;
+    private String description;
+    private Boolean active;
     private List<Permission> permissions;
 }

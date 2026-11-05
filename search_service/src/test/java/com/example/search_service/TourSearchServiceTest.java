@@ -3,121 +3,71 @@ package com.example.search_service;
 import com.example.search_service.document.TourDocument;
 import com.example.search_service.repository.TourSearchRepository;
 import com.example.search_service.service.TourSearchService;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
+import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.data.domain.Page;
+import org.springframework.core.env.Environment;
+import org.springframework.data.elasticsearch.core.ElasticsearchOperations;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.test.context.ActiveProfiles;
-
 import java.math.BigDecimal;
-import java.util.List;
+import java.util.*;
+import static org.junit.jupiter.api.Assertions.*;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNull;
-
-
-@SpringBootTest
+/** Opt-in destructive index fixtures run only against dedicated local test services, never demo defaults. */
+@EnabledIfEnvironmentVariable(named="SGU_SEARCH_INTEGRATION",matches="true")
+@SpringBootTest(properties={
+    "spring.elasticsearch.uris=http://127.0.0.1:19200",
+    "spring.data.redis.host=127.0.0.1","spring.data.redis.port=16379","spring.data.redis.database=15",
+    "app.search.sync-enabled=false",
+    "jwt.signerKey=search-integration-test-key-0123456789012345678901234567890123456789",
+    "spring.autoconfigure.exclude=org.springframework.boot.autoconfigure.jdbc.DataSourceAutoConfiguration,org.springframework.boot.autoconfigure.orm.jpa.HibernateJpaAutoConfiguration,org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration"
+})
 class TourSearchServiceIntegrationTest {
-
-    @Autowired
-    private TourSearchService service;
-
-    @Autowired
-    private TourSearchRepository repo;
-
-    @Autowired
-    private RedisTemplate<String, Object> redisTemplate;
-
-//    @BeforeEach
-//    void setUp() {
-//        // Xóa dữ liệu Redis trước mỗi test
-//        redisTemplate.delete("allTours");
-//        Set<String> keys = redisTemplate.keys("filter:*");
-//        if (keys != null && !keys.isEmpty()) {
-//            redisTemplate.delete(keys);
-//        }
-//
-//        // Xóa dữ liệu Elasticsearch hoặc DB nếu cần
-//        repo.deleteAll();
-//    }
-
-    @Test
-    void testSave_NewTour_ShouldCreateAndClearCache() {
-        redisTemplate.opsForValue().set("allTours", "dummy cache");
-
-        TourDocument doc = new TourDocument();
-        doc.setId(1);
-        doc.setDepartureDates(List.of("2025-01-01"));
-
-        TourDocument result = service.save(doc);
-
-        assertEquals(doc.getId(), result.getId());
-        assertEquals(doc.getDepartureDates(), result.getDepartureDates());
-
-        // Kiểm tra dữ liệu thực trong Redis
-        Object cached = redisTemplate.opsForValue().get("allTours");
-        assertNull(cached, "Cache 'allTours' phải bị xóa sau khi lưu tour mới");
+    @Autowired TourSearchService service;
+    @Autowired TourSearchRepository repo;
+    @Autowired RedisTemplate<String,Object> redis;
+    @Autowired ElasticsearchOperations elasticsearch;
+    @Autowired Environment environment;
+    boolean isolated;
+    @BeforeEach void isolatedFixtures() {
+        assertEquals("http://127.0.0.1:19200",environment.getProperty("spring.elasticsearch.uris"));
+        assertEquals("16379",environment.getProperty("spring.data.redis.port"));
+        assertEquals("15",environment.getProperty("spring.data.redis.database"));
+        isolated=true;
+        repo.deleteAll();elasticsearch.indexOps(TourDocument.class).refresh();
+        var keys=redis.keys("sgu-tour:search:v2:*");if(keys!=null && !keys.isEmpty())redis.delete(keys);
     }
-
-    @Test
-    void testSave_ExistingTour_ShouldUpdateAndClearCache() {
-        TourDocument doc = new TourDocument();
-        doc.setId(2);
-        doc.setDepartureDates(List.of("2025-02-01"));
-
-        // Tạo trước dữ liệu tồn tại
-        repo.save(doc);
-
-        doc.setDepartureDates(List.of("2025-03-01"));
-        TourDocument updated = service.save(doc);
-
-        assertEquals(List.of("2025-03-01"), updated.getDepartureDates());
+    @AfterEach void cleanup() {
+        if(!isolated)return;
+        repo.deleteAll();elasticsearch.indexOps(TourDocument.class).refresh();
+        var keys=redis.keys("sgu-tour:search:v2:*");if(keys!=null && !keys.isEmpty())redis.delete(keys);
     }
-
-    @Test
-    void testFindAll_Pagination() {
-        BigDecimal price = new BigDecimal(20);
-        // Chuẩn bị dữ liệu 7 tour
-        repo.saveAll(List.of(
-                new TourDocument(1, "qwe", "t", price, "x", "y", "x", List.of("2025-01-01")),
-                new TourDocument(2, "a", "b", price, "c", "d", "e", List.of("2025-01-02")),
-                new TourDocument(3, "a", "b", price, "c", "d", "e", List.of("2025-01-03")),
-                new TourDocument(4, "a", "b", price, "c", "d", "e", List.of("2025-01-04")),
-                new TourDocument(5, "a", "b", price, "c", "d", "e", List.of("2025-01-05")),
-                new TourDocument(6, "a", "b", price, "c", "d", "e", List.of("2025-01-06")),
-                new TourDocument(7, "a", "b", price, "c", "d", "e", List.of("2025-01-07"))
-        ));
-
-        int pageSize = 3;
-
-        // Gọi page 0
-        Page<TourDocument> page0 = service.findAll(0, pageSize);
-        assertEquals(3, page0.getContent().size());
-        assertEquals(7, page0.getTotalElements());
-        assertEquals(0, page0.getNumber());
-        assertEquals(3, page0.getSize());
-        assertEquals(List.of(1,2,3), page0.getContent().stream().map(TourDocument::getId).toList());
-
-        // Gọi page 1
-        Page<TourDocument> page1 = service.findAll(1, pageSize);
-        assertEquals(3, page1.getContent().size());
-        assertEquals(7, page1.getTotalElements());
-        assertEquals(1, page1.getNumber());
-        assertEquals(List.of(4,5,6), page1.getContent().stream().map(TourDocument::getId).toList());
-
-        // Gọi page 2
-        Page<TourDocument> page2 = service.findAll(2, pageSize);
-        assertEquals(1, page2.getContent().size());
-        assertEquals(7, page2.getTotalElements());
-        assertEquals(2, page2.getNumber());
-        assertEquals(List.of(7), page2.getContent().stream().map(TourDocument::getId).toList());
-
-        // Gọi page quá lớn
-        Page<TourDocument> page3 = service.findAll(3, pageSize);
-        assertEquals(0, page3.getContent().size());
-        assertEquals(7, page3.getTotalElements());
-        assertEquals(3, page3.getNumber());
+    TourDocument tour(int id,String title){return new TourDocument(id,"TEST_"+id,title,new BigDecimal("3000000"),"Origin","Destination","Bus",List.of("2026-12-01"));}
+    @Test void snapshotSyncCreatesACompleteDocumentAndAdvancesTheCacheGeneration() {
+        var doc=tour(1,"New tour");assertEquals(new TourSearchService.SyncResult(1,1,0),service.replaceSnapshot(List.of(doc)));
+        assertEquals(doc,repo.findById(1).orElseThrow());
+        var generation=redis.opsForValue().get("sgu-tour:search:v2:generation");
+        assertInstanceOf(Number.class,generation);assertTrue(((Number)generation).longValue()>0);
     }
-
+    @Test void snapshotSyncUpdatesTheIndexedPriceAndDepartureDates() {
+        repo.save(tour(2,"Old title"));var changed=tour(2,"Updated title");
+        changed.setBasePrice(new BigDecimal("4000000"));changed.setDepartureDates(List.of("2026-12-15"));
+        service.replaceSnapshot(List.of(changed));assertEquals(changed,repo.findById(2).orElseThrow());
+    }
+    @Test void filtersMatchDestinationAndDepartureDateExactly() {
+        repo.saveAll(java.util.stream.IntStream.rangeClosed(1,3).mapToObj(id->tour(id,"Tour "+id)).toList());
+        elasticsearch.indexOps(TourDocument.class).refresh();
+        // Keyword mapping keeps the stored casing, so the filter must match without normalisation.
+        var result=service.filterByDestinationAndPriceAndDate("Destination","under5","2026-12-01",0,10);
+        assertEquals(3,result.getTotalElements());
+    }
+    @Test void pagesRetainTotalAndPageMetadata() {
+        repo.saveAll(java.util.stream.IntStream.rangeClosed(1,7).mapToObj(id->tour(id,"Tour "+id)).toList());
+        elasticsearch.indexOps(TourDocument.class).refresh();
+        for(int page=0;page<4;page++) {
+            var result=service.findAll(page,3);assertEquals(page,result.getNumber());assertEquals(3,result.getSize());
+            assertEquals(7,result.getTotalElements());assertEquals(page<2?3:page==2?1:0,result.getNumberOfElements());
+        }
+    }
 }

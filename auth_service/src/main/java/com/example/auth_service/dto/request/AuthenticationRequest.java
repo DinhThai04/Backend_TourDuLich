@@ -16,12 +16,11 @@ import lombok.experimental.FieldDefaults;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class AuthenticationRequest {
 
-    // Đặt message là tên của Enum
     @NotBlank(message = "EMAIL_IS_REQUIRED")
-    @Email(message = "INVALID_EMAIL_FORMAT") // (Bạn cần tạo Enum này nếu chưa có)
+    @Email(message = "Email không hợp lệ")
     private String email;
 
-    @NotBlank(message = "PASSWORD_IS_REQUIRED") // (Ví dụ cho password)
+    @NotBlank(message = "Mật khẩu không được để trống")
     private String password;
 
 }

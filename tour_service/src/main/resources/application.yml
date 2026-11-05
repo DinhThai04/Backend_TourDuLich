@@ -4,22 +4,70 @@ server:
     context-path: /tour
 
 spring:
+  config:
+    import: "optional:file:./.local/tour_service.properties,optional:file:../.local/tour_service.properties,optional:file:./Backend_TourDuLich/.local/tour_service.properties"
   application:
     name: tour-service
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            connectTimeout: 2000
+            readTimeout: 4000
+          # Multipart uploads to Cloudinary can legitimately outlast the catalogue read budget.
+          file-service:
+            connectTimeout: 2000
+            readTimeout: 60000
+  jackson:
+    deserialization:
+      accept-float-as-int: false
+  data:
+    web:
+      pageable:
+        # Public search is paginated; refuse oversized pages so one request cannot scan the catalogue.
+        max-page-size: 50
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 26MB
   datasource:
-    url: "jdbc:mysql://localhost:3306/DBtour"
+    url: "${DB_URL:jdbc:mysql://localhost:3306/dbtour_v2}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
     username: root
-    password: root
+    password: ${DB_PASSWORD}
+    hikari:
+      # One shared MySQL box: 7 services x 10 stays under max_connections (151 by default).
+      maximum-pool-size: ${DB_POOL_MAX:10}
+      minimum-idle: ${DB_POOL_MIN:2}
+      connection-timeout: ${DB_POOL_TIMEOUT_MS:10000}
+      idle-timeout: 300000
+      max-lifetime: 1800000
   jpa:
+    # DTOs are mapped inside the service layer; do not keep a connection while rendering JSON.
+    open-in-view: false
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      ddl-auto: none
+    # Schema is owned by data_seed/database_all.sql; never let Hibernate mutate it.
+    show-sql: false
     properties:
       hibernate:
-        dialect: org.hibernate.dialect.MySQL8Dialect
+        dialect: org.hibernate.dialect.MySQLDialect
         jdbc.lob.non_contextual_creation: true
 jwt:
-  signerKey: "1TjXchw5FloESb63Kc+DFhTARvpWL4jUGCwfGWxuG5SIf/1y/LgJxHnMqaF6A/ij"
-  valid-duration: 15000 # in second
-  refreshable-duration: 36000 # in seconds
+  signerKey: ${JWT_SIGNER_KEY}
+app:
+  services:
+    pricing-base-url: ${APP_SERVICES_PRICING_BASE_URL:http://localhost:8084/pricing}
+  catalog:
+    # Bulk catalogue feed for auth/search; blank accepts loopback callers only.
+    internal-key: ${CATALOG_INTERNAL_KEY:}
+  tour-cache:
+    # 0 = a fresh random pick per view (a 15-tour RAND query is cheap); set >0 on weak machines.
+    random-ttl-ms: ${TOUR_RANDOM_TTL_MS:0}
+  tour-images:
+    # Ảnh tour được làm mới nền và lưu đĩa, nên trang tour vẫn hiển thị khi file-service gián đoạn.
+    snapshot-file: ${TOUR_IMAGE_SNAPSHOT_FILE:data/tour-images.json}
+    refresh-delay-ms: 5000
+    # Uploads/edits update the snapshot immediately; this pass only reconciles with file-service.
+    refresh-interval-ms: ${TOUR_IMAGE_REFRESH_INTERVAL_MS:300000}

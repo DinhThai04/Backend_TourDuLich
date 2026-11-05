@@ -1,10 +1,5 @@
 package com.example.pricing_service.exception;
 
-import java.util.Map;
-import java.util.Objects;
-
-import jakarta.validation.ConstraintViolation;
-
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -19,17 +14,55 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class GlobalExceptionHandler {
 
-    private static final String MIN_ATTRIBUTE = "min";
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    ResponseEntity<ApiResponse> unreadableBody(Exception exception) {
+        // A truncated or malformed body is a bad request, not a server fault.
+        return ResponseEntity.badRequest().body(ApiResponse.builder()
+                .code(1400).message("Dữ liệu JSON không hợp lệ").build());
+    }
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ApiResponse> invalidParameterType(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException exception) {
+        // Echoing the raw value would reflect hostile input back to the caller.
+        return ResponseEntity.badRequest().body(ApiResponse.builder()
+                .code(1400).message("Tham số không hợp lệ: " + exception.getName()).build());
+    }
+    /** Routing mistakes are the caller's fault; the Exception catch-all would report them as server faults. */
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    ResponseEntity<ApiResponse> missingResource(Exception exception) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND).body(ApiResponse.builder()
+                .code(1404).message("Không tìm thấy tài nguyên").build());
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    ResponseEntity<ApiResponse> unsupportedMethod(Exception exception) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.METHOD_NOT_ALLOWED).body(ApiResponse.builder()
+                .code(1405).message("Phương thức HTTP không được hỗ trợ").build());
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
+    ResponseEntity<ApiResponse> unsupportedMediaType(Exception exception) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(ApiResponse.builder()
+                .code(1415).message("Định dạng nội dung không được hỗ trợ").build());
+    }
+
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    ResponseEntity<ApiResponse> status(org.springframework.web.server.ResponseStatusException exception) {
+        // Errors use 1000 + HTTP status (success is 1000), so 404 becomes 1404.
+        return ResponseEntity.status(exception.getStatusCode()).body(ApiResponse.builder()
+                .code(1000 + exception.getStatusCode().value()).message(exception.getReason()).build());
+    }
+
 
     @ExceptionHandler(value = Exception.class)
-    ResponseEntity<ApiResponse> handlingRuntimeException(RuntimeException exception) {
+    ResponseEntity<ApiResponse> handlingUnexpectedException(Exception exception) {
         log.error("Exception: ", exception);
-        ApiResponse apiResponse = new ApiResponse();
+        ErrorCode errorCode = ErrorCode.UNCATEGORIZED_EXCEPTION;
 
-        apiResponse.setCode(ErrorCode.UNCATEGORIZED_EXCEPTION.getCode());
-        apiResponse.setMessage(ErrorCode.UNCATEGORIZED_EXCEPTION.getMessage());
-
-        return ResponseEntity.badRequest().body(apiResponse);
+        // An unexpected failure is a server error, not a malformed request from the caller.
+        return ResponseEntity.status(errorCode.getStatusCode()).body(ApiResponse.builder()
+                .code(errorCode.getCode())
+                .message(errorCode.getMessage())
+                .build());
     }
 
     @ExceptionHandler(value = AppException.class)
@@ -56,38 +89,9 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(value = MethodArgumentNotValidException.class)
     ResponseEntity<ApiResponse> handlingValidation(MethodArgumentNotValidException exception) {
-        String enumKey = exception.getFieldError().getDefaultMessage();
-
-        ErrorCode errorCode = ErrorCode.INVALID_KEY;
-        Map<String, Object> attributes = null;
-        try {
-            errorCode = ErrorCode.valueOf(enumKey);
-
-            var constraintViolation = exception.getBindingResult().getAllErrors().getFirst()
-                    .unwrap(ConstraintViolation.class);
-
-            attributes = constraintViolation.getConstraintDescriptor().getAttributes();
-
-            log.info(attributes.toString());
-
-        } catch (IllegalArgumentException e) {
-
-        }
-
-        ApiResponse apiResponse = new ApiResponse();
-
-        apiResponse.setCode(errorCode.getCode());
-        apiResponse.setMessage(
-                Objects.nonNull(attributes)
-                        ? mapAttribute(errorCode.getMessage(), attributes)
-                        : errorCode.getMessage());
-
-        return ResponseEntity.badRequest().body(apiResponse);
+        var error = exception.getBindingResult().getAllErrors().getFirst();
+        return ResponseEntity.badRequest().body(ApiResponse.builder().code(ErrorCode.INVALID_KEY.getCode())
+                .message(error.getDefaultMessage()).build());
     }
 
-    private String mapAttribute(String message, Map<String, Object> attributes) {
-        String minValue = String.valueOf(attributes.get(MIN_ATTRIBUTE));
-
-        return message.replace("{" + MIN_ATTRIBUTE + "}", minValue);
-    }
 }

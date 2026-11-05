@@ -19,11 +19,6 @@ public class BookingController {
 
     private final BookingService bookingService;
 
-    /*****
-     *
-     * @param id
-     * @return
-     */
     @GetMapping("/{id}")
     public ApiResponse<BookingResponse> getBookingsById(@PathVariable Long id) {
         return ApiResponse.<BookingResponse>builder()
@@ -32,42 +27,23 @@ public class BookingController {
                 .build();
     }
 
-    /*****
-     *
-     * @return
-     */
     @GetMapping("/all")
-    public ApiResponse<List<BookingResponse>> getAllBookings() {
+    public ApiResponse<List<BookingResponse>> getAllBookings(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false, defaultValue = "false") boolean mine) {
         return ApiResponse.<List<BookingResponse>>builder()
-                .result(bookingService.getAllBookings())
+                .result(bookingService.getAllBookings(page, size, mine))
                 .message("Got successfully")
                 .build();
     }
 
-    /*****
-     *
-     * @param request
-     * @return
-     */
     @PostMapping("/create")
     public ApiResponse<BookingResponse> createBooking(
-            @RequestBody BookingRequest request) {
+            @jakarta.validation.Valid @RequestBody BookingRequest request) {
                 return ApiResponse.<BookingResponse>builder()
                 .result(bookingService.createBooking(request))
                 .message("Created successfully")
-                .build();
-    }
-
-    /*****
-     *
-     * @param id
-     * @return
-     */
-    @PutMapping("/status/{id}")
-    public ApiResponse<BookingResponse> updateBookingStatus(@PathVariable Long id) {
-        return ApiResponse.<BookingResponse>builder()
-                .result(bookingService.updateBookingStatus(id))
-                .message("Updated booking status successfully")
                 .build();
     }
 

@@ -19,6 +19,8 @@ public class UserResponse {
     String phone;
     String address;
     RoleResponse role;
+    boolean managementAllowed;
+    com.example.auth_service.entity.UserStatus status;
    
 
 

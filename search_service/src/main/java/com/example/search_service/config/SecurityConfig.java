@@ -32,7 +32,9 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity httpSecurity) throws Exception {
         httpSecurity.authorizeHttpRequests(request -> request
                 .requestMatchers(HttpMethod.GET, PUBLIC_URLS).permitAll()
-                .requestMatchers(HttpMethod.POST, PUBLIC_URLS).permitAll()
+                .requestMatchers(HttpMethod.POST, "/tours/sync").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:SEARCH_SYNC")
+                // The index is only written from the authoritative catalogue snapshot, never from a request body.
+                .requestMatchers(HttpMethod.POST, "/tours").denyAll()
                 .anyRequest()
                 .authenticated());
 

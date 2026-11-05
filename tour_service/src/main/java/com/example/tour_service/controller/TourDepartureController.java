@@ -16,6 +16,12 @@ import java.util.List;
 public class TourDepartureController {
     private final TourDepartureService tourDepartureService;
 
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyAuthority('SGU_SUPER_ADMIN','PERM:TOUR_DEPARTURES_UPDATE','PERM:SHOP_CHANGE_CREATE')")
+    @GetMapping("/{id}/capacity")
+    public ApiResponse<com.example.tour_service.dto.response.DepartureCapacityResponse> capacity(@PathVariable int id) {
+        return ApiResponse.<com.example.tour_service.dto.response.DepartureCapacityResponse>builder().result(tourDepartureService.capacity(id)).build();
+    }
+
     @GetMapping("/{id}")
     public ApiResponse<TourDepartureResponse> getTourDepartureById(@PathVariable int id) {
         return ApiResponse.<TourDepartureResponse>builder()
@@ -40,6 +46,14 @@ public class TourDepartureController {
                 .build();
     }
 
+    @GetMapping("/tour/{tourId}/all")
+    public ApiResponse<List<TourDepartureResponse>> getHistoryByTourId(@PathVariable int tourId) {
+        return ApiResponse.<List<TourDepartureResponse>>builder()
+                .result(tourDepartureService.getTourDepartureHistory(tourId))
+                .message("Fetched successfully")
+                .build();
+    }
+
     @PostMapping
     public ApiResponse<TourDepartureResponse> createTourDeparture(@RequestBody TourDepartureRequest request) {
         return ApiResponse.<TourDepartureResponse>builder()
@@ -55,13 +69,4 @@ public class TourDepartureController {
                 .message("Updated successfully")
                 .build();
     }
-
-//    @DeleteMapping("/{id}")
-//    public ApiResponse<Void> deleteTourDeparture(@PathVariable int id) {
-//        tourDepartureService.delete(id);
-//        return ApiResponse.<Void>builder()
-//                .message("Deleted successfully")
-//                .build();
-//    }
-
 }

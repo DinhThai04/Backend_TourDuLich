@@ -4,20 +4,30 @@ server:
     context-path: /pricing
 
 spring:
+  config:
+    import: "optional:file:./.local/pricing_service.properties,optional:file:../.local/pricing_service.properties,optional:file:./Backend_TourDuLich/.local/pricing_service.properties"
   application:
     name: pricing-service
   datasource:
-    url: "jdbc:mysql://localhost:3306/DBtour"
+    url: "${DB_URL:jdbc:mysql://localhost:3306/dbtour_v2}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
     username: root
-    password: root
+    password: ${DB_PASSWORD}
+    hikari:
+      # One shared MySQL box: 7 services x 10 stays under max_connections (151 by default).
+      maximum-pool-size: ${DB_POOL_MAX:10}
+      minimum-idle: ${DB_POOL_MIN:2}
+      connection-timeout: ${DB_POOL_TIMEOUT_MS:10000}
+      idle-timeout: 300000
+      max-lifetime: 1800000
   jpa:
+    # DTOs are mapped inside the service layer; do not keep a connection while rendering JSON.
+    open-in-view: false
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      ddl-auto: none
+    # Schema is owned by data_seed/database_all.sql; never let Hibernate mutate it.
+    show-sql: false
     properties:
       hibernate.dialect: org.hibernate.dialect.MySQLDialect
 jwt:
-  signerKey: "1TjXchw5FloESb63Kc+DFhTARvpWL4jUGCwfGWxuG5SIf/1y/LgJxHnMqaF6A/ij"
-  valid-duration: 15 # in second
-  refreshable-duration: 36000 # in seconds
+  signerKey: ${JWT_SIGNER_KEY}

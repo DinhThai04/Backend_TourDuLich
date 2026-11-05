@@ -3,28 +3,43 @@ server:
   servlet:
     context-path: /file
 spring:
+  config:
+    import: "optional:file:./.local/file_service.properties,optional:file:../.local/file_service.properties,optional:file:./Backend_TourDuLich/.local/file_service.properties"
   application:
     name: file-service
   datasource:
-    url: "jdbc:mysql://localhost:3306/DBtour"
+    url: "${DB_URL:jdbc:mysql://localhost:3306/dbtour_v2}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
     username: root
-    password: root
+    password: ${DB_PASSWORD}
+    hikari:
+      # One shared MySQL box: 7 services x 10 stays under max_connections (151 by default).
+      maximum-pool-size: ${DB_POOL_MAX:10}
+      minimum-idle: ${DB_POOL_MIN:2}
+      connection-timeout: ${DB_POOL_TIMEOUT_MS:10000}
+      idle-timeout: 300000
+      max-lifetime: 1800000
   jpa:
+    # DTOs are mapped inside the service layer; do not keep a connection while rendering JSON.
+    open-in-view: false
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      ddl-auto: none
+    # Schema is owned by data_seed/database_all.sql; never let Hibernate mutate it.
+    show-sql: false
     properties:
       hibernate.dialect: org.hibernate.dialect.MySQLDialect
   servlet:
     multipart:
       max-file-size: 5MB
-      max-request-size: 5MB
+      max-request-size: 26MB
 app:
   file:
-    storage-dir: C:/upload
-    download-prefix: http://localhost:8888/api/v1/file/media/download/
+    # Public /media/download/** calls allowed per client IP per minute; 0 disables it (e.g. CDN in front).
+    downloads-per-minute: ${FILE_DOWNLOADS_PER_MINUTE:60}
 cloudinary:
-  cloud-name: dmxflropu
-  api-key: 446771791415384
-  api-secret: 5ZNw3WZJx0ulBiik2ggcUdMwPYg
+  cloud-name: ${CLOUDINARY_CLOUD_NAME:}
+  api-key: ${CLOUDINARY_API_KEY}
+  api-secret: ${CLOUDINARY_API_SECRET}
+
+jwt:
+  signerKey: ${JWT_SIGNER_KEY}

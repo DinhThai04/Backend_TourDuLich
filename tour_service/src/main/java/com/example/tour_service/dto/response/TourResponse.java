@@ -26,4 +26,8 @@ public class TourResponse {
     TourPriceResponse tourPrice;
     List<TourDepartureResponse> departures;
     List<String> imageIds;
+    String imageUploadStatus;
+    String imageUploadMessage;
+    /** True when basePrice is the stored snapshot because pricing-service did not answer. */
+    boolean priceStale;
 }

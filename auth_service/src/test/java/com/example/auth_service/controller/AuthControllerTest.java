@@ -109,6 +109,20 @@ public class AuthControllerTest {
 
 
     @Test
+    void login_whenBodyIsMalformedJson_thenReturnsBadRequest() throws Exception {
+        mockMvc.perform(post("/users/login")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"email\":"))
+
+                // A truncated body is the caller's mistake, not a server fault.
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code", is(1400)));
+
+        verify(authService, never()).authenticated(any(AuthenticationRequest.class));
+    }
+
+
+    @Test
     void login_whenInvalidCredentials_thenReturnsAppException() throws Exception {
         // ARRANGE
 
@@ -161,11 +175,9 @@ public class AuthControllerTest {
                 .andExpect(status().is(mailError.getStatusCode().value()))
 
                 // 2. Kiểm tra nội dung lỗi
-                // Giả sử GlobalExceptionHandler của bạn trả về một ErrorCode
-                // cụ thể cho validation: 1009 - EMAIL_IS_REQUIRED
-                // MethodArgumentNotValidException
-                .andExpect(jsonPath("$.code", is(1009)))
-                .andExpect(jsonPath("$.message", is("Email is required")));
+                // Validation trả đúng mã của EMAIL_IS_REQUIRED, không hard-code số.
+                .andExpect(jsonPath("$.code", is(mailError.getCode())))
+                .andExpect(jsonPath("$.message", is("Vui lòng nhập email")));
 
         // 3. Quan trọng: Xác nhận rằng service KHÔNG BAO GIỜ được gọi
         // vì request đã bị chặn ở lớp validation

@@ -2,9 +2,10 @@ package com.example.invoice_service.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.springframework.context.annotation.Primary;
 
+import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 
 @Entity
 @Table(name = "invoice")
@@ -22,7 +23,7 @@ public class Invoice {
     private int accountId;
 
     @Column(name = "booking_id", nullable = false)
-    private int bookingId;;
+    private int bookingId;
 
     @Column(name = "day_of_pay", nullable = false)
     private LocalDateTime dayOfPay;
@@ -34,13 +35,12 @@ public class Invoice {
     @Column(name = "status", nullable = false)
     private InvoiceStatus status;
 
-    @Column(name = "total_booking_tour_expense", nullable = false)
-    private float totalBookingTourExpense;
+    @Column(name = "total_booking_tour_expense", nullable = false, precision = 19, scale = 0)
+    private BigDecimal totalBookingTourExpense;
 
     @PrePersist
     protected void onStatus() {
-        this.dayOfPay = LocalDateTime.now();
-        this.status = InvoiceStatus.PAID;
-
+        if (this.dayOfPay == null) this.dayOfPay = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+        if (this.status == null) this.status = InvoiceStatus.PAID;
     }
 }

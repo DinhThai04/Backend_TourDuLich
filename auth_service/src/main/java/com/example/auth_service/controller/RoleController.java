@@ -4,9 +4,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.ResponseEntity;
-import org.springframework.http.HttpStatus;
-import org.springframework.validation.annotation.Validated;
 
 import java.util.List;
 
@@ -25,34 +22,39 @@ import org.springframework.security.access.prepost.PreAuthorize;
 public class RoleController {
     private final RoleService roleService;
 
+    @PreAuthorize("@accountAccess.can('ROLES_CREATE')")
     @PostMapping("")
     public ApiResponse<Role> create(@Valid @RequestBody Role role) throws Exception {
-        return ApiResponse.<Role>builder().code(HttpStatus.CREATED.value())
-                .message(HttpStatus.CREATED.getReasonPhrase()).result(this.roleService.create(role)).build();
+        return ApiResponse.<Role>builder().code(1000)
+                .message("Success").result(this.roleService.create(role)).build();
     }
 
+    @PreAuthorize("@accountAccess.can('ROLES_UPDATE')")
     @PutMapping("")
     public ApiResponse<Role> update(@Valid @RequestBody Role role) throws Exception {
-        return ApiResponse.<Role>builder().code(HttpStatus.OK.value()).message(HttpStatus.OK.getReasonPhrase())
+        return ApiResponse.<Role>builder().code(1000).message("Success")
                 .result(this.roleService.update(role)).build();
     }
 
+    @PreAuthorize("@accountAccess.can('ROLES_GET_LIST')")
     @GetMapping("")
     public ApiResponse<List<Role>> getAll(
             ) {
-        return ApiResponse.<List<Role>>builder().code(HttpStatus.OK.value()).message(HttpStatus.OK.getReasonPhrase())
+        return ApiResponse.<List<Role>>builder().code(1000).message("Success")
                 .result(this.roleService.fetchAll()).build();
     }
 
+    @PreAuthorize("@accountAccess.can('ROLES_GET_DETAIL')")
     @GetMapping("/{id}")
     public ApiResponse<Role> fetchById(@PathVariable("id") Long id) throws Exception {
-        return ApiResponse.<Role>builder().code(HttpStatus.OK.value()).message(HttpStatus.OK.getReasonPhrase())
+        return ApiResponse.<Role>builder().code(1000).message("Success")
                 .result(this.roleService.fetchRoleById(id)).build();
     }
 
+    @PreAuthorize("@accountAccess.can('ROLES_DELETE')")
     @DeleteMapping("/{id}")
     public ApiResponse<Void> delete(@PathVariable("id") Long id) throws Exception {
         this.roleService.delete(id);
-        return ApiResponse.<Void>builder().code(HttpStatus.OK.value()).message(HttpStatus.OK.getReasonPhrase()).build();
+        return ApiResponse.<Void>builder().code(1000).message("Success").build();
     }
 }

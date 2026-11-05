@@ -4,27 +4,61 @@ server:
     context-path: /auth
 
 spring:
+  config:
+    import: "optional:file:./.local/auth_service.properties,optional:file:../.local/auth_service.properties,optional:file:./Backend_TourDuLich/.local/auth_service.properties"
   application:
     name: auth-service
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            # A hung downstream must not pin request threads for Feign's 60s default.
+            connectTimeout: 2000
+            readTimeout: 4000
+          com.example.auth_service.repository.httpclient.FileServiceClient:
+            # Avatar upload waits for file-service to store the image before users.avatar is
+            # updated; a 4s cutoff aborts the client while the file is still being committed.
+            connectTimeout: 2000
+            readTimeout: 20000
   datasource:
-    url: "jdbc:mysql://localhost:3306/DBtour"
+    url: "${DB_URL:jdbc:mysql://localhost:3306/dbtour_v2}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
     username: root
-    password: root
+    password: ${DB_PASSWORD}
+    hikari:
+      # One shared MySQL box: 7 services x 10 stays under max_connections (151 by default).
+      maximum-pool-size: ${DB_POOL_MAX:10}
+      minimum-idle: ${DB_POOL_MIN:2}
+      connection-timeout: ${DB_POOL_TIMEOUT_MS:10000}
+      idle-timeout: 300000
+      max-lifetime: 1800000
   jpa:
+    # DTOs are mapped inside the service layer; do not keep a connection while rendering JSON.
+    open-in-view: false
     hibernate:
-      ddl-auto: update
-    show-sql: true
+      ddl-auto: none
+    # Schema is owned by data_seed/database_all.sql; never let Hibernate mutate it.
+    show-sql: false
     properties:
       hibernate.dialect: org.hibernate.dialect.MySQLDialect
   servlet:
     multipart:
       enabled: true
+      # Frontend allows avatars up to 2MB; leave headroom for multipart framing.
+      max-file-size: 5MB
+      max-request-size: 6MB
 jwt:
-  signerKey: "1TjXchw5FloESb63Kc+DFhTARvpWL4jUGCwfGWxuG5SIf/1y/LgJxHnMqaF6A/ij"
-  valid-duration: 36000 # in seconds
+  signerKey: ${JWT_SIGNER_KEY}
+  valid-duration: 3600 # in seconds; the frontend renews through /users/refresh on 401
   refreshable-duration: 72000 # in seconds
-logging:
-  level:
-    com.example.auth_service.repository.httpclient.FileServiceClient: DEBUG
-    feign: DEBUG
+app:
+  catalog:
+    # Must match tour_service app.catalog.internal-key when the snapshot is not loopback.
+    internal-key: ${CATALOG_INTERNAL_KEY:}
+  google:
+    client-id: ${GOOGLE_CLIENT_ID:}
+  socket:
+    # Comma-separated browser origins allowed to open a Socket.IO handshake.
+    # nginx serves the frontend same-origin; append the production host here when deploying.
+    allowed-origins: ${SOCKET_ALLOWED_ORIGINS:http://localhost:5173,http://localhost,http://127.0.0.1}

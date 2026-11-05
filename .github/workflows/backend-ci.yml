@@ -1,0 +1,265 @@
+name: Backend CI
+
+# CI tổng cho 10 module Spring Boot của SGU Tour.
+# Chạy khi push/pull request hoặc thủ công (workflow_dispatch).
+#
+# Các job:
+#   1. test      — matrix 10 module, chạy `mvn test` (offline: H2/mock) và đóng gói boot JAR.
+#   2. compose   — kiểm tra cú pháp docker compose (search_service và compose gốc trong repo).
+#   3. database  — import data_seed/database_all.sql vào database trống trên MariaDB 10.4
+#                  và MySQL 8.0, rồi kiểm tra schema/dữ liệu nền. Không còn migration riêng:
+#                  file seed đã hợp nhất toàn bộ thay đổi schema. Thiếu file seed là lỗi CI,
+#                  không được bỏ qua.
+#   4. gate      — job tổng, xanh chỉ khi test + compose + database đều đạt, và ghi vào summary
+#                  phần đã kiểm chứng.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Giá trị mặc định an toàn cho CI: KHÔNG phải bí mật thật. `.local` không được commit,
+  # nên các test tự cấu hình H2/mock; các biến này chỉ để placeholder `${VAR}` trong
+  # application.yml có giá trị khi một context test nào đó vẫn đọc tới.
+  JWT_SIGNER_KEY: ci-test-signer-key-0123456789abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ
+  DB_PASSWORD: ""
+  VNPAY_HASH_SECRET: ci-test-vnpay-secret
+  VNPAY_TMN_CODE: ci-test-vnpay-tmn-code
+  GOOGLE_CLIENT_ID: ci-test-google-client-id.apps.googleusercontent.com
+  CLOUDINARY_API_KEY: ci-test-cloudinary-key
+  CLOUDINARY_API_SECRET: ci-test-cloudinary-secret
+  MAIL_INTERNAL_API_KEY: ci-test-mail-internal-key
+
+jobs:
+  test:
+    name: Test ${{ matrix.module }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        module:
+          - api_gateway
+          - auth_service
+          - booking_service
+          - payment_service
+          - pricing_service
+          - tour_service
+          - file_service
+          - invoice_service
+          - search_service
+          - ai_service
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Run tests
+        shell: bash
+        run: |
+          # Maven Central thỉnh thoảng trả 429/5xx khi cache lạnh (rate-limit IP runner GitHub).
+          # Chỉ thử lại khi gặp lỗi tải artifact; lỗi compile/test thật thì dừng ngay.
+          for attempt in 1 2 3; do
+            echo "::group::mvn test (attempt $attempt)"
+            mvn -B --no-transfer-progress test > /tmp/mvn-test.log 2>&1
+            rc=$?
+            cat /tmp/mvn-test.log
+            echo "::endgroup::"
+            [ "$rc" -eq 0 ] && exit 0
+            if grep -qE '429|502|503|504|Could not transfer|Connection (reset|timed out|refused)|Read timed out' /tmp/mvn-test.log; then
+              echo "Lỗi tải artifact tạm thời; thử lại sau 30s."
+              sleep 30
+            else
+              exit "$rc"
+            fi
+          done
+          exit 1
+        working-directory: ${{ matrix.module }}
+
+      - name: Package boot JAR (skip tests)
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            echo "::group::mvn package (attempt $attempt)"
+            mvn -B --no-transfer-progress -DskipTests package > /tmp/mvn-package.log 2>&1
+            rc=$?
+            cat /tmp/mvn-package.log
+            echo "::endgroup::"
+            [ "$rc" -eq 0 ] && exit 0
+            if grep -qE '429|502|503|504|Could not transfer|Connection (reset|timed out|refused)|Read timed out' /tmp/mvn-package.log; then
+              echo "Lỗi tải artifact tạm thời; thử lại sau 30s."
+              sleep 30
+            else
+              exit "$rc"
+            fi
+          done
+          exit 1
+        working-directory: ${{ matrix.module }}
+
+      - name: Upload surefire reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-${{ matrix.module }}
+          path: ${{ matrix.module }}/target/surefire-reports/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  compose:
+    name: Validate compose files
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate search_service compose
+        run: docker compose -f search_service/docker-compose.yml config -q
+
+      - name: Validate root compose
+        run: docker compose -f docker-compose.yml config -q
+
+  database:
+    name: Database seed (${{ matrix.db }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        db:
+          - mariadb:10.4 # khớp XAMPP production (MariaDB 10.4.32)
+          - mysql:8.0
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Seed nằm ngay trong repo; thiếu file là lỗi để job không xanh mà chưa chạy gì.
+      - name: Check seed file
+        run: |
+          if [ ! -f data_seed/database_all.sql ]; then
+            echo "FAIL: data_seed/database_all.sql is missing from this checkout."
+            exit 1
+          fi
+
+      - name: Start ${{ matrix.db }}
+        run: |
+          docker run -d --name db \
+            -e MYSQL_ROOT_PASSWORD=ciroot \
+            ${{ matrix.db }}
+
+      - name: Wait for database
+        run: |
+          # mysqladmin ping báo "alive" ngay khi socket mở, kể cả lúc root chưa đặt
+          # mật khẩu (exit 0 khi sai password). Phải đợi xác thực thật để bước import
+          # không chạy sớm và dính "Access denied".
+          for i in $(seq 1 60); do
+            if docker exec db mysql -uroot -pciroot -e 'SELECT 1' >/dev/null 2>&1; then
+              echo "Database is ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "Database did not become ready"; docker logs db; exit 1
+
+      - name: Import seed (fresh install)
+        run: docker exec -i db mysql -uroot -pciroot < data_seed/database_all.sql
+
+      - name: Assert baseline schema + seed data
+        run: |
+          set -euo pipefail
+          Q() { docker exec -i db mysql -uroot -pciroot -N -B "$@"; }
+
+          assert_eq() { # label expected actual
+            if [ "$2" != "$3" ]; then echo "FAIL: $1 (expected=$2, actual=$3)"; exit 1; fi
+            echo "OK: $1 = $3"
+          }
+          assert_ge() { # label min actual
+            if [ "$3" -lt "$2" ]; then echo "FAIL: $1 (min=$2, actual=$3)"; exit 1; fi
+            echo "OK: $1 = $3 (>= $2)"
+          }
+
+          assert_eq "tours"       15 "$(Q dbtour_v2 -e 'SELECT COUNT(*) FROM tour')"
+          assert_eq "prices"      15 "$(Q dbtour_v2 -e 'SELECT COUNT(*) FROM prices')"
+          assert_eq "reviews"     15 "$(Q dbtour_v2 -e 'SELECT COUNT(*) FROM reviews')"
+          assert_eq "roles"        2 "$(Q dbtour_v2 -e 'SELECT COUNT(*) FROM roles')"
+          assert_ge "users"       12 "$(Q dbtour_v2 -e 'SELECT COUNT(*) FROM users')"
+          assert_ge "permissions" 62 "$(Q dbtour_v2 -e 'SELECT COUNT(*) FROM permissions')"
+          assert_ge "bookings"     1 "$(Q dbtour_v2 -e 'SELECT COUNT(*) FROM booking')"
+
+          # 10 permission nghiệp vụ mới phải có đủ trong seed (không cần migration).
+          for code in INVOICES_CREATE INVOICES_GET_ALL INVOICES_GET_DETAIL INVOICES_GET_BY_BOOKING \
+                      SEARCH_SYNC LOCATIONS_CREATE ITINERARIES_CREATE \
+                      VEHICLES_CREATE VEHICLES_UPDATE VEHICLES_DELETE; do
+            assert_eq "permission:$code" 1 "$(Q dbtour_v2 -e "SELECT COUNT(*) FROM permissions WHERE code='$code'")"
+          done
+
+          # booking.status chỉ còn 4 trạng thái vòng đời, không còn UNCONFIRMED.
+          status_type="$(Q dbtour_v2 -e "SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='dbtour_v2' AND TABLE_NAME='booking' AND COLUMN_NAME='status'")"
+          echo "$status_type" | grep -q "UNCONFIRMED" && { echo "FAIL: booking.status vẫn còn UNCONFIRMED"; exit 1; }
+          echo "OK: booking.status = $status_type"
+
+          # invoice/payment có trạng thái REFUNDED cho luồng hoàn tiền.
+          invoice_status="$(Q dbtour_v2 -e "SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='dbtour_v2' AND TABLE_NAME='invoice' AND COLUMN_NAME='status'")"
+          payment_status="$(Q dbtour_v2 -e "SELECT COLUMN_TYPE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='dbtour_v2' AND TABLE_NAME='payment' AND COLUMN_NAME='status'")"
+          echo "$invoice_status" | grep -q "REFUNDED" || { echo "FAIL: invoice.status thiếu REFUNDED"; exit 1; }
+          echo "$payment_status" | grep -q "REFUNDED" || { echo "FAIL: payment.status thiếu REFUNDED"; exit 1; }
+          echo "OK: REFUNDED có trong invoice/payment status"
+
+          # Bảng snapshot giá + momo_transaction có sẵn.
+          assert_eq "booking_price_snapshot exists" 1 "$(Q dbtour_v2 -e "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='dbtour_v2' AND TABLE_NAME='booking_price_snapshot'")"
+          assert_eq "momo_transaction exists"        1 "$(Q dbtour_v2 -e "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA='dbtour_v2' AND TABLE_NAME='momo_transaction'")"
+
+          # Index theo tài khoản cho "my bookings" và invoice, index theo lịch khởi hành cho job
+          # nhắc hạn/đổi lịch. Index gồm nhiều cột (account_id, id) nên STATISTICS có một dòng mỗi
+          # cột; chỉ đếm cột đầu.
+          assert_eq "ix_booking_account" 1 "$(Q dbtour_v2 -e "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='dbtour_v2' AND TABLE_NAME='booking' AND INDEX_NAME='ix_booking_account' AND SEQ_IN_INDEX=1 AND COLUMN_NAME='account_id'")"
+          assert_eq "ix_invoice_account" 1 "$(Q dbtour_v2 -e "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='dbtour_v2' AND TABLE_NAME='invoice' AND INDEX_NAME='ix_invoice_account' AND SEQ_IN_INDEX=1 AND COLUMN_NAME='account_id'")"
+          assert_eq "ix_booking_departure" 1 "$(Q dbtour_v2 -e "SELECT COUNT(*) FROM information_schema.STATISTICS WHERE TABLE_SCHEMA='dbtour_v2' AND TABLE_NAME='booking' AND INDEX_NAME='ix_booking_departure' AND SEQ_IN_INDEX=1 AND COLUMN_NAME='tour_departure_id'")"
+
+          # Seed không còn booking CONFIRMED giữ chỗ HELD mà không có thanh toán.
+          assert_eq "confirmed_without_payment" 0 "$(Q dbtour_v2 -e "SELECT COUNT(*) FROM booking b JOIN booking_reservation r ON r.booking_id=b.id WHERE b.status='CONFIRMED' AND r.status='HELD' AND NOT EXISTS (SELECT 1 FROM payment p WHERE p.booking_id=b.id AND p.status IN ('PAID','REFUNDED')) AND NOT EXISTS (SELECT 1 FROM invoice i WHERE i.booking_id=b.id AND i.status IN ('PAID','REFUNDED')) AND NOT EXISTS (SELECT 1 FROM vnpay_transaction v WHERE v.booking_id=b.id AND v.status='PAID') AND NOT EXISTS (SELECT 1 FROM momo_transaction m WHERE m.booking_id=b.id AND m.status='PAID')")"
+
+          echo "Baseline OK"
+
+  gate:
+    name: CI summary
+    runs-on: ubuntu-latest
+    needs: [test, compose, database]
+    if: always()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Check required jobs
+        run: |
+          test_result="${{ needs.test.result }}"
+          compose_result="${{ needs.compose.result }}"
+          database_result="${{ needs.database.result }}"
+          echo "test: $test_result, compose: $compose_result, database: $database_result"
+          if [ "$test_result" != "success" ] || [ "$compose_result" != "success" ] || [ "$database_result" != "success" ]; then
+            echo "Backend CI failed"; exit 1
+          fi
+          echo "Backend CI passed"
+
+      - name: Report validation coverage
+        run: |
+          {
+            echo "## Validation coverage"
+            echo "- Seed database: đã import và kiểm chứng trên MariaDB 10.4 và MySQL 8.0"
+            echo "- Compose: đã kiểm chứng cú pháp search_service và docker-compose.yml gốc"
+            echo "- Lưu ý: compose chỉ kiểm tra cú pháp; build ảnh frontend cần repo Frontend_TourDuLich cạnh backend."
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -16,6 +16,9 @@ public class TourDepartureResponse {
     LocalDateTime departureDate;
     LocalDateTime returnDate;
     Short availableSeats;
+    Integer capacity;
+    String operationalStatus;
+    long version;
     int tourId;
     TourPriceResponse tourPrice;
 }

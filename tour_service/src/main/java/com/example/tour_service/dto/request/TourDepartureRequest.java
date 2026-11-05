@@ -15,8 +15,13 @@ import java.time.LocalDateTime;
 @Builder
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class TourDepartureRequest {
+    @com.fasterxml.jackson.databind.annotation.JsonDeserialize(using = com.example.tour_service.config.VietnamLocalDateTimeDeserializer.class)
     LocalDateTime departureDate;
+    @com.fasterxml.jackson.databind.annotation.JsonDeserialize(using = com.example.tour_service.config.VietnamLocalDateTimeDeserializer.class)
     LocalDateTime returnDate;
     Short availableSeats;
+    Integer capacity;
+    Long expectedVersion;
+    boolean confirmCapacity;
     int tourId;
 }

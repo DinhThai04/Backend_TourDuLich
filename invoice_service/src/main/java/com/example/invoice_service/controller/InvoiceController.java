@@ -1,15 +1,13 @@
 package com.example.invoice_service.controller;
 
-import com.example.invoice_service.client.PaymentClient;
 import com.example.invoice_service.dto.request.InvoiceRequest;
 import com.example.invoice_service.dto.response.ApiResponse;
-import com.example.invoice_service.dto.response.BookingResponse;
 import com.example.invoice_service.dto.response.InvoiceResponse;
-import com.example.invoice_service.dto.response.MoMoResponse;
 import com.example.invoice_service.service.InvoiceService;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,16 +16,9 @@ import java.util.List;
 @RequestMapping("/direct")
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
-
 public class InvoiceController {
     private final InvoiceService invoiceService;
-    private final PaymentClient paymentClient;
 
-    /***
-     *
-     * @param id
-     * @return
-     */
     @GetMapping("/{id}")
     public ApiResponse<InvoiceResponse> getInvoiceById(@PathVariable Long id) {
         return ApiResponse.<InvoiceResponse>builder()
@@ -36,11 +27,6 @@ public class InvoiceController {
                 .build();
     }
 
-    /***
-     *
-     * @param id
-     * @return
-     */
     @GetMapping("/booking/{id}")
     public ApiResponse<InvoiceResponse> getInvoiceByBookingId(@PathVariable Long id) {
         return ApiResponse.<InvoiceResponse>builder()
@@ -49,43 +35,28 @@ public class InvoiceController {
                 .build();
     }
 
-    /***
-     *
-     * @return
-     */
     @GetMapping("/all")
-    public ApiResponse<List<InvoiceResponse>> getAllInvoices() {
+    public ApiResponse<List<InvoiceResponse>> getAllInvoices(
+            @RequestParam(required = false) Integer page,
+            @RequestParam(required = false) Integer size,
+            @RequestParam(required = false, defaultValue = "false") boolean mine) {
         return ApiResponse.<List<InvoiceResponse>>builder()
-                .result(invoiceService.getAllInvoices())
+                .result(invoiceService.getAllInvoices(page, size, mine))
                 .message("Got successfully")
                 .build();
     }
 
-    /***
-     *
-     * @param request
-     * @return
+    /**
+     * Legacy cash-desk invoice creation. Customers must pay through the booking VNPay flow,
+     * where the invoice is written by the server after a verified transaction; otherwise a
+     * customer could mark their own booking as PAID without transferring any money.
      */
     @PostMapping("/create")
-    public ApiResponse<InvoiceResponse> payAndCreteInvoice(@RequestBody InvoiceRequest request){
-            return ApiResponse.<InvoiceResponse>builder()
+    @PreAuthorize("hasAnyAuthority('SGU_SUPER_ADMIN', 'PERM:INVOICES_CREATE')")
+    public ApiResponse<InvoiceResponse> createPaidInvoice(@jakarta.validation.Valid @RequestBody InvoiceRequest request) {
+        return ApiResponse.<InvoiceResponse>builder()
                 .result(invoiceService.payAndCreateInvoice(request))
                 .message("Created successfully")
                 .build();
     }
-
-
-//    @PostMapping("/create")
-//    public ApiResponse<InvoiceResponse> createMomoQR(@RequestBody InvoiceRequest request){
-//        try {
-//            return ApiResponse.<InvoiceResponse>builder()
-//                .result(invoiceService.payAndCreateInvoice(request))
-//                .message("Created successfully")
-//                .build();
-//        } catch (Exception ex) {
-//            System.err.println("Failed to create MoMo payment: " + ex.getMessage());
-//            return null;
-//        }
-//    }
-
 }

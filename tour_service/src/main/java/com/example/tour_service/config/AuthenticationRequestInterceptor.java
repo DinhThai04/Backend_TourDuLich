@@ -13,27 +13,10 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 public class AuthenticationRequestInterceptor implements RequestInterceptor {
     @Override
     public void apply(RequestTemplate template) {
-        ServletRequestAttributes servletRequestAttributes =
-                (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-
+        var attributes = RequestContextHolder.getRequestAttributes();
+        if (!(attributes instanceof ServletRequestAttributes servletRequestAttributes)) return;
         var authHeader = servletRequestAttributes.getRequest().getHeader("Authorization");
-
-        log.info("Header: {}", authHeader);
         if (StringUtils.hasText(authHeader))
             template.header("Authorization", authHeader);
     }
 }
-
-//@Component
-//@Slf4j
-//public class AuthenticationRequestInterceptor implements RequestInterceptor {
-//    @Override
-//    public void apply(RequestTemplate template) {
-//        var attrs = (ServletRequestAttributes) RequestContextHolder.getRequestAttributes();
-//        String authHeader = attrs.getRequest().getHeader("Authorization");
-//        log.info("Feign sending Authorization: {}", authHeader);
-//        if (authHeader != null && !authHeader.isEmpty()) {
-//            template.header("Authorization", authHeader);
-//        }
-//    }
-//}

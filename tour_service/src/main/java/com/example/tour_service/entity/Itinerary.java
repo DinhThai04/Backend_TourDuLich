@@ -4,6 +4,8 @@ import jakarta.persistence.*;
 import lombok.*;
 
 @Entity
+@Table(name = "itinerary", uniqueConstraints = @UniqueConstraint(
+        name = "ux_itinerary_tour_day", columnNames = {"tour_id", "day_number"}))
 @Getter
 @Setter
 @AllArgsConstructor
@@ -15,7 +17,7 @@ public class Itinerary {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private int id;
 
-    @Column(nullable = false)
+    @Column(name = "day_number", nullable = false)
     private int dayNumber;
 
     @Column(nullable = false)

@@ -18,8 +18,9 @@ import org.springframework.security.web.SecurityFilterChain;
 @EnableMethodSecurity
 public class SecurityConfig {
 
+    // Only single prices and the internal batch read are anonymous; the full table stays with managers.
     private final String[] PUBLIC_URLS = {
-        "prices/**",
+        "/prices/{id:[0-9]+}",
         "/prices/batch"
     };
 
@@ -32,7 +33,10 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity httpSecurity) throws Exception {
         httpSecurity.authorizeHttpRequests(request -> request
                 .requestMatchers(HttpMethod.GET, PUBLIC_URLS).permitAll()
-                .requestMatchers(HttpMethod.POST, PUBLIC_URLS).permitAll()
+                .requestMatchers(HttpMethod.POST, "/prices/batch").permitAll()
+                .requestMatchers(HttpMethod.GET, "/prices").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:PRICE_GET_LIST")
+                .requestMatchers(HttpMethod.POST, "/prices").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:PRICE_CREATE")
+                .requestMatchers(HttpMethod.PUT, "/prices/**").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:PRICE_UPDATE")
                 .anyRequest()
                 .authenticated());
 

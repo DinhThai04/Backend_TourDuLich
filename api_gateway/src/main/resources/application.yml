@@ -1,71 +1,126 @@
 server:
   port: 8888
+  forward-headers-strategy: none
 app:
+  auth:
+    base-url: ${AUTH_BASE_URL:http://localhost:8080}
+    connect-timeout-ms: ${AUTH_CONNECT_TIMEOUT_MS:2000}
+    response-timeout-ms: ${AUTH_RESPONSE_TIMEOUT_MS:3000}
+    login-attempts-per-minute: ${AUTH_LOGIN_LIMIT:20}
+    # Registration and Google sign-in are throttled independently from login.
+    register-attempts-per-minute: ${AUTH_REGISTER_LIMIT:5}
+    google-attempts-per-minute: ${AUTH_GOOGLE_LIMIT:10}
+    # Refresh chỉ nhận token hợp lệ nên nới tay hơn; trần này chỉ chặn việc replay một token đánh cắp.
+    refresh-attempts-per-minute: ${AUTH_REFRESH_LIMIT:30}
+    # Đổi mật khẩu vẫn cần mật khẩu cũ, nên chặn riêng để không dò được vô hạn.
+    password-change-attempts-per-minute: ${AUTH_PASSWORD_CHANGE_LIMIT:10}
+    # Shared window for all credential buckets above.
+    login-window-ms: ${AUTH_LOGIN_WINDOW_MS:60000}
+    breaker-failure-threshold: ${AUTH_BREAKER_FAILURES:5}
+    breaker-open-ms: ${AUTH_BREAKER_OPEN_MS:10000}
+    # Tokens accepted within this window skip the per-request introspect round-trip.
+    introspect-cache-seconds: ${AUTH_INTROSPECT_CACHE_SECONDS:10}
+  cors:
+    allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173}
+  ai:
+    traffic:
+      creates-per-30-minutes: ${AI_CREATE_LIMIT:20}
+      chats-per-minute: ${AI_CHAT_MINUTE_LIMIT:6}
+      chats-per-day: ${AI_CHAT_DAY_LIMIT:40}
+      resets-per-minute: ${AI_RESET_LIMIT:10}
+      # Booking-help is a short guided Q&A, so it gets a larger per-caller minute budget.
+      booking-help-per-minute: ${AI_BOOKING_HELP_LIMIT:10}
+  mail:
+    internal-api-key: ${MAIL_INTERNAL_API_KEY:}
   api-prefix: /api/v1
 
 spring:
   application:
-    name: api_gateway
+    name: api-gateway
   cloud:
     gateway:
+      httpclient:
+        # A downstream that accepts the connection but never answers must not hold the exchange forever.
+        connect-timeout: 5000
+        response-timeout: 90s
       routes:
+        - id: ai_policies
+          uri: ${app.ai.base-url:http://127.0.0.1:8091}
+          predicates:
+            - Path=${app.api-prefix}/ai/policies
+            - Method=GET
+          filters:
+            - StripPrefix=2
+            - RemoveRequestHeader=Authorization
+            - RemoveRequestHeader=Cookie
+        - id: ai_booking_help
+          uri: ${app.ai.base-url:http://127.0.0.1:8091}
+          predicates:
+            - Path=${app.api-prefix}/ai/booking-help
+            - Method=POST
+          filters:
+            - StripPrefix=2
+            - RemoveRequestHeader=Cookie
+          metadata:
+            connect-timeout: 2000
+            response-timeout: 10000
+        - id: ai_service
+          uri: ${app.ai.base-url:http://127.0.0.1:8091}
+          predicates:
+            - Path=${app.api-prefix}/ai/conversations,${app.api-prefix}/ai/chat,${app.api-prefix}/ai/conversations/reset
+            - Method=POST
+          filters:
+            - StripPrefix=2
+            - RemoveRequestHeader=Authorization
+            - RemoveRequestHeader=Cookie
+          metadata:
+            connect-timeout: 2000
+            response-timeout: 45000
         - id: auth_service
-          uri: http://localhost:8080
+          # One variable drives routing and introspection, so overriding only one cannot split them.
+          uri: ${app.auth.base-url}
           predicates:
             - Path=${app.api-prefix}/auth/**
           filters:
             - StripPrefix=2
         - id: booking_service
-          uri: http://localhost:8081
+          uri: ${BOOKING_SERVICE_URL:http://localhost:8081}
           predicates:
             - Path=${app.api-prefix}/booking/**
           filters:
             - StripPrefix=2
-        - id: notification_service
-          uri: http://localhost:8082
-          predicates:
-            - Path=${app.api-prefix}/notification/**
-          filters:
-            - StripPrefix=2
-
         - id: payment_service
-          uri: http://localhost:8083
+          uri: ${PAYMENT_SERVICE_URL:http://localhost:8083}
           predicates:
             - Path=${app.api-prefix}/payment/**
           filters:
             - StripPrefix=2
         - id: pricing_service
-          uri: http://localhost:8084
+          uri: ${PRICING_SERVICE_URL:http://localhost:8084}
           predicates:
             - Path=${app.api-prefix}/pricing/**
           filters:
             - StripPrefix=2
-        - id: schedule_service
-          uri: http://localhost:8085
-          predicates:
-            - Path=${app.api-prefix}/schedule/**
-          filters:
-            - StripPrefix=2
         - id: tour_service
-          uri: http://localhost:8086
+          uri: ${TOUR_SERVICE_URL:http://localhost:8086}
           predicates:
             - Path=${app.api-prefix}/tour/**
           filters:
             - StripPrefix=2
         - id: file-service
-          uri: http://localhost:8087
+          uri: ${FILE_SERVICE_URL:http://localhost:8087}
           predicates:
             - Path=${app.api-prefix}/file/**
           filters:
             - StripPrefix=2
         - id: invoice_service
-          uri: http://localhost:8090
+          uri: ${INVOICE_SERVICE_URL:http://localhost:8090}
           predicates:
             - Path=${app.api-prefix}/invoice/**
           filters:
             - StripPrefix=2
         - id: search-service
-          uri: http://localhost:8089
+          uri: ${SEARCH_SERVICE_URL:http://localhost:8089}
           predicates:
             - Path=${app.api-prefix}/search/**
           filters:

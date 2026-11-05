@@ -19,17 +19,63 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 public class GlobalExceptionHandler {
 
+    @ExceptionHandler(org.springframework.http.converter.HttpMessageNotReadableException.class)
+    ResponseEntity<ApiResponse> unreadableBody(Exception exception) {
+        // A truncated or malformed body is a bad request, not a server fault.
+        return ResponseEntity.badRequest().body(ApiResponse.builder()
+                .code(1400).message("Dữ liệu JSON không hợp lệ").build());
+    }
+    /** Routing mistakes are the caller's fault; the Exception catch-all would report them as server faults. */
+    @ExceptionHandler(org.springframework.web.servlet.resource.NoResourceFoundException.class)
+    ResponseEntity<ApiResponse> missingResource(Exception exception) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.NOT_FOUND).body(ApiResponse.builder()
+                .code(1404).message("Không tìm thấy tài nguyên").build());
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    ResponseEntity<ApiResponse> unsupportedMethod(Exception exception) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.METHOD_NOT_ALLOWED).body(ApiResponse.builder()
+                .code(1405).message("Phương thức HTTP không được hỗ trợ").build());
+    }
+
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
+    ResponseEntity<ApiResponse> unsupportedMediaType(Exception exception) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.UNSUPPORTED_MEDIA_TYPE).body(ApiResponse.builder()
+                .code(1415).message("Định dạng nội dung không được hỗ trợ").build());
+    }
+
+    @ExceptionHandler(org.springframework.web.server.ResponseStatusException.class)
+    ResponseEntity<ApiResponse> status(org.springframework.web.server.ResponseStatusException error) {
+        // Errors use 1000 + HTTP status (success is 1000), so 400 becomes 1400.
+        return ResponseEntity.status(error.getStatusCode()).body(ApiResponse.builder()
+                .code(1000 + error.getStatusCode().value()).message(error.getReason()).build());
+    }
+
     private static final String MIN_ATTRIBUTE = "min";
 
+    @ExceptionHandler(value = IllegalArgumentException.class)
+    ResponseEntity<ApiResponse> handlingIllegalArgument(IllegalArgumentException exception) {
+        return ResponseEntity.badRequest().body(ApiResponse.builder()
+                .code(1400)
+                .message(exception.getMessage())
+                .build());
+    }
+
+    @ExceptionHandler(org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class)
+    ResponseEntity<ApiResponse> invalidParameterType(
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException exception) {
+        // Echoing the raw value would reflect hostile input back to the caller.
+        return ResponseEntity.badRequest().body(ApiResponse.builder()
+                .code(1400).message("Tham số không hợp lệ: " + exception.getName()).build());
+    }
+
     @ExceptionHandler(value = Exception.class)
-    ResponseEntity<ApiResponse> handlingRuntimeException(RuntimeException exception) {
-        log.error("Exception: ", exception);
-        ApiResponse apiResponse = new ApiResponse();
-
-        apiResponse.setCode(ErrorCode.UNCATEGORIZED_EXCEPTION.getCode());
-        apiResponse.setMessage(ErrorCode.UNCATEGORIZED_EXCEPTION.getMessage());
-
-        return ResponseEntity.badRequest().body(apiResponse);
+    ResponseEntity<ApiResponse> handlingUnexpectedException(Exception exception) {
+        log.error("Unhandled exception", exception);
+        return ResponseEntity.status(ErrorCode.UNCATEGORIZED_EXCEPTION.getStatusCode()).body(ApiResponse.builder()
+                .code(ErrorCode.UNCATEGORIZED_EXCEPTION.getCode())
+                .message(ErrorCode.UNCATEGORIZED_EXCEPTION.getMessage())
+                .build());
     }
 
     @ExceptionHandler(value = AppException.class)
@@ -56,7 +102,8 @@ public class GlobalExceptionHandler {
 
     @ExceptionHandler(value = MethodArgumentNotValidException.class)
     ResponseEntity<ApiResponse> handlingValidation(MethodArgumentNotValidException exception) {
-        String enumKey = exception.getFieldError().getDefaultMessage();
+        var fieldError = exception.getBindingResult().getFieldError();
+        String enumKey = fieldError == null ? null : fieldError.getDefaultMessage();
 
         ErrorCode errorCode = ErrorCode.INVALID_KEY;
         Map<String, Object> attributes = null;
@@ -67,22 +114,16 @@ public class GlobalExceptionHandler {
                     .unwrap(ConstraintViolation.class);
 
             attributes = constraintViolation.getConstraintDescriptor().getAttributes();
-
-            log.info(attributes.toString());
-
-        } catch (IllegalArgumentException e) {
-
+        } catch (IllegalArgumentException | NullPointerException notAnEnumKey) {
+            // Literal validation messages are already suitable for display to the user.
         }
 
-        ApiResponse apiResponse = new ApiResponse();
-
-        apiResponse.setCode(errorCode.getCode());
-        apiResponse.setMessage(
-                Objects.nonNull(attributes)
+        return ResponseEntity.badRequest().body(ApiResponse.builder()
+                .code(errorCode.getCode())
+                .message(Objects.nonNull(attributes)
                         ? mapAttribute(errorCode.getMessage(), attributes)
-                        : errorCode.getMessage());
-
-        return ResponseEntity.badRequest().body(apiResponse);
+                        : enumKey == null ? errorCode.getMessage() : fieldError.getDefaultMessage())
+                .build());
     }
 
     private String mapAttribute(String message, Map<String, Object> attributes) {

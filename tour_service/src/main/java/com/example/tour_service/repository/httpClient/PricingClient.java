@@ -14,7 +14,7 @@ import java.util.List;
 
 @FeignClient(
         name = "pricing-service",
-        url = "http://localhost:8888/api/v1/pricing",
+        url = "${app.services.pricing-base-url:http://localhost:8084/pricing}",
         configuration = FeignAuthConfig.class
 )
 public interface PricingClient {

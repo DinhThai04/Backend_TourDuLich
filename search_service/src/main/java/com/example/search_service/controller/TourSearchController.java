@@ -15,27 +15,23 @@ import java.util.List;
 @RequiredArgsConstructor
 public class TourSearchController {
     private final TourSearchService service;
+    private final com.example.search_service.service.CatalogSynchronizer synchronizer;
 
-    @PostMapping
-    public ApiResponse<TourDocument> save(@RequestBody TourDocument doc) {
-        return ApiResponse.<TourDocument>builder()
-                .result(service.save(doc))
-                .message("Save successfully")
-                .build();
+    @PostMapping("/sync")
+    public ApiResponse<TourSearchService.SyncResult> sync() {
+        return ApiResponse.<TourSearchService.SyncResult>builder().result(synchronizer.sync()).message("Catalog synchronized").build();
     }
 
     @GetMapping
     public ApiResponse<Iterable<TourDocument>> getAll(
-            @RequestParam int page,
-            @RequestParam int size
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "10") int size
     ) {
         return ApiResponse.<Iterable<TourDocument>>builder()
                 .result(service.findAll(page, size))
                 .message("Get successfully")
                 .build();
     }
-
-    
 
     @GetMapping("/search")
     public ApiResponse<Page<TourDocument>> filterTours(

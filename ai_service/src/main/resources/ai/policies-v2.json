@@ -1,0 +1,252 @@
+{
+  "version": "2026-10-26-v4",
+  "sourceLabel": "SGU Tour — chính sách theo chức năng hiện có",
+  "effectiveDate": "2026-10-26",
+  "scope": "Áp dụng cho bản học tập/demo SGU Tour. Thời gian dùng múi giờ Việt Nam (UTC+7). Hạn cụ thể được kiểm tra từ từng booking; website chưa cung cấp mọi dịch vụ của công ty lữ hành thương mại.",
+  "entries": [
+    {
+      "key": "P01",
+      "title": "Giữ chỗ và hạn thanh toán",
+      "status": "SUPPORTED",
+      "keywords": [
+        "giữ chỗ",
+        "giữ slot",
+        "hạn thanh toán",
+        "thanh toán trong bao lâu",
+        "đặt cọc"
+      ],
+      "text": "Khi đặt tour, hệ thống kiểm tra chỗ và giữ chỗ cho tất cả hành khách đã khai. Nếu ngày khởi hành còn tối đa 7 ngày lịch tính từ ngày đặt, cần thanh toán ngay: phiên giữ chỗ tối đa 15 phút, không vượt giờ khởi hành. Nếu còn hơn 7 ngày, hạn là 08:00 của ngày sớm hơn giữa ngày đặt cộng 6 ngày và ngày khởi hành trừ 6 ngày. Đây là ngày lịch, gồm cuối tuần và ngày lễ; không phải luôn đủ 6×24 giờ. Hạn đã lưu trên booking là mốc cần tuân thủ; không tính lại bằng ngày hiện tại. Chưa có đặt cọc/trả góp hoặc tự gia hạn trong chat. Bạn có thể đăng nhập và hỏi trợ lý về booking của mình để kiểm tra mốc cụ thể."
+    },
+    {
+      "key": "P02",
+      "title": "Hết hạn và hủy booking chưa thanh toán",
+      "status": "SUPPORTED",
+      "keywords": [
+        "hết hạn",
+        "hủy đơn",
+        "hủy booking",
+        "hủy tour",
+        "bỏ chỗ",
+        "hoàn tiền"
+      ],
+      "text": "Booking chưa thanh toán hết hạn được luồng xử lý hết hạn chuyển sang trạng thái không còn hiệu lực và trả chỗ; lịch sử được giữ. Nếu đã qua hạn nhưng tác vụ chưa xử lý, không còn quyền thanh toán dựa vào mốc giữ chỗ cũ. Bạn có thể hủy đơn chưa thanh toán tại lịch sử đặt tour của chính mình theo điều kiện hệ thống. Có bằng chứng thanh toán hoặc dữ liệu chưa khớp thì cần đối chiếu, không tự trả chỗ như đơn chưa trả tiền. Đơn đã thanh toán cần liên hệ SGU Tour để kiểm tra; website chưa có hoàn tiền tự động hoặc bảng phí hủy thương mại. Trợ lý không tự hủy hay hoàn tiền."
+    },
+    {
+      "key": "P03",
+      "title": "Email xác nhận và nhắc lịch",
+      "status": "SUPPORTED",
+      "keywords": [
+        "email",
+        "gửi mail",
+        "nhắc lịch",
+        "nhắc ngày đi",
+        "nhắc trước",
+        "thư nhắc"
+      ],
+      "text": "Booking giữ chỗ dài ngày có email ghi nhận và hạn thanh toán; đặt sát ngày cần trả tiền ngay nên không gửi xác nhận thành công trước khi trả tiền. Thanh toán được xác nhận, hủy và hết hạn có thông báo theo luồng đã triển khai. Nhắc chưa thanh toán dự kiến lúc 08:00 ngày đặt cộng 3 ngày nếu không muộn hơn một ngày trước hạn; nhắc tiếp lúc 08:00 một ngày trước hạn nếu là mốc khác. Đơn đã trả tiền và đủ điều kiện có nhắc trước ngày đi 5, 3, 1 ngày lúc 08:00. Việc gửi phụ thuộc backend, SMTP, n8n và trạng thái đơn khi chạy; lịch dự kiến không chứng minh thư đã gửi/được đọc. Bạn nên tự lưu lịch và kiểm tra thư rác. Chatbot không gửi lại mail."
+    },
+    {
+      "key": "P04",
+      "title": "Giá, tổng tiền và phụ thu",
+      "status": "SUPPORTED",
+      "keywords": [
+        "giá tour",
+        "tổng tiền",
+        "phụ thu",
+        "phòng đơn",
+        "hình ảnh",
+        "ảnh tour"
+      ],
+      "text": "Giá dùng Việt Nam đồng (VND). Giá một người lớn không phải tổng cả nhóm. Tổng phụ thuộc số hành khách và nhóm tuổi, dùng giá của tour khi hệ thống kiểm tra thanh toán. Giá 0 cho một nhóm tuổi chỉ áp dụng khi tour đó có mức 0 trong dữ liệu; không suy rộng sang tour khác. Chatbot không tự tăng ngân sách hoặc thêm phí. Phụ thu phòng đơn có trong dữ liệu giá nhưng luồng đặt hiện chưa lưu lựa chọn phòng đơn nên chưa cộng tự động; cần liên hệ nếu có nhu cầu. Giá/chỗ trên chat là thông tin tại thời điểm tra cứu, được kiểm tra lại khi đặt/thanh toán. Ảnh chỉ minh họa, không thay cho mô tả dịch vụ."
+    },
+    {
+      "key": "P05",
+      "title": "Đặt tour và số chỗ",
+      "status": "SUPPORTED",
+      "keywords": [
+        "đăng ký tour",
+        "đặt tour như thế nào",
+        "số chỗ",
+        "hết chỗ",
+        "danh sách hành khách"
+      ],
+      "text": "Đăng nhập rồi chọn tour, lịch khởi hành và khai đầy đủ hành khách, gồm cả người đặt nếu cũng đi. Mỗi hành khách chiếm một chỗ, kể cả trẻ em/em bé; hệ thống chỉ nhận khi chuyến chưa khởi hành và còn đủ chỗ. Ngày sinh, họ tên và thông tin liên hệ cần chính xác. Tạo booking hoặc thấy trạng thái đã đặt không có nghĩa đã thanh toán. Chỉ sau khi hệ thống xác nhận giao dịch phù hợp mới coi đơn đã trả tiền. Tìm tour, xem chính sách và chat tư vấn không tự tạo booking hay giữ chỗ."
+    },
+    {
+      "key": "P06",
+      "title": "Thanh toán VNPay và đối chiếu giao dịch",
+      "status": "SUPPORTED",
+      "keywords": [
+        "vnpay",
+        "thanh toán thất bại",
+        "trừ tiền",
+        "thanh toán thành công",
+        "đối soát",
+        "thanh toán"
+      ],
+      "text": "Luồng demo dùng VNPay với số tiền do backend tính từ booking; không lấy giá tùy ý do trình duyệt/chatbot gửi. Phiên giao dịch tối đa 15 phút, không vượt hạn giữ chỗ/giờ khởi hành. Quay lại trang thành công chưa đủ kết luận nếu dữ liệu chưa được xác minh; hãy xem lịch sử đơn và hóa đơn. Ngân hàng báo trừ tiền nhưng đơn chưa ghi nhận, hoặc tiền về khi đơn đã hết hạn, cần đối chiếu; không tự đặt lại/trả thêm chỉ theo lời chatbot. Bản sandbox phục vụ học tập, không phải giao dịch thương mại thật. Phương thức chưa triển khai hoàn chỉnh không được coi là hỗ trợ chỉ vì có biểu tượng trên giao diện."
+    },
+    {
+      "key": "P07",
+      "title": "Hóa đơn và lịch sử đặt chỗ",
+      "status": "SUPPORTED",
+      "keywords": [
+        "hóa đơn",
+        "lịch sử",
+        "biên nhận",
+        "vat"
+      ],
+      "text": "Đăng nhập vào hồ sơ/lịch sử đặt chỗ để xem đơn và hóa đơn theo quyền tài khoản. Hóa đơn chưa xuất hiện không tự chứng minh ngân hàng chưa trừ tiền; trạng thái chưa thống nhất cần kiểm tra. Hóa đơn trong đồ án là bản ghi/hiển thị của ứng dụng; hiện chưa có chính sách xuất hóa đơn VAT điện tử hoặc tích hợp cơ quan thuế. Chatbot không sửa hóa đơn, ghi nhận trả tiền hoặc tiết lộ đơn người khác."
+    },
+    {
+      "key": "P08",
+      "title": "Nhóm tuổi hành khách",
+      "status": "SUPPORTED",
+      "keywords": [
+        "trẻ em",
+        "em bé",
+        "độ tuổi",
+        "tuổi",
+        "ngày sinh"
+      ],
+      "text": "Backend phân nhóm theo tuổi tròn tại thời điểm tạo booking từ ngày sinh: dưới 2 tuổi là em bé; 2–4 tuổi là trẻ nhỏ; 5–11 tuổi là trẻ em; từ 12 tuổi là người lớn. Mức tiền từng nhóm lấy từ bảng giá tour, không áp dụng một tỷ lệ giảm chung. Tư vấn giá nhóm cần số người lớn và tuổi các bé; nếu thiếu hoặc tổng không khớp, trợ lý hỏi lại thay vì đoán."
+    },
+    {
+      "key": "P09",
+      "title": "Lịch trình và dịch vụ bao gồm",
+      "status": "PARTIAL",
+      "keywords": [
+        "bao gồm",
+        "không bao gồm",
+        "khách sạn",
+        "bữa ăn",
+        "điểm đón",
+        "hành lý"
+      ],
+      "text": "Đọc lịch khởi hành, giờ đi/về và lịch trình từng ngày trên trang tour trước khi đặt. Chỉ dịch vụ được mô tả cụ thể trong dữ liệu tour mới có căn cứ tư vấn. Nếu chưa có điểm đón, hạng phòng, hành lý, bữa ăn hoặc dịch vụ bao gồm/không bao gồm, hiện chưa có chính sách này trong hệ thống; vui lòng liên hệ để làm rõ. Trợ lý không suy đoán tiện ích hoặc quyền lợi từ ảnh."
+    },
+    {
+      "key": "P10",
+      "title": "Đổi tour, đổi ngày và thay hành khách",
+      "status": "PARTIAL",
+      "keywords": [
+        "đổi tour",
+        "đổi ngày",
+        "dời lịch",
+        "đổi tên",
+        "thay hành khách",
+        "chuyển nhượng"
+      ],
+      "text": "Khách đã thanh toán có thể gửi yêu cầu dời sang lịch khác của cùng tour trước giờ khởi hành ít nhất 72 giờ (đúng 72 giờ vẫn được nhận). Sau mốc này không nhận yêu cầu khách chủ động. Kiểm tra mốc lúc gửi yêu cầu; shop có thể xét duyệt sau đó trước giờ khởi hành. Yêu cầu đang chờ không giữ chỗ ở lịch mới. Chỉ chuyển toàn bộ booking, cùng thời lượng, có chỗ tại lúc duyệt và không chênh lệch giá; trường hợp giá thay đổi cần hỗ trợ thủ công. Vào Hồ sơ → Lịch sử đặt chỗ → Dời lịch để gửi và xem kết quả. Hiện chưa có chính sách tự đổi sang tour khác, tách hành khách hoặc chuyển nhượng. Chatbot chỉ hướng dẫn, không xác nhận chuyển lịch."
+    },
+    {
+      "key": "P11",
+      "title": "Hoàn tiền và phí hủy đơn đã thanh toán",
+      "status": "PARTIAL",
+      "keywords": [
+        "phí hủy",
+        "phí hoàn",
+        "bao lâu nhận tiền",
+        "hoàn tiền tự động",
+        "hoàn lại"
+      ],
+      "text": "Nếu shop buộc phải dừng chuyến do sự cố, khách có thể yêu cầu hủy và hoàn toàn bộ tiền đã thanh toán qua mục phản hồi hoặc kênh hỗ trợ có bằng chứng. Admin chỉ ghi nhận hoàn tiền sau khi đã thực hiện hoàn thực tế, kèm số tiền đúng chứng từ, tham chiếu và người xử lý. Chứng từ thu tiền gốc được giữ lại; bản ghi hoàn tiền không phải API hoàn tiền VNPay. Hiện chưa có bảng phí hủy chủ động của khách, thời hạn cam kết nhận tiền, hoàn một phần hoặc hoàn tự động qua ngân hàng. Không tự áp tỷ lệ phí của website khác."
+    },
+    {
+      "key": "P12",
+      "title": "Tài khoản và dữ liệu trong trợ lý",
+      "status": "PARTIAL",
+      "keywords": [
+        "bảo mật",
+        "dữ liệu cá nhân",
+        "quyền riêng tư",
+        "api key",
+        "mật khẩu"
+      ],
+      "text": "Không gửi mật khẩu, API key, OTP hoặc thông tin thẻ trong chat. Tra cứu booking cần đăng nhập; trợ lý chỉ đọc đơn của chính tài khoản, kể cả admin dùng mục này. Câu hỏi tư vấn tour công khai có thể được chuyển tới nhà cung cấp AI để phân tích. Luồng tra cứu đơn dùng dữ liệu tối thiểu tại backend, không gửi JWT, lịch sử booking, ngày đặt/hạn trả tiền hoặc hành khách cho model. Hội thoại khi đăng nhập chỉ giữ trong bộ nhớ trang, được xóa khi đổi tài khoản/đăng xuất. Hiện chưa có chính sách tự phục vụ xuất/xóa dữ liệu, thời hạn lưu trữ thương mại hoặc cam kết tuân thủ bổ sung."
+    },
+    {
+      "key": "P13",
+      "title": "Xác minh tài khoản và khuyến mại",
+      "status": "NOT_IMPLEMENTED",
+      "keywords": [
+        "xác minh email",
+        "xác nhận tài khoản",
+        "otp",
+        "khuyến mại",
+        "mã giảm giá",
+        "voucher",
+        "tích điểm"
+      ],
+      "text": "Hiện chưa có chính sách này trong phạm vi hoàn thiện: xác minh email khi đăng ký, OTP, tích điểm, phân hạng thành viên và tự áp mã giảm giá chưa được công bố là chức năng hoạt động. Email nhắc/xác nhận tour không phải email xác minh tài khoản. Không suy ra ưu đãi từ nội dung mẫu hoặc mục giao diện chưa có nghiệp vụ."
+    },
+    {
+      "key": "P14",
+      "title": "Bảo hiểm, visa và giấy tờ",
+      "status": "NOT_IMPLEMENTED",
+      "keywords": [
+        "bảo hiểm",
+        "visa",
+        "hộ chiếu",
+        "giấy tờ",
+        "xuất nhập cảnh",
+        "sức khỏe"
+      ],
+      "text": "Hiện chưa có chính sách này về bảo hiểm du lịch, bồi thường, visa, xuất nhập cảnh hoặc tiếp nhận khách theo sức khỏe. Không mặc định tour có bảo hiểm/phí visa. Cần kiểm tra yêu cầu thực tế với đơn vị tổ chức/cơ quan có thẩm quyền; chatbot không bảo đảm nhập cảnh, bảo hiểm hoặc tư vấn y tế."
+    },
+    {
+      "key": "P15",
+      "title": "Thời tiết và bất khả kháng",
+      "status": "PARTIAL",
+      "keywords": [
+        "thời tiết",
+        "thiên tai",
+        "bất khả kháng",
+        "hoãn chuyến",
+        "hủy chuyến",
+        "không đủ khách"
+      ],
+      "text": "Shop chỉ được khai báo dời chuyến khi có sự cố bắt buộc khiến chuyến cũ không thể khởi hành: thiên tai, hạn chế an toàn từ cơ quan có thẩm quyền hoặc gián đoạn vận chuyển bất khả kháng. Admin phải lưu mô tả, bằng chứng đã kiểm tra và lịch thay thế đủ khả năng phục vụ, không dùng lý do ít khách để dời. Chuyến cũ dừng đặt/thanh toán mới, giữ lịch sử; hệ thống tạm dừng hết hạn giữ chỗ trên chuyến cũ. Mỗi booking được thông báo và chọn đồng ý lịch thay thế, lịch khác cùng tour hoặc yêu cầu hỗ trợ/hoàn tiền. Không phản hồi không được coi là đồng ý. Chỉ booking đã đồng ý mới được duyệt chuyển khi còn đủ chỗ; giữ nguyên tiền đã trả. Booking chưa trả tiền phải kiểm tra hạn từ ngày đặt gốc, không tự đặt lại hạn 6 ngày; nếu không phù hợp cần hỗ trợ hoặc hủy booking chưa trả tiền. Quá hạn phản hồi trực tuyến cần liên hệ shop; không tự chuyển hay tự xóa đơn có tiền. Hiện chưa có chính sách bồi thường tự động."
+    },
+    {
+      "key": "P16",
+      "title": "Phạm vi trợ lý và tra cứu đơn của tôi",
+      "status": "SUPPORTED",
+      "keywords": [
+        "chatbot",
+        "trợ lý",
+        "đơn của tôi",
+        "booking của tôi",
+        "tra cứu booking"
+      ],
+      "text": "Trợ lý tìm/so sánh tour, đọc lịch trình, giải thích chính sách và tra cứu trạng thái/hạn thanh toán của booking thuộc tài khoản đăng nhập. Có nhiều đơn thì cần chọn đúng mã hoặc tour; không tự chọn bất kỳ. Thời gian còn lại tính lại từ hạn đã lưu và thời điểm backend kiểm tra. Đơn cũ không có bản ghi giữ chỗ hoặc dữ liệu cần đối chiếu sẽ được báo rõ, không gán hạn mới. Trợ lý không tạo/hủy/đổi đơn, thanh toán, hoàn tiền hay gửi mail. Bạn thao tác tại chức năng tương ứng trên website."
+    },
+    {
+      "key": "P17",
+      "title": "Đánh giá tour, liên hệ và phản hồi",
+      "status": "PARTIAL",
+      "keywords": [
+        "liên hệ",
+        "hỗ trợ",
+        "khiếu nại",
+        "phản hồi",
+        "đánh giá",
+        "đánh giá tour",
+        "viết review",
+        "nhận xét tour",
+        "bình luận tour"
+      ],
+      "text": "Kênh liên hệ bản demo: danhcong6205@gmail.com. Khi cần kiểm tra, cung cấp mã booking và mô tả vấn đề, không gửi mật khẩu/OTP/thông tin thẻ. Để gửi đánh giá mới, tài khoản phải có booking của đúng tour đã thanh toán được xác minh và chuyến đi đã kết thúc; mỗi tài khoản được gửi một đánh giá cho mỗi tour. Admin cũng phải đáp ứng điều kiện này khi đánh giá với tư cách khách. Đánh giá đã lưu trước chính sách này được giữ làm lịch sử, không tự gắn nhãn đã xác minh. Chưa có chính sách xử lý khiếu nại với thời hạn cam kết hoặc bồi thường tự động; trợ lý không hứa quyền lợi chưa công bố."
+    },
+    {
+      "key": "P18",
+      "title": "Chính sách chưa được công bố",
+      "status": "NOT_IMPLEMENTED",
+      "keywords": [
+        "chính sách khác",
+        "chính sách chưa có"
+      ],
+      "text": "Với nội dung không được liệt kê hoặc chưa triển khai, hiện chưa có chính sách này trong SGU Tour. Trợ lý báo chưa có thông tin thay vì lấy điều khoản của doanh nghiệp khác, tự tạo tỷ lệ phí hoặc khẳng định quyền lợi. Quy định được bổ sung theo phiên bản khi chức năng tương ứng đã triển khai và kiểm tra."
+    }
+  ]
+}

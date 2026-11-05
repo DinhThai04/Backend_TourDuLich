@@ -10,7 +10,10 @@ import lombok.experimental.FieldDefaults;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity 
-@Table(name = "file_mgmt") 
+// One active avatar per account, one linked image per location; the loser of a concurrent upload is rejected here.
+@Table(name = "file_mgmt", uniqueConstraints = {
+    @UniqueConstraint(name="ux_file_avatar_owner",columnNames="avatar_owner_id"),
+    @UniqueConstraint(name="ux_file_location",columnNames="location_id")})
 @FieldDefaults(level = AccessLevel.PRIVATE)
 public class FileMgmt {
 
@@ -21,6 +24,10 @@ public class FileMgmt {
 
     @Column(name = "owner_id", nullable = false)
     String ownerId;
+
+    // Only an active avatar sets this key. Generic files can share owner_id.
+    @Column(name = "avatar_owner_id", length = 19)
+    String avatarOwnerId;
 
     @Column(name = "tour_id", nullable = false)
     String tourId;

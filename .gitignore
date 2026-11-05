@@ -199,3 +199,20 @@ README.html
 *.iml
 .idea
 .exercism
+# Local runtime credentials
+/.local/
+.env
+
+# Local verification output
+/verify-summary.txt
+
+# tour_service writes its image snapshot here at runtime (TOUR_IMAGE_SNAPSHOT_FILE)
+/tour_service/data/
+
+# Same snapshot when a service is started from the backend folder
+/data/
+
+# One-off verification output, not part of the source
+/build-result.txt
+/final-sweep-*.txt
+/test-summary.txt

@@ -15,4 +15,7 @@ public interface PermissionRepository extends
     List<Permission> findByIdIn(List<Long> id);
 
     boolean existsByName(String name);
+    boolean existsByNameAndIdNot(String name, Long id);
+    boolean existsByCodeAndIdNot(String code, Long id);
+    boolean existsByApiPathAndMethodAndIdNot(String apiPath, String method, Long id);
 }
