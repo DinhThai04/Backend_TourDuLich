@@ -70,11 +70,45 @@ jobs:
           cache: maven
 
       - name: Run tests
-        run: mvn -B --no-transfer-progress test
+        shell: bash
+        run: |
+          # Maven Central thỉnh thoảng trả 429/5xx khi cache lạnh (rate-limit IP runner GitHub).
+          # Chỉ thử lại khi gặp lỗi tải artifact; lỗi compile/test thật thì dừng ngay.
+          for attempt in 1 2 3; do
+            echo "::group::mvn test (attempt $attempt)"
+            mvn -B --no-transfer-progress test > /tmp/mvn-test.log 2>&1
+            rc=$?
+            cat /tmp/mvn-test.log
+            echo "::endgroup::"
+            [ "$rc" -eq 0 ] && exit 0
+            if grep -qE '429|502|503|504|Could not transfer|Connection (reset|timed out|refused)|Read timed out' /tmp/mvn-test.log; then
+              echo "Lỗi tải artifact tạm thời; thử lại sau 30s."
+              sleep 30
+            else
+              exit "$rc"
+            fi
+          done
+          exit 1
         working-directory: ${{ matrix.module }}
 
       - name: Package boot JAR (skip tests)
-        run: mvn -B --no-transfer-progress -DskipTests package
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            echo "::group::mvn package (attempt $attempt)"
+            mvn -B --no-transfer-progress -DskipTests package > /tmp/mvn-package.log 2>&1
+            rc=$?
+            cat /tmp/mvn-package.log
+            echo "::endgroup::"
+            [ "$rc" -eq 0 ] && exit 0
+            if grep -qE '429|502|503|504|Could not transfer|Connection (reset|timed out|refused)|Read timed out' /tmp/mvn-package.log; then
+              echo "Lỗi tải artifact tạm thời; thử lại sau 30s."
+              sleep 30
+            else
+              exit "$rc"
+            fi
+          done
+          exit 1
         working-directory: ${{ matrix.module }}
 
       - name: Upload surefire reports
