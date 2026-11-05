@@ -130,8 +130,11 @@ jobs:
 
       - name: Wait for database
         run: |
+          # mysqladmin ping báo "alive" ngay khi socket mở, kể cả lúc root chưa đặt
+          # mật khẩu (exit 0 khi sai password). Phải đợi xác thực thật để bước import
+          # không chạy sớm và dính "Access denied".
           for i in $(seq 1 60); do
-            if docker exec db sh -c 'mysqladmin ping -uroot -pciroot --silent' >/dev/null 2>&1; then
+            if docker exec db mysql -uroot -pciroot -e 'SELECT 1' >/dev/null 2>&1; then
               echo "Database is ready"; exit 0
             fi
             sleep 2
