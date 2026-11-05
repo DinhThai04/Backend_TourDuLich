@@ -37,11 +37,11 @@ Mặc định datasource dùng `jdbc:mysql://localhost:3306/dbtour_v2`, username
 | `JWT_SIGNER_KEY` | Auth và các service nghiệp vụ xác minh JWT | Cùng khóa HS512, tối thiểu 64 byte UTF-8, giữ cục bộ |
 | `GOOGLE_CLIENT_ID` | Auth | Audience của Google ID token; mặc định là client demo, override khi dùng OAuth client khác |
 | `DB_URL` | Bảy service có datasource | URL JDBC, mặc định `jdbc:mysql://localhost:3306/dbtour_v2`; compose trỏ `host.docker.internal` |
-| `DB_POOL_MAX`, `DB_POOL_MIN` | Bảy service có datasource | Kích thước Hikari pool (mặc định 10/2). Bảy service dùng chung một MySQL nên tổng pool phải thấp hơn `max_connections` (151); máy yếu có thể đặt 5/2 |
-| `DB_POOL_TIMEOUT_MS` | Bảy service có datasource | Thời gian chờ kết nối trước khi báo lỗi (mặc định 10000 ms); máy yếu đặt 3000 để fail fast |
-| `JAVA_XMX` | Container backend | Nới heap cho mọi container Docker khi máy nhiều RAM (ví dụ `512m`–`1g`); để trống dùng mặc định nhẹ trong Dockerfile |
+| `DB_POOL_MAX`, `DB_POOL_MIN` | Bảy service có datasource | Kích thước Hikari pool (mặc định 10/2). Bảy service dùng chung một MySQL nên tổng pool phải thấp hơn `max_connections` (151) |
+| `DB_POOL_TIMEOUT_MS` | Bảy service có datasource | Thời gian chờ kết nối trước khi báo lỗi (mặc định 10000 ms) |
+| `JAVA_XMX` | Container backend | Nới heap cho mọi container Docker khi máy nhiều RAM (ví dụ `512m`–`1g`); để trống dùng mặc định trong Dockerfile |
 | `TOUR_IMAGE_REFRESH_INTERVAL_MS` | Tour | Chu kỳ đối soát snapshot ảnh tour (mặc định 300000 ms). Upload/sửa tour cập nhật snapshot ngay, chu kỳ này chỉ để chỉnh sai lệch |
-| `TOUR_RANDOM_TTL_MS` | Tour | Cache widget 3 tour ngẫu nhiên ở trang chủ; mặc định 0 = random mới mỗi lần tải. Máy yếu đặt 30000 để giảm truy vấn |
+| `TOUR_RANDOM_TTL_MS` | Tour | Cache widget 3 tour ngẫu nhiên ở trang chủ; mặc định 0 = random mới mỗi lần tải |
 | `TOUR_IMAGE_SNAPSHOT_FILE` | Tour | Đường dẫn snapshot ảnh tour (mặc định `data/tour-images.json`); compose trỏ vào volume để ảnh còn sau khi rebuild |
 | `SEARCH_SYNC_DELAY_MS`, `SEARCH_SYNC_INITIAL_DELAY_MS` | Search | Chu kỳ đồng bộ danh mục (mặc định 60000 ms) và độ trễ lần đầu (2000 ms). `POST /search/tours/sync` vẫn ép đồng bộ ngay khi cần |
 | `ES_URIS`, `REDIS_HOST`, `REDIS_PORT` | Search | Địa chỉ Elasticsearch/Redis (mặc định `http://localhost:9200`, `localhost`, `6379`); compose trỏ tên service nội bộ bằng property Spring chuẩn `SPRING_ELASTICSEARCH_URIS`/`SPRING_DATA_REDIS_HOST`, cả hai cách đặt đều có hiệu lực |
@@ -119,42 +119,6 @@ Search đọc snapshot từ `http://localhost:8086/tour/tours/search-snapshot`, 
 
 Chạy native là luồng chính khi phát triển. Khi cần chạy cả hệ thống bằng container, dùng `docker-compose.yml` ngay trong repo Backend (cần checkout repo frontend `../Frontend_TourDuLich` cạnh nó): file dựng gateway, 7 service nghiệp vụ và frontend (search/AI/mail theo profile), đọc bí mật từ `.local/*.properties`, nối MySQL trên host qua `host.docker.internal`, có healthcheck bằng `nc -z`. Các URL nội bộ đã được truyền bằng biến môi trường (`*_SERVICE_URL`, `APP_SERVICES_*`, `APP_ADVICE_*`, `SPRING_ELASTICSEARCH_URIS`, `SPRING_DATA_REDIS_HOST`).
 
-## Chạy nhẹ trên máy yếu
-
-Không cần bật cả 10 service để xem giao diện hoặc làm bài demo ngắn. Bộ tối thiểu:
-
-| Mục đích | Service cần chạy |
-|---|---|
-| Duyệt tour, giá, đăng nhập | `pricing_service` (8084), `tour_service` (8086), `auth_service` (8080), `api_gateway` (8888), frontend Vite |
-| Đặt tour và thanh toán | thêm `booking_service` (8081), `payment_service` (8083), `invoice_service` (8090) |
-| Upload/quản lý ảnh | thêm `file_service` (8087) |
-| Tìm kiếm nâng cao, chat AI | thêm `search_service` + Elasticsearch/Redis, `ai_service` |
-
-Tour luôn gọi pricing để lấy giá, nên thiếu `pricing_service` sẽ làm danh sách tour trả lỗi thay vì chỉ thiếu giá. Gateway nên khởi động sau cùng.
-
-Giới hạn bộ nhớ khi chạy native (mỗi JVM mặc định lấy 1/4 RAM máy, 7 JVM sẽ vượt RAM):
-
-```powershell
-$env:JAVA_TOOL_OPTIONS = '-Xmx256m -Xms64m -XX:MaxMetaspaceSize=192m'
-# Mở terminal riêng cho từng service, biến này áp dụng cho mọi JVM của terminal đó.
-mvn spring-boot:run
-```
-
-Khi chạy bằng Docker, heap mặc định trong Dockerfile là gateway/payment/pricing/invoice 256 MB, booking 320 MB, auth/tour/file/search/AI 384 MB (khoảng 3,2 GB tổng). Máy nhiều RAM đặt `JAVA_XMX=512m` (hoặc `1g`) khi `docker compose up/build` để nới heap cho mọi container mà không cần sửa file; để trống giữ mặc định nhẹ. Muốn nới riêng một service, thêm file `docker-compose.override.yml` cạnh compose gốc (compose tự nạp) với `services: tour_service: environment: JAVA_XMX: 512m` rồi `docker compose up -d tour_service`; tổng heap không nên vượt khoảng 60–70% RAM máy để còn chỗ cho OS, MySQL và Elasticsearch. Elasticsearch cộng thêm 512 MB khi bật profile search.
-
-Máy yếu có thể hạ thêm các mốc mặc định bằng biến môi trường: `DB_POOL_MAX=5`, `DB_POOL_TIMEOUT_MS=3000`, `TOUR_RANDOM_TTL_MS=30000`, `MAIL_POLL_DELAY_MS=30000`, `SEARCH_SYNC_DELAY_MS=300000`. Đây là các lựa chọn chủ động, không phải giá trị mặc định của đồ án.
-
-Đo mức dùng RAM của các tiến trình Java và container:
-
-```powershell
-Get-Process java -ErrorAction SilentlyContinue |
-  Measure-Object WorkingSet64 -Sum |
-  Select-Object Count, @{n='RAM (MB)';e={[math]::Round($_.Sum/1MB)}}
-docker stats --no-stream --format "table {{.Name}}\t{{.MemUsage}}"
-```
-
-Pool DB mặc định 10/2 mỗi service, tổng tối đa 70 kết nối nên vẫn dưới `max_connections` (XAMPP mặc định 151). Chỉ tăng thêm khi thật sự cần; máy yếu có thể đặt `DB_POOL_MAX=5`.
-
 ## Quy ước dữ liệu sau khi tắt open-in-view
 
 Bảy service có datasource đặt `spring.jpa.open-in-view: false`, nên session JPA chỉ sống trong transaction của service/repository:
@@ -164,7 +128,7 @@ Bảy service có datasource đặt `spring.jpa.open-in-view: false`, nên sessi
 - Lời gọi HTTP ra service khác (pricing, file, Google, booking) đặt trước transaction để không giữ connection chờ mạng.
 - Vi phạm quy ước này lỗi ngay bằng `LazyInitializationException` (fail fast), không âm thầm chậm.
 
-Pool 10/2 với `connection-timeout` 10 giây nghĩa là khi vượt 10 truy vấn đồng thời trên một service, request xếp hàng và chỉ báo lỗi sau 10 giây; mức này đủ cho demo nhiều người và không chạm `max_connections`. Máy yếu có thể đặt `DB_POOL_MAX=5` và `DB_POOL_TIMEOUT_MS=3000` để phản hồi lỗi nhanh hơn.
+Pool 10/2 với `connection-timeout` 10 giây nghĩa là khi vượt 10 truy vấn đồng thời trên một service, request xếp hàng và chỉ báo lỗi sau 10 giây; mức này đủ cho demo nhiều người và không chạm `max_connections`.
 
 ## Nghiệp vụ cần hiểu khi demo
 
