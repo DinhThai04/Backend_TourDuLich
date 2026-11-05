@@ -24,6 +24,7 @@ class VnPayBookingPaymentTest {
     VnPayOrderService orders;
     VnPayService service;
     final DateTimeFormatter date = DateTimeFormatter.ofPattern("yyyyMMddHHmmss");
+    static final ZoneId VIETNAM_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     @BeforeEach void setup() throws Exception {
         var ds = new JdbcDataSource();
@@ -61,7 +62,7 @@ class VnPayBookingPaymentTest {
         for (String table : List.of("invoice", "payment"))
             jdbc.execute("CREATE TABLE " + table + " (id INT AUTO_INCREMENT PRIMARY KEY, account_id INT, booking_id INT, day_of_pay TIMESTAMP, pay_method_id INT, status VARCHAR(20), total_booking_tour_expense DECIMAL(15,2))");
         jdbc.update("INSERT INTO booking VALUES (1,7,1,'CONFIRMED')");
-        jdbc.update("INSERT INTO tour_departure (id,tour_id,departure_date,available_seats) VALUES (1,1,?,10)", LocalDateTime.now().plusDays(30));
+        jdbc.update("INSERT INTO tour_departure (id,tour_id,departure_date,available_seats) VALUES (1,1,?,10)", LocalDateTime.now(VIETNAM_ZONE).plusDays(30));
         jdbc.update("INSERT INTO tour VALUES (1,1)");
         jdbc.update("INSERT INTO prices VALUES (1,8490000,6390000,0,500,1500000)");
         jdbc.update("INSERT INTO customer (booking_id,booking_type) VALUES (1,'ADULT'),(1,'ADULT'),(1,'CHILD')");
@@ -142,14 +143,14 @@ class VnPayBookingPaymentTest {
     @Test void quoteFailsForTheSameReasonTheOtherProvidersCheckoutWould() {
         jdbc.update("INSERT INTO momo_transaction (order_id,booking_id,account_id,amount_vnd,status,created_at,expires_at)"
                 + " VALUES ('M1',1,7,23370000,'PENDING',?,?)",
-            LocalDateTime.now(), LocalDateTime.now().plusMinutes(10));
+            LocalDateTime.now(VIETNAM_ZONE), LocalDateTime.now(VIETNAM_ZONE).plusMinutes(10));
         var blocked = assertThrows(ResponseStatusException.class,
             () -> transaction.execute(s -> orders.quote(1, 7, "vnpay")));
         assertEquals(org.springframework.http.HttpStatus.CONFLICT, blocked.getStatusCode());
         assertEquals(0, count("vnpay_transaction"));
         // A provider may still re-quote its own live order, which beginCheckout allows as well.
         assertEquals(23_370_000L, transaction.execute(s -> orders.quote(1, 7, "momo")).amountVnd());
-        jdbc.update("UPDATE momo_transaction SET expires_at=? WHERE order_id='M1'", LocalDateTime.now().minusMinutes(1));
+        jdbc.update("UPDATE momo_transaction SET expires_at=? WHERE order_id='M1'", LocalDateTime.now(VIETNAM_ZONE).minusMinutes(1));
         assertEquals(23_370_000L, transaction.execute(s -> orders.quote(1, 7, "vnpay")).amountVnd());
     }
     @Test void emptyCanceledPastOrSoldOutBookingsCannotStartPayment() {
@@ -159,9 +160,9 @@ class VnPayBookingPaymentTest {
         jdbc.update("UPDATE booking SET status='CANCELLED'");
         assertThrows(IllegalArgumentException.class, () -> prepare("8490000"));
         jdbc.update("UPDATE booking SET status='CONFIRMED'");
-        jdbc.update("UPDATE tour_departure SET departure_date=?", LocalDateTime.now().minusDays(1));
+        jdbc.update("UPDATE tour_departure SET departure_date=?", LocalDateTime.now(VIETNAM_ZONE).minusDays(1));
         assertThrows(IllegalArgumentException.class, () -> prepare("8490000"));
-        jdbc.update("UPDATE tour_departure SET departure_date=?,available_seats=0", LocalDateTime.now().plusDays(2));
+        jdbc.update("UPDATE tour_departure SET departure_date=?,available_seats=0", LocalDateTime.now(VIETNAM_ZONE).plusDays(2));
         assertThrows(IllegalArgumentException.class, () -> prepare("8490000"));
     }
     @Test void pendingRequestIsReusedAndAmountIsEncodedExactlyOnce() {

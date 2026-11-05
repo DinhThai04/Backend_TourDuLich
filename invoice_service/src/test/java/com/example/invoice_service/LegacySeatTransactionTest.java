@@ -40,6 +40,7 @@ class LegacySeatTransactionTest {
     @Autowired InvoiceRepository invoices;
     @MockBean TourDepartureClient departures;
     InvoiceRequest request;
+    private static final ZoneId VIETNAM_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     @BeforeEach void seed() {
         for(String ddl:List.of(
           "CREATE TABLE IF NOT EXISTS tour_departure(id INT PRIMARY KEY,departure_date TIMESTAMP,available_seats INT,capacity INT,version BIGINT DEFAULT 0,operational_status VARCHAR(20) DEFAULT 'OPEN')",
@@ -55,7 +56,7 @@ class LegacySeatTransactionTest {
         jdbc.execute("ALTER TABLE payment ADD COLUMN IF NOT EXISTS booking_id INT");
         jdbc.execute("ALTER TABLE payment ADD COLUMN IF NOT EXISTS status VARCHAR(20)");
         for(String table:List.of("invoice","payment","vnpay_transaction","momo_transaction","payment_reconciliation","booking_reservation","customer","booking","tour_departure"))jdbc.update("DELETE FROM "+table);
-        jdbc.update("INSERT INTO tour_departure(id,departure_date,available_seats,capacity,version) VALUES(1,?,10,10,0)",LocalDateTime.now().plusDays(30));
+        jdbc.update("INSERT INTO tour_departure(id,departure_date,available_seats,capacity,version) VALUES(1,?,10,10,0)",LocalDateTime.now(VIETNAM_ZONE).plusDays(30));
         jdbc.update("INSERT INTO booking VALUES(1,7,1,'CONFIRMED')");jdbc.update("INSERT INTO customer VALUES(1,1,'ADULT')");
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken("7","",List.of()));
         var customer=new CustomerRequest();customer.setBookingType("ADULT");
@@ -116,7 +117,7 @@ class LegacySeatTransactionTest {
         jdbc.update("UPDATE tour_departure SET available_seats=0,capacity=0 WHERE id=1");
         assertThrows(ResponseStatusException.class,()->service.payAndCreateInvoice(request));assertEquals(0,invoices.count());
         jdbc.update("UPDATE tour_departure SET available_seats=10,capacity=10 WHERE id=1");
-        jdbc.update("INSERT INTO vnpay_transaction VALUES('pending',1,'PENDING',?)",LocalDateTime.now().plusMinutes(10));
+        jdbc.update("INSERT INTO vnpay_transaction VALUES('pending',1,'PENDING',?)",LocalDateTime.now(VIETNAM_ZONE).plusMinutes(10));
         assertThrows(ResponseStatusException.class,()->service.payAndCreateInvoice(request));assertEquals(10,seats());assertEquals(0,invoices.count());
     }
     @Test void pricingOutageIsReportedAsUnavailableWithoutConsumingSeats() {
@@ -127,7 +128,7 @@ class LegacySeatTransactionTest {
         assertEquals(10,seats());assertEquals(0,invoices.count());
     }
     @Test void pendingMomoCannotCreateAnotherPaidInvoice() {
-        jdbc.update("INSERT INTO momo_transaction VALUES('pending-momo',1,'PENDING',?)",LocalDateTime.now().plusMinutes(10));
+        jdbc.update("INSERT INTO momo_transaction VALUES('pending-momo',1,'PENDING',?)",LocalDateTime.now(VIETNAM_ZONE).plusMinutes(10));
         assertThrows(ResponseStatusException.class,()->service.payAndCreateInvoice(request));
         assertEquals(10,seats());assertEquals(0,invoices.count());
     }
