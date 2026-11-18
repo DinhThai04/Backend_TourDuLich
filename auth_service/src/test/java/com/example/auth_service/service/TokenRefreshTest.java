@@ -54,6 +54,27 @@ class TokenRefreshTest {
         jwt.sign(new MACSigner(KEY));
         return jwt.serialize();
     }
+    @Test void rotatingSignerInvalidatesOldAccessAndRefreshTokens() throws Exception {
+        when(users.findById(2L)).thenReturn(Optional.of(user));
+        var oldAccess = new IntrospectRequest(); oldAccess.setToken(token("access"));
+        var oldRefresh = new RefreshRequest(); oldRefresh.setToken(refreshToken());
+        assertTrue(service.introspect(oldAccess).isValid());
+
+        String replacement = "rotated-test-key-".repeat(5);
+        ReflectionTestUtils.setField(service, "SIGNER_KEY", replacement);
+        assertFalse(service.introspect(oldAccess).isValid());
+        assertThrows(com.example.auth_service.exception.AppException.class,
+                () -> service.refreshToken(oldRefresh));
+
+        var jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS512), new JWTClaimsSet.Builder()
+                .subject("2").issuer("tour.com").issueTime(new Date())
+                .expirationTime(new Date(System.currentTimeMillis()+3_600_000L))
+                .jwtID("replacement-id").claim("tokenType", "access").claim("scope", "ROLE_Customer")
+                .claim("credentialVersion", com.example.auth_service.config.CredentialVersion.of(user, replacement)).build());
+        jwt.sign(new MACSigner(replacement));
+        var current = new IntrospectRequest(); current.setToken(jwt.serialize());
+        assertTrue(service.introspect(current).isValid());
+    }
     @Test void refreshLooksUpSubjectAsIdAndKeepsCorrectExpiryUnits() throws Exception {
         when(users.findById(2L)).thenReturn(Optional.of(user));
         var request = new RefreshRequest(); request.setToken(refreshToken());
