@@ -199,9 +199,14 @@ README.html
 *.iml
 .idea
 .exercism
-# Local runtime credentials
-/.local/
+# Ignore runtime configuration; track only reviewed, key-free templates.
+/.local/*
+!/.local/*.properties.example
+!/.local/README.md
 .env
+.env.*
+!.env.example
+!.env.*.example
 
 # Local verification output
 /verify-summary.txt

@@ -1,0 +1,8 @@
+# Copy to booking_service.properties and configure locally. Never commit the runtime file.
+# Use the same randomly generated HS512 key for all services that verify JWT.
+JWT_SIGNER_KEY=
+
+# Required for IDE/Maven mode; Docker Compose overrides the datasource settings.
+DB_PASSWORD=
+# DB_URL=jdbc:mysql://localhost:3306/dbtour_v2
+# spring.datasource.username=root
