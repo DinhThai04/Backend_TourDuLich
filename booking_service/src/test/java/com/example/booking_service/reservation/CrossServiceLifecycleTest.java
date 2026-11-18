@@ -74,7 +74,8 @@ class CrossServiceLifecycleTest {
     }
     @Test void actualExpiryAndLateCallbackNeverRestoreExpiredBooking() {
         clock.set(LocalDateTime.of(2026,11,7,7,55));var fields=prepare();
-        clock.set(LocalDateTime.of(2026,11,7,8,0));expiry.sweep();
+        // Allow the five-minute IPN grace to finish before asserting seats were released.
+        clock.set(LocalDateTime.of(2026,11,7,8,5));expiry.sweep();
         assertEquals("reconciliation",settle(fields));assertEquals(10,db.seats());assertEquals("EXPIRED",lifecycle.get(id).getReservationStatus());
     }
 }

@@ -32,6 +32,42 @@ class BookingLifecycleTest {
                 CustomerRequest.builder().fullName("Danh").birthdate("2000-01-01").gender("Male").address("Hà Nội").build())).build();
     }
     int create() { return Integer.parseInt(lifecycle.create(request()).getId()); }
+
+    @Test void cancelledAttemptCanBeReplacedOnlyWithASeparateRequest() {
+        var original = request();
+        original.setClientKey(UUID.randomUUID().toString());
+        var created = lifecycle.create(original);
+        int id = Integer.parseInt(created.getId());
+        lifecycle.cancel(id);
+        var edited = request();
+        edited.setClientKey(original.getClientKey());
+        edited.getListOfCustomers().getFirst().setFullName("New guest");
+        var closed = lifecycle.create(edited);
+        assertTrue(closed.isRestartAllowed());
+        assertEquals(created.getId(), closed.getId());
+        assertEquals(10, db.seats());
+        assertEquals(1, db.count("booking"));
+
+        db.jdbc.update("INSERT INTO invoice (booking_id,status) VALUES (?,'PAID')", id);
+        assertThrows(ResponseStatusException.class, () -> lifecycle.create(edited));
+        db.jdbc.update("DELETE FROM invoice WHERE booking_id=?", id);
+        edited.setClientKey(UUID.randomUUID().toString());
+        assertNotEquals(created.getId(), lifecycle.create(edited).getId());
+        assertEquals(9, db.seats());
+    }
+
+    @Test void previousVietnamPricingDateCannotCreateAnOrderButAllowsReplayingOne() {
+        var original = request();
+        original.setPricingDate(LocalDate.now(clock));
+        original.setClientKey(UUID.randomUUID().toString());
+        var created = lifecycle.create(original);
+        clock.set(LocalDateTime.now(clock).plusDays(1));
+        assertEquals(created.getId(), lifecycle.create(original).getId());
+        original.setClientKey(UUID.randomUUID().toString());
+        assertEquals(409, assertThrows(ResponseStatusException.class, () -> lifecycle.create(original)).getStatusCode().value());
+        assertEquals(1, db.count("booking"));
+        assertEquals(9, db.seats());
+    }
     @Test void holdsSeatsAndEnqueuesAcknowledgementAtomically() {
         int id = create(); assertEquals(9, db.seats()); assertEquals(1, db.count("mail_outbox"));
         var booking = lifecycle.get(id); assertEquals("HELD", booking.getReservationStatus());
@@ -43,6 +79,47 @@ class BookingLifecycleTest {
         // ISO-8601 so every browser can parse it; Timestamp.toString() used to emit a space.
         assertTrue(booking.getCreatedAt().startsWith("2026-11-01T10:00"));
         assertTrue(db.jdbc.queryForObject("SELECT payload FROM mail_outbox", String.class).contains("holdUntil"));
+    }
+    @Test void sameRequestReplaysOriginalFareAfterBirthdayAtVietnamMidnight() {
+        clock.set(LocalDateTime.of(2026, 11, 1, 23, 59, 59));
+        var booking = request();
+        booking.setClientKey(UUID.randomUUID().toString());
+        booking.getListOfCustomers().getFirst().setBirthdate("2014-11-02");
+        var original = lifecycle.create(booking);
+        assertEquals("CHILD", db.jdbc.queryForObject("SELECT booking_type FROM customer", String.class));
+
+        clock.set(LocalDateTime.of(2026, 11, 2, 0, 0));
+        booking.getListOfCustomers().getFirst().setFullName(" Danh ");
+        booking.getListOfCustomers().getFirst().setGender("male");
+        var replay = lifecycle.create(booking);
+        assertEquals(original.getId(), replay.getId());
+        assertEquals(original.getTotalAmount(), replay.getTotalAmount());
+        assertEquals(1, db.count("booking"));
+        assertEquals(9, db.seats());
+        assertEquals(1, db.count("mail_outbox"));
+
+        booking.setClientKey(UUID.randomUUID().toString());
+        lifecycle.create(booking);
+        assertEquals("ADULT", db.jdbc.queryForObject("SELECT booking_type FROM customer ORDER BY id DESC LIMIT 1", String.class));
+    }
+    @Test void keyCannotReplayWithDifferentPassengersOrDeparture() {
+        var booking = request();
+        booking.setClientKey(UUID.randomUUID().toString());
+        lifecycle.create(booking);
+
+        booking.getListOfCustomers().getFirst().setFullName("Khách khác");
+        assertEquals(409, assertThrows(ResponseStatusException.class, () -> lifecycle.create(booking)).getStatusCode().value());
+        booking.getListOfCustomers().getFirst().setFullName("Danh");
+        db.jdbc.update("INSERT INTO tour_departure (id,tour_id,departure_date,available_seats) VALUES (51,1,?,10)",
+                LocalDateTime.of(2026, 11, 21, 8, 0));
+        booking.setTourDepartureId("51");
+        assertEquals(409, assertThrows(ResponseStatusException.class, () -> lifecycle.create(booking)).getStatusCode().value());
+
+        assertEquals(1, db.count("booking"));
+        assertEquals(1, db.count("customer"));
+        assertEquals(1, db.count("mail_outbox"));
+        assertEquals(9, db.seats());
+        assertEquals(10, db.jdbc.queryForObject("SELECT available_seats FROM tour_departure WHERE id=51", Integer.class));
     }
     @Test void immediateCheckoutHasNoPrematureSuccessEmail() {
         clock.set(LocalDateTime.of(2026,11,13,10,0)); int id = create();
@@ -208,7 +285,10 @@ class BookingLifecycleTest {
         int later = Integer.parseInt(lifecycle.create(other).getId());
         // Only departure 1 is poisoned: the CHECK accepts the row as it stands today and rejects the
         // version bump the expiry write makes, so its transaction rolls back on every sweep.
-        db.jdbc.execute("ALTER TABLE tour_departure ADD CONSTRAINT poison_first CHECK (id<>1 OR version<2)");
+        // MySQL forbids CHECK expressions referencing an AUTO_INCREMENT column.
+        db.jdbc.execute("ALTER TABLE tour_departure ADD COLUMN poison_expiry BOOLEAN NOT NULL DEFAULT FALSE");
+        db.jdbc.update("UPDATE tour_departure SET poison_expiry=TRUE WHERE id=1");
+        db.jdbc.execute("ALTER TABLE tour_departure ADD CONSTRAINT poison_first CHECK (NOT poison_expiry OR version<2)");
         clock.set(LocalDateTime.of(2026,11,8,8,0));
         expiry.sweep();
         assertEquals("HELD", db.jdbc.queryForObject("SELECT status FROM booking_reservation WHERE booking_id=?", String.class, first));

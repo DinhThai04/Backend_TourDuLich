@@ -22,10 +22,8 @@ public class ReservationExpiryService {
     public void expireDeparture(int departureId) {
         transactions.executeWithoutResult(tx -> {
             var departures = jdbc.queryForList("SELECT * FROM tour_departure WHERE id=? FOR UPDATE", departureId);
-            // A suspended departure keeps its unpaid holds until the incident is resolved, so the
-            // customer is not expired out from under a pending replacement offer. Once the
-            // departure is cancelled nobody can pay for it, so due holds must be released.
-            if (departures.isEmpty() || "SUSPENDED".equals(String.valueOf(departures.getFirst().get("operational_status")))) return;
+            if (departures.isEmpty()) return;
+            boolean suspended = "SUSPENDED".equals(departures.getFirst().get("operational_status"));
             LocalDateTime now = LocalDateTime.now(clock).withNano(0);
             var candidates = jdbc.queryForList("""
                 SELECT booking_id FROM booking_reservation WHERE departure_id=?
@@ -39,6 +37,7 @@ public class ReservationExpiryService {
                 if(((Number)booking.get("tour_departure_id")).intValue()!=departureId || ((Number)hold.get("departure_id")).intValue()!=departureId
                         || !java.util.List.of("HELD","CHECKOUT").contains(hold.get("status")) || seats<=0
                         || seats!=jdbc.queryForObject("SELECT COUNT(*) FROM customer WHERE booking_id=?",Integer.class,id)) continue;
+                if (suspended && hasActiveShopOffer(id, departureId)) continue;
                 // Any evidence of payment prevents automatic release, even when records disagree.
                 if (paidEvidence(id)) continue;
                 // A checkout the provider may still confirm (IPN in transit) must keep its seats.
@@ -62,6 +61,14 @@ public class ReservationExpiryService {
             }
         });
     }
+    /** Only orders actually awaiting a shop decision or replacement keep their hold during an incident. */
+    boolean hasActiveShopOffer(int bookingId, int departureId) {
+        return jdbc.queryForObject("""
+                SELECT COUNT(*) FROM booking_change
+                WHERE booking_id=? AND source_departure_id=? AND kind='SHOP' AND active_key=1
+                """, Integer.class, bookingId, departureId) > 0;
+    }
+
     /** True while a VNPay or MoMo transaction may still be paid or confirmed, including the IPN grace window. */
     public boolean paymentInFlight(int bookingId, LocalDateTime now) {
         LocalDateTime grace = now.minusMinutes(5);

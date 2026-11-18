@@ -45,20 +45,23 @@ public class BookingLifecycleService {
         if (request.getListOfCustomers() == null || request.getListOfCustomers().isEmpty())
             throw new IllegalArgumentException("Cần ít nhất một hành khách");
         String clientKey = clientKey(request.getClientKey());
+        int seats = request.getListOfCustomers().size();
+        if (seats > MAX_HELD_SEATS)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Mỗi booking tối đa " + MAX_HELD_SEATS + " hành khách");
         expiry.expireDeparture(departureId);
         try {
             return transactions.execute(tx -> createInTransaction(account, departureId, request, clientKey));
         } catch (org.springframework.dao.DuplicateKeyException duplicate) {
-            // The same request raced with itself; return the booking created by the winning call.
             if (clientKey == null) throw duplicate;
-            var existing = jdbc.queryForList("SELECT id FROM booking WHERE client_key=? AND account_id=?", clientKey, account);
-            // The key exists but belongs to another account: a client error, not a server failure.
-            if (existing.isEmpty()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Mã yêu cầu đã được dùng");
-            return response(((Number) existing.getFirst().get("id")).intValue());
+            // The winning write can be replayed only when it represents the same request.
+            return transactions.execute(tx -> {
+                var existing = replay(account, departureId, clientKey, passengers(request, LocalDate.now(clock)));
+                if (existing == null) throw duplicate;
+                return existing;
+            });
         }
     }
     private BookingResponse createInTransaction(int account, int departureId, BookingRequest request, String clientKey) {
-            LocalDateTime now = LocalDateTime.now(clock).withNano(0);
             var departures = jdbc.queryForList("SELECT * FROM tour_departure WHERE id=? FOR UPDATE", departureId);
             if (departures.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy lịch khởi hành");
             var departure = departures.getFirst();
@@ -69,23 +72,19 @@ public class BookingLifecycleService {
             var accounts = jdbc.queryForList("SELECT status FROM users WHERE id=? FOR UPDATE", account);
             if (accounts.size() != 1 || !"ACTIVE".equals(accounts.getFirst().get("status")))
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Tài khoản không hoạt động");
-            // Idempotent replay returns the original booking even after the departure closed or sold out.
+            LocalDateTime now = LocalDateTime.now(clock).withNano(0);
+            var passengers = passengers(request, now.toLocalDate());
             if (clientKey != null) {
-                var replay = jdbc.queryForList("SELECT id,account_id FROM booking WHERE client_key=?", clientKey);
-                if (!replay.isEmpty()) {
-                    if (((Number) replay.getFirst().get("account_id")).intValue() != account)
-                        throw new ResponseStatusException(HttpStatus.CONFLICT, "Mã yêu cầu đã được dùng");
-                    BookingResponse existing = response(((Number) replay.getFirst().get("id")).intValue());
-                    existing.setMessage("Yêu cầu đặt tour đã được xử lý trước đó");
-                    return existing;
-                }
+                var existing = replay(account, departureId, clientKey, passengers);
+                if (existing != null) return existing;
             }
+            if (request.getPricingDate() != null && !now.toLocalDate().equals(request.getPricingDate()))
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Đã sang ngày mới theo giờ Việt Nam. Vui lòng kiểm tra lại giá trước khi đặt.");
             if (!"OPEN".equals(departure.getOrDefault("operational_status","OPEN")))
                 throw new ResponseStatusException(HttpStatus.CONFLICT,"Chuyến đang dừng hoặc dành riêng cho khách bị dời lịch; không nhận đặt mới");
             var plan = policy.plan(now, BookingMailEvents.date(departure.get("departure_date")));
-            int seats = request.getListOfCustomers().size();
-            if (seats > MAX_HELD_SEATS)
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "Mỗi booking tối đa " + MAX_HELD_SEATS + " hành khách");
+            int seats = passengers.size();
             if (seats > ((Number)departure.get("available_seats")).intValue())
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Chuyến đi không còn đủ chỗ");
             var usage = jdbc.queryForMap("""
@@ -99,24 +98,6 @@ public class BookingLifecycleService {
             if (((Number) usage.get("seats")).intValue() + seats > MAX_HELD_SEATS)
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "Số chỗ đang giữ chưa thanh toán vượt mức " + MAX_HELD_SEATS + "; hãy hoàn tất hoặc hủy bớt");
-            List<Passenger> passengers = new ArrayList<>();
-            for (var customer : request.getListOfCustomers()) {
-                if (customer == null || customer.getFullName() == null || customer.getFullName().isBlank() || customer.getFullName().length() > 255)
-                    throw new IllegalArgumentException("Tên hành khách không hợp lệ");
-                LocalDate birth;
-                try { birth = LocalDate.parse(customer.getBirthdate()); }
-                catch (RuntimeException invalid) { throw new IllegalArgumentException("Ngày sinh không hợp lệ"); }
-                if (birth.isAfter(now.toLocalDate())) throw new IllegalArgumentException("Ngày sinh không được ở tương lai");
-                if (!"Male".equalsIgnoreCase(customer.getGender()) && !"Female".equalsIgnoreCase(customer.getGender()))
-                    throw new IllegalArgumentException("Giới tính không hợp lệ");
-                String address = customer.getAddress() == null ? null : customer.getAddress().trim();
-                if (address != null && address.length() > 255)
-                    throw new IllegalArgumentException("Địa chỉ không được vượt quá 255 ký tự");
-                int age = Period.between(birth, now.toLocalDate()).getYears();
-                String type = age < 2 ? "INFANT" : age <= 4 ? "TODDLER" : age <= 11 ? "CHILD" : "ADULT";
-                passengers.add(new Passenger(customer.getFullName().trim(), birth,
-                        "Male".equalsIgnoreCase(customer.getGender()), address, type));
-            }
             // Giá được chốt ngay khi tạo booking, không đọc lại bảng giá lúc thanh toán.
             PriceSnapshot snapshot = snapshotFor(((Number) departure.get("tour_id")).intValue(), passengers);
             var key = new GeneratedKeyHolder();
@@ -142,7 +123,68 @@ public class BookingLifecycleService {
             result.setMessage(plan.immediate() ? "Vui lòng thanh toán ngay để hoàn tất đặt tour" : "Đã giữ chỗ đến hạn thanh toán");
             return result;
     }
-    /** Optional idempotency key; a retried request with the same key returns the original booking. */
+    private BookingResponse replay(int account, int departureId, String clientKey, List<Passenger> passengers) {
+        var rows = jdbc.queryForList("""
+                SELECT b.id,b.account_id,b.tour_departure_id,b.status,r.status AS persisted_hold_status
+                FROM booking b LEFT JOIN booking_reservation r ON r.booking_id=b.id WHERE b.client_key=?
+                """, clientKey);
+        if (rows.isEmpty()) return null;
+        var row = rows.getFirst();
+        if (((Number) row.get("account_id")).intValue() != account)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Mã yêu cầu đã được dùng");
+
+        int id = ((Number) row.get("id")).intValue();
+        if (((Number) row.get("tour_departure_id")).intValue() != departureId)
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Lượt giữ chỗ trước thuộc lịch khác. Vui lòng kiểm tra đơn trước khi đặt lại.");
+        var storedHold = row.get("persisted_hold_status");
+        if (List.of("CANCELLED", "EXPIRED").contains(row.get("status"))
+                && (storedHold == null || List.of("CANCELLED", "EXPIRED").contains(storedHold))
+                && !expiry.paidEvidence(id) && !expiry.paymentInFlight(id, LocalDateTime.now(clock))) {
+            var closed = response(id);
+            closed.setRestartAllowed(true);
+            closed.setMessage("Đơn trước đã kết thúc. Bạn có thể tạo lượt giữ chỗ mới.");
+            return closed;
+        }
+        var saved = jdbc.query("""
+                SELECT full_name,birthdate,gender,address FROM customer WHERE booking_id=? ORDER BY id
+                """, (rs, index) -> new PassengerIdentity(rs.getString("full_name"),
+                rs.getObject("birthdate", LocalDate.class), rs.getBoolean("gender"), rs.getString("address")), id);
+        var submitted = passengers.stream()
+                .map(p -> new PassengerIdentity(p.fullName(), p.birthdate(), p.male(), p.address())).toList();
+        if (!saved.equals(submitted))
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Lượt giữ chỗ trước đã được xử lý với thông tin khác. Vui lòng kiểm tra đơn trước khi đặt lại.");
+        var existing = response(id);
+        existing.setMessage("Yêu cầu đặt tour đã được xử lý trước đó");
+        return existing;
+    }
+
+    private static List<Passenger> passengers(BookingRequest request, LocalDate businessDate) {
+        List<Passenger> passengers = new ArrayList<>();
+        for (var customer : request.getListOfCustomers()) {
+            if (customer == null || customer.getFullName() == null || customer.getFullName().isBlank() || customer.getFullName().length() > 255)
+                throw new IllegalArgumentException("Tên hành khách không hợp lệ");
+            LocalDate birth;
+            try { birth = LocalDate.parse(customer.getBirthdate()); }
+            catch (RuntimeException invalid) { throw new IllegalArgumentException("Ngày sinh không hợp lệ"); }
+            if (birth.isAfter(businessDate)) throw new IllegalArgumentException("Ngày sinh không được ở tương lai");
+            if (!"Male".equalsIgnoreCase(customer.getGender()) && !"Female".equalsIgnoreCase(customer.getGender()))
+                throw new IllegalArgumentException("Giới tính không hợp lệ");
+            String address = customer.getAddress() == null ? null : customer.getAddress().trim();
+            if (address != null && address.length() > 255)
+                throw new IllegalArgumentException("Địa chỉ không được vượt quá 255 ký tự");
+            int age = Period.between(birth, businessDate).getYears();
+            String type = age < 2 ? "INFANT" : age <= 4 ? "TODDLER" : age <= 11 ? "CHILD" : "ADULT";
+            passengers.add(new Passenger(customer.getFullName().trim(), birth,
+                    "Male".equalsIgnoreCase(customer.getGender()), address, type));
+        }
+        return passengers;
+    }
+
+    private record PassengerIdentity(String fullName, LocalDate birthdate, boolean male, String address) {}
+
+    /** Optional idempotency key. Only a replay of the same booking request can reuse it. */
     private static String clientKey(String value) {
         if (value == null || value.isBlank()) return null;
         try {
@@ -261,16 +303,17 @@ public class BookingLifecycleService {
         // The background worker releases due holds a little later; present the same view
         // during that window without writing to the database on a read request. Payment
         // evidence or an in-flight checkout keeps the same guard the worker applies, so a
-        // paid booking is never shown as expired before its IPN lands. The worker also skips
-        // suspended departures and inconsistent holds, so the display must not contradict it.
+        // paid booking is never shown as expired before its IPN lands. Active shop offers
+        // on suspended departures and inconsistent holds follow the worker's rules too.
         boolean consistentHold = row.get("hold_departure_id") != null
                 && row.get("hold_departure_id").equals(row.get("tour_departure_id"))
                 && row.get("hold_seats") != null && row.get("passenger_count") != null
                 && ((Number) row.get("hold_seats")).longValue() == ((Number) row.get("passenger_count")).longValue();
         boolean dueHold = deadline != null && ("HELD".equals(hold) || "CHECKOUT".equals(hold))
                 && consistentHold
-                && !"SUSPENDED".equals(String.valueOf(row.get("departure_status")))
                 && !deadline.plusSeconds(EXPIRY_DISPLAY_GRACE_SECONDS).isAfter(now)
+                && (!"SUSPENDED".equals(row.get("departure_status"))
+                        || !expiry.hasActiveShopOffer(bookingId, ((Number) row.get("tour_departure_id")).intValue()))
                 && !expiry.paidEvidence(bookingId)
                 && !expiry.paymentInFlight(bookingId, now);
         var builder = BookingResponse.builder().id(String.valueOf(row.get("id"))).accountId(String.valueOf(row.get("account_id")))

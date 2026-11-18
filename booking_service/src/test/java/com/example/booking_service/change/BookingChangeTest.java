@@ -282,4 +282,36 @@ class BookingChangeTest {
         assertEquals("EXPIRED",db.jdbc.queryForObject("SELECT status FROM booking_reservation WHERE booking_id=?",String.class,pending));
         assertEquals(10,seats(1));
     }
+
+    @Test void expiredHoldsWithoutAnOfferDoNotConsumeQuotaOnASuspendedDeparture() {
+        booking(true);
+        for (int i = 0; i < 5; i++) pendingBooking(1);
+        proposal();
+        clock.set(start.minusDays(5));
+        expiry.sweep();
+        expiry.sweep();
+        assertEquals("SUSPENDED", db.jdbc.queryForObject("SELECT operational_status FROM tour_departure WHERE id=1", String.class));
+        assertEquals(5, db.jdbc.queryForObject("SELECT COUNT(*) FROM booking WHERE status='EXPIRED'", Integer.class));
+        assertEquals(9, seats(1));
+        login(7);
+        var request = com.example.booking_service.dto.request.BookingRequest.builder().userId("7").tourDepartureId("2")
+                .listOfCustomers(List.of(com.example.booking_service.dto.request.CustomerRequest.builder()
+                        .fullName("Test guest").birthdate("2000-01-01").gender("Male").build())).build();
+        assertNotNull(lifecycle.create(request).getId());
+    }
+
+    @Test void awaitingProviderConfirmationPreservesTheHoldDuringAnIncident() {
+        int booking = pendingBooking(1);
+        proposal();
+        var deadline = start.minusDays(5);
+        db.jdbc.update("UPDATE booking_reservation SET expires_at=? WHERE booking_id=?", deadline, booking);
+        db.jdbc.update("INSERT INTO vnpay_transaction(txn_ref,booking_id,status,expires_at) VALUES('pending',?,'PENDING',?)",
+                booking, deadline);
+        clock.set(deadline.plusMinutes(3));
+        expiry.sweep();
+        assertEquals(9, seats(1));
+        clock.set(deadline.plusMinutes(6));
+        expiry.sweep();
+        assertEquals(10, seats(1));
+    }
 }
