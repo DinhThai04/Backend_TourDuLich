@@ -1,6 +1,6 @@
 # SGU Tour — Tổng quan hệ thống
 
-Đồ án J2EE hỗ trợ tìm tour, đặt chỗ, thanh toán VNPay sandbox, quản lý tour và tư vấn bằng AI. Giao diện hướng tới sử dụng trên laptop/PC. Tài liệu đối chiếu với source ngày **01/11/2026**; đặt trong repo backend, còn mã giao diện ở repo `Frontend_TourDuLich` cạnh đó.
+Đồ án J2EE hỗ trợ tìm tour, đặt chỗ, thanh toán VNPay sandbox, quản lý tour và tư vấn bằng AI. Tài liệu mô tả kiến trúc, nguồn dữ liệu và quy tắc nghiệp vụ hiện tại. Hướng dẫn khởi chạy được duy trì tại README từng repository.
 
 ## Chức năng hiện có
 
@@ -22,7 +22,7 @@ Backend gồm các ứng dụng Spring Boot độc lập, giao tiếp REST qua g
 | Frontend | React 19, TypeScript 5.8, Vite 7, Ant Design 5, Redux Toolkit, Tailwind CSS 4 |
 | Backend nghiệp vụ / gateway | Java 21, Spring Boot 3.2.5, Spring Cloud 2023.0.1, Security, JPA/JDBC, OpenFeign |
 | AI | Spring Boot 3.5.16, Spring AI 1.1.8, Groq API |
-| Database | MySQL JDBC; bản import đã kiểm chứng trên XAMPP MariaDB 10.4.32 |
+| Database | MySQL 8.4 trong Compose; JDBC cho MySQL/MariaDB theo cấu hình |
 | Tìm kiếm | Elasticsearch 8.15.0, Redis 7.2; đồng bộ snapshot từ tour service |
 | Tích hợp | VNPay sandbox, Cloudinary, SMTP, n8n; Socket.IO trong auth service |
 
@@ -71,48 +71,18 @@ Sơ đồ thể hiện các thành phần chính, không liệt kê mọi lời 
 
 Frontend gọi `http://localhost:8888/api/v1/<context>/...`; gateway bỏ hai đoạn `/api/v1`. Hai route notification:8082 và schedule:8085 đã được xóa khỏi cấu hình gateway vì không có module triển khai; không cần khởi động hai service này. n8n:5678 là container khai báo sẵn trong `docker-compose.yml` của repo backend, bật bằng `--profile mail`, không phải chatbot backend.
 
-## Chạy local từ đầu
+## Cấu hình và khởi chạy
 
-### 1. Công cụ
+Quy trình chuẩn bị và khởi chạy được duy trì tại [README backend](../README.md#khởi-chạy). Cách 1 khởi động toàn hệ thống bằng Docker Compose, gồm search, AI và n8n. Cách 2 phục vụ phát triển từng service bằng Maven/IDE và npm. Không chạy các hướng dẫn cài đặt lặp lại từ tài liệu kiến trúc.
 
-- JDK 21 và Maven 3.9.x; các module cũ có Maven wrapper, AI dùng Maven/IDE.
-- Node đáp ứng engine của Vite 7: `^20.19.0 || >=22.12.0`, cùng npm.
-- MySQL/XAMPP đang chạy; Docker Desktop nếu dùng Elasticsearch, Redis hoặc n8n qua container.
-- Mỗi service là một project Maven riêng, không có lệnh Maven aggregate ở thư mục Backend.
-
-Kiểm tra nhanh môi trường trước khi mở service (chỉ đọc, không in giá trị bí mật), chạy tại thư mục Backend_TourDuLich:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\check-env.ps1
-```
-
-Script báo phiên bản JDK/Maven/Node, MySQL 3306, Docker và cú pháp compose, các key bắt buộc (trong `.local`, `.env`, environment, hoặc `%LOCALAPPDATA%\J2eeTourMail\config.json` do `Setup-MailLocal.ps1` tạo), cùng cổng nào đang bị chiếm. Phần cuối kiểm tra cổng 80 (nginx), 9200 (Elasticsearch), 6379 (Redis) nhưng chỉ cảnh báo khi container tương ứng đang chạy, nên không báo động khi bạn chạy service bằng IDE. Dùng `-SkipDocker`, `-SkipDependencies` hoặc `-SkipSearch` khi chỉ muốn kiểm tra một phần.
-
-### 2. Database: import một lần
-
-Import **[data_seed/database_all.sql](../data_seed/database_all.sql)** vào **dbtour_v2 mới/trống**, trước khi mở service ghi dữ liệu. Không có migration riêng, không import lại mỗi lần bật XAMPP. Database đang có dữ liệu thì không import lại; xem [hướng dẫn database](../data_seed/README.md) để biết phạm vi và cách kiểm tra.
-
-File chứa 31 bảng hiện tại, 15 tour, giá/ảnh/lịch trình, 10 khách demo và các booking/chứng từ/review quá khứ–tương lai. Lịch mới phủ thứ Tư/Sáu/Chủ Nhật đến hết tháng 1 năm sau, tính theo ngày import. Lần kiểm chứng 27/10 có 715 lịch, 28 booking và 15 review. File chặn database đã có bảng; không dùng để merge vào DB đang chạy. Xem [hướng dẫn database](../data_seed/README.md).
-
-| Tài khoản demo | Mật khẩu |
-|---|---|
-| admin@example.com | admin123 |
-| user1@gmail.com … user10@gmail.com | user12345 |
-
-Các Gmail trên là định danh demo, không phải hộp thư được phép gửi thử. Khách cũ trong snapshot giữ mật khẩu cũ.
-
-### 3. Cấu hình backend
-
-Các service có DB mặc định trỏ `jdbc:mysql://localhost:3306/dbtour_v2`, username `root`; JPA `ddl-auto=none` không tự sửa schema. Các biến cấu hình được liệt kê bên dưới.
-
-Có thể đặt environment trong IDE hoặc dùng `.local/<module>.properties` đang được `spring.config.import` nạp. File local/config key không phải tài nguyên đưa lên repo.
+Các service có datasource dùng schema `dbtour_v2`, giữ `ddl-auto=none`. SQL tổng chỉ dùng để dựng database mới/trống; xem [Database](../data_seed/README.md). File `.local/*.properties` và `.env` là cấu hình runtime được Git bỏ qua. Chỉ các file mẫu không có secret được đưa lên repository. Credential từng xuất hiện trong lịch sử Git cần được thay hoặc thu hồi dù bản source hiện tại đã xóa giá trị.
 
 | Biến / property | Module cần | Ý nghĩa |
 |---|---|---|
 | `DB_PASSWORD` | Bảy service có datasource | Mật khẩu DB local, có thể rỗng nếu DB local của bạn thực sự không đặt mật khẩu |
 | `JWT_SIGNER_KEY` | Auth và các service nghiệp vụ xác minh JWT | Cùng khóa HS512, tối thiểu 64 byte UTF-8, giữ cục bộ |
 | `GOOGLE_CLIENT_ID` | Auth | Audience của Google ID token; mặc định là client demo, override khi dùng OAuth client khác |
-| `DB_URL` | Bảy service có datasource | URL JDBC, mặc định `jdbc:mysql://localhost:3306/dbtour_v2`; compose trỏ `host.docker.internal` |
+| `DB_URL` | Bảy service có datasource | URL JDBC, mặc định `jdbc:mysql://localhost:3306/dbtour_v2`; Compose dùng `mysql:3306` và user `sgu_tour`; xem [Docker](DOCKER.md) |
 | `DB_POOL_MAX`, `DB_POOL_MIN` | Bảy service có datasource | Kích thước Hikari pool (mặc định 10/2). Bảy service dùng chung một MySQL nên tổng pool phải thấp hơn `max_connections` (151) |
 | `DB_POOL_TIMEOUT_MS` | Bảy service có datasource | Thời gian chờ kết nối trước khi báo lỗi (mặc định 10000 ms) |
 | `JAVA_XMX` | Container backend | Nới heap cho mọi container Docker khi máy nhiều RAM (ví dụ `512m`–`1g`); để trống dùng mặc định trong Dockerfile |
@@ -136,126 +106,28 @@ Có thể đặt environment trong IDE hoặc dùng `.local/<module>.properties`
 | `MAIL_*` | Booking; internal key còn cần gateway | SMTP, test mode và API n8n; xem README mail |
 | `GROQ_API_KEY`, `AI_*` | AI | Provider và tùy chọn AI; xem README ai_service |
 
-Nơi dùng chung thuận tiện là `.local/` ở thư mục Backend:
 
-```text
-.local/
-├── auth_service.properties
-├── booking_service.properties
-├── payment_service.properties
-├── pricing_service.properties
-├── tour_service.properties
-├── file_service.properties
-├── invoice_service.properties
-└── search_service.properties
-```
+## Luồng dữ liệu chính
 
-Ví dụ cấu trúc file local, cần thay placeholder cục bộ trước khi dùng, không ghi đè file đang có:
+| Luồng | Nguồn dữ liệu và kết quả |
+|---|---|
+| Khám phá tour | Tour, giá, địa điểm, lịch trình và lịch khởi hành trong MySQL; search dùng snapshot Elasticsearch và cache Redis |
+| Đặt tour | Kiểm tra lịch/chỗ/hành khách → khóa dữ liệu → booking, reservation và snapshot giá; idempotency bảo vệ yêu cầu gửi lại |
+| Thanh toán | Quote đơn chính chủ → giao dịch nhà cung cấp → kiểm tra chữ ký/số tiền/trạng thái → payment, invoice hoặc đối soát |
+| Dời lịch | Kiểm tra đơn đã thanh toán, thời hạn, giá và chỗ đích → lịch sử yêu cầu/phản hồi → cập nhật chỗ và chứng từ |
+| Ảnh | Quyền và kiểm tra nội dung → Cloudinary → metadata MySQL; dọn tài nguyên phải bảo toàn khả năng thử lại khi lỗi |
+| AI | Kế hoạch có kiểu → API đọc tour/chính sách; booking-help dùng JWT chính chủ, không đưa đơn riêng tư vào model phân quyền |
+| Email | Transaction nghiệp vụ ghi outbox → worker kiểm tra điều kiện → SMTP; n8n chỉ lập lượt nhắc qua API nội bộ |
 
-```properties
-DB_PASSWORD=<mat-khau-mysql-local>
-JWT_SIGNER_KEY=<cung-mot-khoa-ngau-nhien-toi-thieu-64-byte-cho-cac-service>
-# Chỉ thêm nếu cần đổi mặc định:
-# spring.datasource.url=jdbc:mysql://127.0.0.1:3306/dbtour_v2
-# spring.datasource.username=root
-```
+Nút hỏi nhanh trên trang tour gửi `selectedTourId` riêng để backend đọc lại đúng tour; ID không được hiểu là số thứ tự kết quả tìm kiếm. Phiên AI lưu RAM có TTL và mất khi service khởi động lại. Frontend chỉ lưu phiên khách trong sessionStorage; hội thoại đăng nhập giữ trong RAM phía trình duyệt.
 
-Riêng `.local/payment_service.properties` cần thêm hai khóa VNPay bắt buộc và credential MoMo nếu muốn bật MoMo:
+MySQL, chứng từ và lịch sử nghiệp vụ cần được bảo toàn. Chỉ mục/cache có thể dựng lại. Ghi nhận hoàn tiền không tự chuyển khoản ngân hàng; trạng thái SMTP không rõ ràng cần đối chiếu thay vì tự gửi lại vô hạn.
 
-```properties
-VNPAY_HASH_SECRET=<secret-sandbox-vnpay>
-VNPAY_TMN_CODE=<tmn-code-sandbox-vnpay>
-# Tuỳ chọn, chỉ cần khi bật thanh toán MoMo:
-# MOMO_PARTNER_CODE=<partner-code>
-# MOMO_ACCESS_KEY=<access-key>
-# MOMO_SECRET_KEY=<secret-key>
-```
+## Kiểm thử và vận hành
 
-File service thêm Cloudinary credential. Gateway không tự import các file `.local/<module>.properties`: truyền `MAIL_INTERNAL_API_KEY` vào môi trường gateway khi bật workflow; chỉ AI có bộ nạp riêng `GROQ_API_KEY` từ `.env`.
+Lệnh kiểm thử, script PowerShell và điều kiện kích hoạt integration test nằm ở [README backend — Kiểm thử](../README.md#kiểm-thử). Unit test, H2 và mock xác minh các quy tắc đã mô hình hóa; hành vi phụ thuộc MySQL, Elasticsearch/Redis hoặc nhà cung cấp cần được kiểm tra trên môi trường tương ứng.
 
-VNPay cần secret tương ứng merchant sandbox; upload mới cần Cloudinary credential; SMTP/Groq chỉ bật theo cấu hình riêng. Backend payment có sẵn MoMo AIO v2 (tạo thanh toán, return, IPN) nhưng là tính năng tuỳ chọn: thiếu `MOMO_*` thì checkout MoMo báo "chưa cấu hình" và service vẫn khởi động. Frontend hiện chỉ nối luồng VNPay, nên demo chính không cần MoMo. Không thay nội dung `.env`/`.local` đã có chỉ để chạy lại ứng dụng.
-
-### 4. Hạ tầng và service
-
-Chạy Elasticsearch/Redis tại `search_service`:
-
-```powershell
-docker compose up -d elasticsearch redis
-```
-
-Search tự thử đồng bộ danh mục từ tour service khi khởi động và định kỳ khoảng 60 giây; gọi `POST /search/tours/sync` (cần quyền `SEARCH_SYNC`) để ép đồng bộ ngay. Khi gọi catalog ngoài loopback (chẳng hạn Docker), đặt cùng khóa `CATALOG_INTERNAL_KEY` cho tour/auth và `SEARCH_SOURCE_KEY` cho search; để trống chỉ chấp nhận lời gọi loopback.
-
-Chạy từng module trong IDE hoặc từng terminal, ví dụ tại `auth_service`:
-
-```powershell
-mvn spring-boot:run
-```
-
-Thứ tự thuận tiện: MySQL → Elasticsearch/Redis → auth, pricing, file, tour → booking, invoice, payment → search, AI → gateway → frontend. Đây là thứ tự giúp giảm lỗi phụ thuộc khi mở lần đầu, không phải hệ thống tự điều phối service.
-
-Hoặc chạy toàn bộ bằng Docker tại thư mục Backend_TourDuLich (MySQL vẫn chạy ngoài Docker):
-
-```powershell
-docker compose up -d --build
-# Kèm tìm kiếm / AI:
-docker compose --profile search --profile ai up -d --build
-```
-
-Compose dựng frontend Nginx (cổng 80), gateway (8888), 7 service nghiệp vụ (search, AI và n8n chạy qua profile) và healthcheck từng container; bí mật đọc từ `.local/*.properties`, DB nối qua `host.docker.internal`. Ở profile mặc định chỉ publish gateway (8888), Socket.IO (8099) và frontend (80), tất cả gắn `127.0.0.1`; riêng 8099 buộc loopback vì cổng này bỏ qua gateway, còn nginx vẫn gọi `auth_service:8099` trong mạng compose. Profile `search` mở thêm Elasticsearch (9200) và Redis (6379); profile `mail` mở n8n (5678), cũng chỉ loopback.
-
-Giới hạn heap container có thể cấu hình bằng `JAVA_XMX`; để trống dùng mặc định trong Dockerfile. Mỗi module có `.dockerignore` loại `target/`, `.git/`, log, IDE và `.env*` khỏi build context.
-
-AI chạy như Spring Boot bình thường. Copy `.env.example` thành `.env` **nếu chưa có**, điền Groq key cục bộ trong module AI; không cần PS1 hay model local. Container AI chỉ là tuỳ chọn qua profile `ai`, khi đó phải đặt cả `GROQ_API_KEY` và `AI_ENABLED=true` trong environment (compose mặc định `AI_ENABLED=false`). Xem [README AI service](../ai_service/README.md).
-
-### 5. Frontend
-
-Tại `Frontend_TourDuLich`:
-
-```powershell
-npm ci
-# Chỉ copy khi chưa có .env, sau đó chỉnh file cục bộ:
-if (-not (Test-Path -LiteralPath .env)) { Copy-Item .env.example .env }
-npm run dev
-```
-
-Điền `VITE_API_URL=/api/v1` (Vite proxy `/api` sang gateway cổng 8888), `VITE_PAGE_SIZE=10`; tùy chọn `VITE_SOCKET_URL=http://localhost:8099` cho dev và Google Client ID; production để trống `VITE_SOCKET_URL` để dùng origin hiện tại. Frontend mặc định tại `http://localhost:5173`; cần giữ cổng này đúng callback VNPay đang cấu hình. Xem [README frontend](../../Frontend_TourDuLich/README.md).
-
-### 6. Email và n8n
-
-Theo [hướng dẫn mail hiện tại](mail/README.md). Spring gửi thư từ booking service; n8n chỉ lập lượt nhắc qua HTTP và key nội bộ. SQL tổng đã có các bảng cần thiết, không thêm SQL mail. Giữ test mode với hộp thư do bạn kiểm soát khi demo. Chạy n8n trong mạng compose bằng `docker compose --profile mail up -d n8n` (editor tại `http://127.0.0.1:5678`); workflow mẫu gọi `http://api_gateway:8888`, không dùng `localhost`/`host.docker.internal`.
-
-## Kiểm tra và demo
-
-Frontend:
-
-```powershell
-npm run lint
-npm run build
-npm test
-```
-
-Backend, tại module cần kiểm tra:
-
-```powershell
-mvn '-Dtest=*Test' test
-```
-
-Đây là nhóm test có tên kết thúc `Test`, không đồng nghĩa đã chạy mọi bài `*Tests`/integration/SMTP thật. Các test cần DB/provider riêng có điều kiện kích hoạt; xem nguồn test và README từng phần. Lượt cập nhật README không tự chạy giao dịch, gửi mail hay gọi Groq thật.
-
-Luồng demo gợi ý: khách tìm tour → đặt/chọn hành khách → xem đúng tổng tiền → thanh toán VNPay sandbox → xem hóa đơn/lịch sử → gửi yêu cầu dời lịch hợp lệ; admin quản lý lịch/chỗ, ảnh, tài khoản và đối soát theo quyền. Với AI, thử tìm miền Trung/ngân sách rồi giảm ngân sách ở lượt sau, xem chính sách và hỏi hạn booking của tài khoản đang đăng nhập.
-
-## Giới hạn và vận hành
-
-- VNPay là luồng thanh toán duy nhất được nối ra UI và kiểm thử end-to-end. Backend có endpoint MoMo AIO v2 và bảng `momo_transaction`, nhưng cần credential test và chưa có màn hình thanh toán MoMo, nên đừng demo MoMo như luồng hoàn chỉnh.
-- n8n, backend, DB và worker phải đang chạy để tác vụ thực hiện. Khi máy tắt không có gửi mail tự động; bật lại xử lý mốc/hạn còn phù hợp, không tự gia hạn booking.
-- Workflow nhắc mail phân trang theo cursor tới `maxPages` (batch 50); một booking lỗi không làm dừng cả lượt quét mà được đếm trong `failed` và trả code 1500. Chỉ lỗi hạ tầng mới trả 5xx để n8n retry. Import `docs/mail/n8n-error-handler.workflow.json` và gắn vào **Settings → Error Workflow** để nhận cảnh báo lỗi.
-- Workflow mẫu mặc định `dryRun: true` và **chưa active**: tính năng nhắc tự động thực tế đang tắt cho tới khi đổi `dryRun` thành false và Publish workflow. Đây là chủ ý an toàn, không phải lỗi cấu hình.
-- Đăng nhập bị giới hạn theo IP tại gateway (mặc định 20 lần/phút, trả 429 + `Retry-After`). Đây là chống dò mật khẩu cơ bản trong bộ nhớ một tiến trình, không thay thế WAF/IdP hay rate-limit phân tán khi chạy nhiều instance gateway.
-- Hội thoại AI lưu RAM, TTL mặc định 30 phút; restart service mất phiên. Có validation và giới hạn gọi, không có quyền chạy SQL/code hay thực hiện đặt tour/thanh toán.
-- Chưa có dashboard quản lý mail trong admin; theo dõi outbox/log và n8n Executions. SENT nghĩa SMTP chấp nhận, không chứng minh đã vào inbox/được đọc.
-- Frontend có `npm test` (Node test runner) và workflow `../../Frontend_TourDuLich/.github/workflows/frontend-ci.yml`: `npm ci` → lint → build → test trên mỗi push/PR. Backend có workflow `../.github/workflows/backend-ci.yml` ở gốc repo backend: test ma trận 10 module, kiểm tra cú pháp `docker-compose.yml` và import `data_seed/database_all.sql` trên MariaDB 10.4 + MySQL 8.0 vào DB trống. File seed là bản tổng duy nhất, không còn migration riêng; job database kiểm tra schema/dữ liệu nền sau import.
-- Cả 10 module backend và frontend đều có Dockerfile; `docker-compose.yml` ở gốc repo backend chạy được toàn bộ hệ thống với MySQL trên host (cần checkout repo frontend cạnh nó). Các callback VNPay, CORS và domain Cloudinary vẫn cần chỉnh theo tên miền thật khi deploy (dùng `PUBLIC_BASE_URL`); compose không thay thế cấu hình production.
-- `.local/recovery` và `.local/backups` là dữ liệu cứu/sao lưu MySQL, không cần để runtime chạy. SQL trong `src/test/resources` chỉ dùng cho kiểm thử.
+CI backend kiểm tra các module, Compose và SQL tổng; frontend có workflow riêng. Khởi chạy local không thay thế cấu hình callback, origin, TLS và credential khi triển khai trên môi trường khác.
 
 ## Quy ước dữ liệu backend
 
@@ -276,5 +148,5 @@ Luồng demo gợi ý: khách tìm tour → đặt/chọn hành khách → xem �
 ## Tài liệu
 
 - [Backend](../README.md) · [Frontend](../../Frontend_TourDuLich/README.md) · [Database](../data_seed/README.md).
-- [AI](ai/README.md) · [Email/n8n](mail/README.md).
+- [AI](../ai_service/README.md) · [Email/n8n](mail/README.md).
 - [Nguồn dữ liệu tour](DATA_SOURCES.md).
