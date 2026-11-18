@@ -42,7 +42,8 @@ class RandomToursExclusionTest {
             tourImageCache,
             tourDepartureService,
             mock(TransactionTemplate.class),
-            mock(org.springframework.jdbc.core.JdbcTemplate.class));
+            mock(org.springframework.jdbc.core.JdbcTemplate.class),
+            mock(TourGalleryProof.class));
 
     @Test
     void excludingCurrentTourStillReturnsThreeOtherTours() {

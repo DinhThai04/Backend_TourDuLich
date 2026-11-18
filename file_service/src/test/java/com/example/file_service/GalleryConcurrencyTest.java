@@ -26,23 +26,50 @@ import static org.mockito.Mockito.*;
 @Import({FileService.class,FileMgmtMapperImpl.class})
 @Transactional(propagation=Propagation.NOT_SUPPORTED)
 class GalleryConcurrencyTest {
+    @MockBean com.example.file_service.service.AvatarWritePolicy avatarAccess;
     @Autowired FileService service;
     @Autowired FileMgmtRepository records;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
     @MockBean FileRepository storage;
+
+    @org.junit.jupiter.api.BeforeEach void existingTour() {
+        jdbc.execute("CREATE TABLE IF NOT EXISTS tour (id INT PRIMARY KEY)");
+        jdbc.update("MERGE INTO tour (id) KEY(id) VALUES (1)");
+    }
     @Test void twoConcurrentUploadsCannotExceedTenImages() throws Exception {
         for(int i=0;i<8;i++)records.save(FileMgmt.builder().tourId("1").ownerId("").url("old"+i).build());
         var entered=new CountDownLatch(1);var release=new CountDownLatch(1);var secondStarted=new CountDownLatch(1);var calls=new AtomicInteger();
-        when(storage.store(any())).thenAnswer(call->{int number=calls.incrementAndGet();if(number==1){entered.countDown();assertTrue(release.await(15,TimeUnit.SECONDS));}return FileInfo.builder().url("new"+number).path("public"+number).build();});
+        when(storage.store(any())).thenAnswer(call->{int number=calls.incrementAndGet();if(number==1){entered.countDown();assertTrue(release.await(15,TimeUnit.SECONDS));}if(number==2)secondStarted.countDown();return FileInfo.builder().url("new"+number).path("public"+number).build();});
         var pool=Executors.newFixedThreadPool(2);
         try {
             var first=pool.submit(()->attempt(List.of(png(1),png(2))));assertTrue(entered.await(15,TimeUnit.SECONDS));
-            var second=pool.submit(()->{secondStarted.countDown();return attempt(List.of(png(3),png(4)));});
+            var second=pool.submit(()->attempt(List.of(png(3),png(4))));
             assertTrue(secondStarted.await(5,TimeUnit.SECONDS));release.countDown();
             // Both requests upload outside the lock; only one may link its images, the loser cleans up.
             assertTrue(first.get(20,TimeUnit.SECONDS)^second.get(20,TimeUnit.SECONDS));
             assertEquals(10,records.findByTourId("1").size());assertEquals(4,calls.get());
             verify(storage,times(2)).delete(any());
         }finally{release.countDown();pool.shutdownNow();}
+    }
+    @Test void uploadCannotLinkAnImageAfterItsTourHasBeenDeleted() throws Exception {
+        var entered = new CountDownLatch(1);
+        var released = new CountDownLatch(1);
+        when(storage.store(any())).thenAnswer(call -> {
+            entered.countDown();
+            assertTrue(released.await(10, TimeUnit.SECONDS));
+            return FileInfo.builder().url("deleted-tour.jpg").path("fixture-deleted").build();
+        });
+        try (var pool = Executors.newSingleThreadExecutor()) {
+            var upload = pool.submit(() -> assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                    () -> service.uploadImageTour("1", List.of(png(9)))));
+            try {
+                assertTrue(entered.await(10, TimeUnit.SECONDS));
+                jdbc.update("DELETE FROM tour WHERE id=1");
+            } finally { released.countDown(); }
+            assertEquals(404, upload.get(20, TimeUnit.SECONDS).getStatusCode().value());
+            assertTrue(records.findByTourId("1").stream().noneMatch(image -> "deleted-tour.jpg".equals(image.getUrl())));
+            verify(storage).delete(argThat(image -> "fixture-deleted".equals(image.getPath())));
+        }
     }
     private boolean attempt(List<org.springframework.web.multipart.MultipartFile> files) throws Exception {
         try{service.editTourImages("1",List.of(),files);return true;}

@@ -23,6 +23,7 @@ import lombok.experimental.FieldDefaults;
 @RequiredArgsConstructor
 @FieldDefaults(level = AccessLevel.PRIVATE, makeFinal = true)
 public class FileController {
+    private final com.example.file_service.config.TourGalleryAuthorization galleryAuthorization;
     FileService fileService;
     com.fasterxml.jackson.databind.ObjectMapper objectMapper;
     com.example.file_service.config.DownloadThrottle downloadThrottle;
@@ -40,16 +41,20 @@ public class FileController {
         return ResponseEntity.noContent().build();
     }
 
-    @PreAuthorize("hasAnyAuthority('SGU_SUPER_ADMIN', 'PERM:TOURS_UPDATE', 'PERM:TOURS_DELETE')")
+    @PreAuthorize("hasAnyAuthority('SGU_SUPER_ADMIN', 'PERM:TOURS_UPDATE')")
     @PostMapping(value = "/media/tour/{tourId}/edit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<List<TourFileResponse>> editTourImages(@PathVariable String tourId,
             @RequestPart("changes") String changes,
             @RequestPart(value = "files", required = false) List<MultipartFile> files) throws IOException {
+        return ResponseEntity.ok(fileService.editTourImages(tourId, removedImages(changes), files));
+    }
+
+    private List<String> removedImages(String changes) {
         if (changes.length() > 110000) throw new IllegalArgumentException("Danh sách ảnh quá dài");
         String[] removed;
         try { removed = objectMapper.readValue(changes, String[].class); }
         catch (com.fasterxml.jackson.core.JsonProcessingException invalid) { throw new IllegalArgumentException("Danh sách ảnh không hợp lệ"); }
-        return ResponseEntity.ok(fileService.editTourImages(tourId, removed == null ? List.of() : java.util.Arrays.asList(removed), files));
+        return removed == null ? List.of() : java.util.Arrays.asList(removed);
     }
 
     @PreAuthorize("hasAnyAuthority('SGU_SUPER_ADMIN', 'PERM:LOCATIONS_CREATE', 'PERM:LOCATIONS_UPDATE')")
@@ -94,11 +99,20 @@ public class FileController {
         return ResponseEntity.ok(fileService.getTourMedia(tourIds));
     }
 
-    @PreAuthorize("hasAnyAuthority('SGU_SUPER_ADMIN', 'PERM:TOURS_CREATE', 'PERM:TOURS_UPDATE')")
+    @PreAuthorize("hasAnyAuthority('SGU_SUPER_ADMIN', 'PERM:TOURS_UPDATE')")
     @PostMapping("/media/uploadTour/{tourId}")
     public ResponseEntity<List<FileResponse>> uploadMultipleFiles(
             @PathVariable("tourId") String tourId,
             @RequestPart("files") List<MultipartFile> files) throws IOException {
+        return ResponseEntity.ok(fileService.uploadImageTour(tourId, files));
+    }
+
+    @PreAuthorize("hasAnyAuthority('SGU_SUPER_ADMIN', 'PERM:TOURS_CREATE')")
+    @PostMapping(value = "/media/tour/{tourId}/initial", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ResponseEntity<List<FileResponse>> uploadInitialTourImages(@PathVariable String tourId,
+            @RequestHeader(value = "X-Tour-Gallery-Proof", required = false) String proof,
+            @RequestPart("files") List<MultipartFile> files) throws IOException {
+        galleryAuthorization.require("initial", tourId, proof);
         return ResponseEntity.ok(fileService.uploadImageTour(tourId, files));
     }
 

@@ -25,6 +25,10 @@ public interface FileClient {
         @RequestPart("files") List<MultipartFile> files
     );
 
+    @PostMapping(value = "/file/media/tour/{tourId}/initial", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    List<FileResponse> uploadInitialTourImages(@PathVariable("tourId") String tourId,
+            @RequestHeader("X-Tour-Gallery-Proof") String proof, @RequestPart("files") List<MultipartFile> files);
+
     @PostMapping(value = "/file/media/upload/location", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     FileResponse uploadLocationImg(
             @RequestParam(value = "locationId", required = false) Integer locationId,

@@ -16,7 +16,12 @@ class GalleryEditTest {
     private final FileRepository storage=mock(FileRepository.class);
     private final FileMgmtRepository records=mock(FileMgmtRepository.class);
     private final FileMgmtMapper mapper=mock(FileMgmtMapper.class);
-    private final FileService service=new FileService(storage,records,mapper,mock(org.springframework.jdbc.core.JdbcTemplate.class),new TestTransactionTemplate(org.springframework.transaction.support.TransactionSynchronization.STATUS_COMMITTED));
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc = mock(org.springframework.jdbc.core.JdbcTemplate.class);
+    private final FileService service=new FileService(storage,records,mapper,jdbc,new TestTransactionTemplate(org.springframework.transaction.support.TransactionSynchronization.STATUS_COMMITTED),mock(com.example.file_service.service.AvatarWritePolicy.class));
+
+    @org.junit.jupiter.api.BeforeEach void existingTour() {
+        when(jdbc.queryForList(startsWith("SELECT id FROM tour"), eq(1))).thenReturn(List.of(Map.of("id", 1)));
+    }
     @Test void removalsAreTourScopedAndDoNotDeleteCloudinaryAssets() throws Exception {
         var old=new FileMgmt();old.setTourId("1");old.setUrl("shared.jpg");
         when(records.findByTourIdAndUrlIn("1",List.of("shared.jpg"))).thenReturn(List.of(old));

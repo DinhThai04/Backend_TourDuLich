@@ -20,7 +20,11 @@ class ImageLifecycleTest {
     final FileRepository storage=mock(FileRepository.class);
     final FileMgmtRepository records=mock(FileMgmtRepository.class);
     final FileMgmtMapper mapper=mock(FileMgmtMapper.class);
-    final FileService service=new FileService(storage,records,mapper,mock(org.springframework.jdbc.core.JdbcTemplate.class),new TestTransactionTemplate(org.springframework.transaction.support.TransactionSynchronization.STATUS_COMMITTED));
+    final org.springframework.jdbc.core.JdbcTemplate jdbc = mock(org.springframework.jdbc.core.JdbcTemplate.class);
+    final FileService service=new FileService(storage,records,mapper,jdbc,new TestTransactionTemplate(org.springframework.transaction.support.TransactionSynchronization.STATUS_COMMITTED),mock(com.example.file_service.service.AvatarWritePolicy.class));
+    @org.junit.jupiter.api.BeforeEach void existingTour() {
+        when(jdbc.queryForList(startsWith("SELECT id FROM tour"), eq(1))).thenReturn(List.of(Map.of("id", 1)));
+    }
     MockMultipartFile png(byte last) {
         try {
             var image = new java.awt.image.BufferedImage(1,1,java.awt.image.BufferedImage.TYPE_INT_RGB);
@@ -75,9 +79,13 @@ class ImageLifecycleTest {
         assertThrows(IllegalArgumentException.class,()->service.permanentlyDeleteDetachedImage("asset"));verify(storage,never()).delete(any());
         when(records.lockAssetReferences(image.getPath(),image.getUrl())).thenReturn(List.of(image));
         doThrow(new IllegalStateException("Cloudinary unavailable")).when(storage).delete(image);
-        // The database delete is committed first; a Cloudinary failure is logged, not rolled back.
-        assertDoesNotThrow(()->service.permanentlyDeleteDetachedImage("asset"));
-        verify(records).deleteAll(List.of(image));verify(storage).delete(image);
+        // A provider failure must leave metadata discoverable for a later retry.
+        var failure=assertThrows(org.springframework.web.server.ResponseStatusException.class,()->service.permanentlyDeleteDetachedImage("asset"));
+        assertEquals(503,failure.getStatusCode().value());
+        verify(records,never()).deleteAll(any());verify(storage).delete(image);
+        doNothing().when(storage).delete(image);
+        service.permanentlyDeleteDetachedImage("asset");
+        verify(records).deleteAll(List.of(image));
     }
     @Test void destroyUsesStoredPublicIdAndValidatesCloudinaryResult() throws Exception {
         var cloud=spy(new Cloudinary(ObjectUtils.asMap("cloud_name","demo","api_key","test","api_secret","test")));
@@ -130,7 +138,7 @@ class ImageLifecycleTest {
     }
     @Test void aConcurrentLocationEditIsAConflictAndCleansTheFreshUpload() throws Exception {
         var rolledBack=new FileService(storage,records,mapper,mock(org.springframework.jdbc.core.JdbcTemplate.class),
-            new TestTransactionTemplate(org.springframework.transaction.support.TransactionSynchronization.STATUS_ROLLED_BACK));
+            new TestTransactionTemplate(org.springframework.transaction.support.TransactionSynchronization.STATUS_ROLLED_BACK),mock(com.example.file_service.service.AvatarWritePolicy.class));
         when(storage.store(any())).thenReturn(FileInfo.builder().url("new").path("new").build());
         when(mapper.toFileMgmt(any())).thenReturn(new FileMgmt());
         doThrow(new org.springframework.dao.DataIntegrityViolationException("ux_file_location")).when(records).saveAndFlush(any());

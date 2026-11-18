@@ -15,6 +15,36 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 
 class FileGalleryFeignTest {
+    @Test void initialGalleryForwardsTheProofAndExpectedMultipartPart() throws Exception {
+        var path = new AtomicReference<String>();
+        var proof = new AtomicReference<String>();
+        var body = new AtomicReference<String>();
+        var server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/file/media/tour/7", exchange -> {
+            path.set(exchange.getRequestURI().getPath());
+            proof.set(exchange.getRequestHeaders().getFirst("X-Tour-Gallery-Proof"));
+            body.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));
+            byte[] response = "[]".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length);
+            try (var output = exchange.getResponseBody()) { output.write(response); }
+        });
+        server.start();
+        try {
+            var json = new ObjectMapper();
+            var client = Feign.builder().contract(new SpringMvcContract()).encoder(new SpringFormEncoder())
+                    .decoder((response, type) -> json.readValue(response.body().asInputStream(), json.constructType(type)))
+                    .target(FileClient.class, "http://127.0.0.1:" + server.getAddress().getPort());
+            var file = new MockMultipartFile("files", "new.png", "image/png", new byte[]{1});
+            client.uploadInitialTourImages("7", "initial-proof", List.of(file));
+            assertEquals("/file/media/tour/7/initial", path.get());
+            assertEquals("initial-proof", proof.get());
+            assertTrue(body.get().contains("filename=\"new.png\""));
+        } finally {
+            server.stop(0);
+        }
+    }
+
     @Test void multipartGalleryChangesReachFileServiceWithAndWithoutNewUploads() throws Exception {
         var body=new AtomicReference<String>();var contentType=new AtomicReference<String>();
         var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);

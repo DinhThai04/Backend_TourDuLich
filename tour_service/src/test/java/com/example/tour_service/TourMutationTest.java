@@ -33,18 +33,21 @@ class TourMutationTest {
     private UpdateTourRequest request;
     @BeforeEach void setup() {
         imageCache=new TourImageCache(files,tours,new ObjectMapper(),tempDir.resolve("tour-images.json").toString());
+        var galleryProof = mock(TourGalleryProof.class);
+        lenient().when(galleryProof.issue("initial", 1)).thenReturn("service-proof");
         service=new TourService(tours,itineraries,locations,vehicles,prices,files,imageCache,departures,
-                new TransactionTemplate(mock(PlatformTransactionManager.class)),mock(org.springframework.jdbc.core.JdbcTemplate.class));
-        var location=Location.builder().id(1).city("City").build(); var vehicle=Vehicle.builder().id("BUS").vehicleType("Bus").build();
+                new TransactionTemplate(mock(PlatformTransactionManager.class)),mock(org.springframework.jdbc.core.JdbcTemplate.class), galleryProof);
+        var location=Location.builder().id(1).city("City").type(com.example.tour_service.enums.LocationType.DEPARTURE).build(); var vehicle=Vehicle.builder().id("BUS").vehicleType("Bus").build();
         var tour=Tour.builder().id(1).basePrice(new BigDecimal("3000000")).tourPriceId(1L).departureLocation(location).destinationLocation(location).vehicle(vehicle).build();
         when(tours.findAllIds()).thenReturn(List.of(1));
         when(tours.findById(1)).thenReturn(Optional.of(tour));when(tours.existsById(1)).thenReturn(true);
         when(tours.lockForItinerary(1)).thenReturn(Optional.of(tour));
         when(tours.save(any())).thenAnswer(call->call.getArgument(0));
-        when(locations.findById(1)).thenReturn(Optional.of(location));when(vehicles.findById("BUS")).thenReturn(Optional.of(vehicle));
+        when(locations.findById(1)).thenReturn(Optional.of(location));
+        when(locations.findById(2)).thenReturn(Optional.of(Location.builder().id(2).city("Destination").type(com.example.tour_service.enums.LocationType.DESTINATION).build()));when(vehicles.findById("BUS")).thenReturn(Optional.of(vehicle));
         when(prices.getPriceById(1L)).thenReturn(ApiResponse.<TourPriceResponse>builder().result(TourPriceResponse.builder().id(1L).adultPrice(new BigDecimal("6000000")).build()).build());
         when(departures.getTourDepartureByTourId(1)).thenReturn(List.of());
-        request=UpdateTourRequest.builder().tourProgram("UPDATED").departureLocationId(1).destinationLocationId(1).vehicleId("BUS").tourPriceId(1L).basePrice(BigDecimal.ONE).build();
+        request=UpdateTourRequest.builder().tourProgram("UPDATED").departureLocationId(1).destinationLocationId(2).vehicleId("BUS").tourPriceId(1L).basePrice(BigDecimal.ONE).build();
     }
     @Test void responseAndCompatibilitySnapshotUseAdultFareAndPreserveExistingGallery() {
         when(files.getTourMedia(anyList())).thenReturn(List.of(new TourFileResponse("1","old.jpg")));
@@ -61,11 +64,11 @@ class TourMutationTest {
     }
     @Test void creatingTourReturnsUploadedGalleryOrPendingTourIdForSafeRetry() {
         var file=new MockMultipartFile("files","new.png","image/png",validPng());
-        var create=TourRequest.builder().tourProgram("TEST").tourTitle("Tour").description("Test").duration(1).departureLocationId(1).destinationLocationId(1).vehicleId("BUS").tourPriceId(1L).files(List.of(file)).build();
+        var create=TourRequest.builder().tourProgram("TEST").tourTitle("Tour").description("Test").duration(1).departureLocationId(1).destinationLocationId(2).vehicleId("BUS").tourPriceId(1L).files(List.of(file)).build();
         when(tours.save(any())).thenAnswer(call->{Tour tour=call.getArgument(0);tour.setId(1);return tour;});
-        doReturn(List.of(new FileResponse("x.png","new.jpg"))).when(files).uploadMultipleFiles("1",List.of(file));
+        doReturn(List.of(new FileResponse("x.png","new.jpg"))).when(files).uploadInitialTourImages("1","service-proof",List.of(file));
         var complete=service.createTour(create);assertEquals("COMPLETE",complete.getImageUploadStatus());assertEquals(List.of("new.jpg"),complete.getImageIds());
-        when(files.uploadMultipleFiles("1",List.of(file))).thenThrow(new IllegalStateException("fixture"));
+        when(files.uploadInitialTourImages("1","service-proof",List.of(file))).thenThrow(new IllegalStateException("fixture"));
         var pending=service.createTour(create);assertEquals("PENDING",pending.getImageUploadStatus());assertEquals(1,pending.getId());
         clearInvocations(tours);
         doReturn(List.of(new FileResponse("x.png","new.jpg"))).when(files).uploadMultipleFiles("1",List.of(file));
@@ -93,5 +96,13 @@ class TourMutationTest {
             javax.imageio.ImageIO.write(new java.awt.image.BufferedImage(1,1,java.awt.image.BufferedImage.TYPE_INT_RGB),"png",out);
             return out.toByteArray();
         } catch(java.io.IOException exception) { throw new AssertionError(exception); }
+    }
+
+    @Test void wrongLocationTypesCannotCreateOrUpdateTourOrUploadImages() {
+        var create=TourRequest.builder().departureLocationId(2).destinationLocationId(1).build();
+        assertThrows(IllegalArgumentException.class,()->service.createTour(create));
+        request.setDepartureLocationId(2);request.setDestinationLocationId(1);
+        assertThrows(IllegalArgumentException.class,()->service.updateTour(1,request));
+        verify(tours,never()).save(any());verifyNoInteractions(files);
     }
 }

@@ -64,7 +64,7 @@ public class TourController {
                 .build();
     }
 
-    @org.springframework.security.access.prepost.PreAuthorize("hasAnyAuthority('SGU_SUPER_ADMIN', 'PERM:TOURS_CREATE', 'PERM:TOURS_UPDATE')")
+    @org.springframework.security.access.prepost.PreAuthorize("hasAnyAuthority('SGU_SUPER_ADMIN', 'PERM:TOURS_UPDATE')")
     @PostMapping(value="/{id}/images", consumes=org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<TourResponse> retryImages(@PathVariable int id,
             @RequestPart("files") List<org.springframework.web.multipart.MultipartFile> files) {

@@ -67,6 +67,7 @@ public class TourService {
         private final TourDepartureService tourDepartureService;
         private final TransactionTemplate transactions;
         private final org.springframework.jdbc.core.JdbcTemplate jdbc;
+        private final TourGalleryProof galleryProof;
 
     public TourResponse getTourById(int id) {
         Tour tour = tourRepository.findById(id)
@@ -97,6 +98,7 @@ public class TourService {
                             .orElseThrow(() -> new AppException(ErrorCode.LOCATION_NOT_FOUND));
             Location destination = locationRepository.findById(request.getDestinationLocationId())
                             .orElseThrow(() -> new AppException(ErrorCode.LOCATION_NOT_FOUND));
+             requireLocationTypes(departure, destination);
             Vehicle vehicle = vehicleRepository.findById(request.getVehicleId())
                             .orElseThrow(() -> new AppException(ErrorCode.VEHICLE_NOT_FOUND));
 
@@ -122,8 +124,9 @@ public class TourService {
             response.setImageUploadStatus("COMPLETE");
             if (request.getFiles() != null && !request.getFiles().isEmpty()) {
                     try {
-                            var images = fileClient.uploadMultipleFiles(
+                            var images = fileClient.uploadInitialTourImages(
                                             String.valueOf(saved.getId()),
+                                            galleryProof.issue("initial", saved.getId()),
                                             request.getFiles());
                             List<String> urls = images.stream().map(FileResponse::url).toList();
                             tourImageCache.update(String.valueOf(saved.getId()), urls);
@@ -163,6 +166,7 @@ public class TourService {
                 .orElseThrow(() -> new AppException(ErrorCode.LOCATION_NOT_FOUND));
         Location destinationLocation = locationRepository.findById(request.getDestinationLocationId())
                 .orElseThrow(() -> new AppException(ErrorCode.LOCATION_NOT_FOUND));
+         requireLocationTypes(departureLocation, destinationLocation);
         Vehicle vehicle = vehicleRepository.findById(request.getVehicleId())
                 .orElseThrow(() -> new AppException(ErrorCode.VEHICLE_NOT_FOUND));
         requireDurationCoversItinerary(id, request.getDuration());
@@ -239,6 +243,12 @@ public class TourService {
                 .toList();
     }
 
+    private static void requireLocationTypes(Location departure, Location destination) {
+        if (departure.getType() != com.example.tour_service.enums.LocationType.DEPARTURE
+                || destination.getType() != com.example.tour_service.enums.LocationType.DESTINATION)
+            throw new IllegalArgumentException("Điểm khởi hành và điểm đến phải đúng loại địa điểm");
+    }
+
     private void requireDurationCoversItinerary(int tourId, int duration) {
         var lastDay = itineraryRepository.findTopByTourIdOrderByDayNumberDesc(tourId);
         if (lastDay != null && duration < lastDay.getDayNumber()) {
@@ -248,12 +258,6 @@ public class TourService {
     }
 
     public void deleteTour(int id) {
-        // A missing tour must be a 404 before any remote call: the file-service is queried with this
-        // id, and its outage must not turn a nonexistent tour into a 503.
-        if (!tourRepository.existsById(id)) throw new AppException(ErrorCode.TOUR_NOT_FOUND);
-        // Read the gallery before opening the transaction: an unreadable file-service must abort
-        // the deletion without holding a DB connection (and the tour row lock) while we wait on HTTP.
-        List<String> gallery = galleryOf(id);
         transactions.executeWithoutResult(status -> {
             Tour tour = tourRepository.lockForItinerary(id)
                     .orElseThrow(() -> new AppException(ErrorCode.TOUR_NOT_FOUND));
@@ -262,40 +266,15 @@ public class TourService {
             itineraryRepository.deleteByTourId(id);
             // Legacy join table has no cascade and no entity mapping, so it must be cleared explicitly.
             jdbc.update("DELETE FROM tour_image_ids WHERE tour_id=?", id);
+            // File-service takes the same tour row lock before committing gallery changes.
+            // Move every gallery link into its detached-image queue in the deletion transaction.
+            jdbc.update("UPDATE file_mgmt SET tour_id='null',owner_id='' WHERE tour_id=?", String.valueOf(id));
             tourRepository.delete(tour);
-            if (!gallery.isEmpty()) {
-                AfterCommit.run(() -> fileClient.editTourImages(String.valueOf(id), json(gallery), null),
-                        "Tour " + id + " was deleted but its gallery could not be detached;"
-                                + " clean up its images in file-service");
-            }
             // The rows disappear only at commit; clearing the cache earlier would hide a still-existing tour.
             AfterCommit.run(() -> tourImageCache.update(String.valueOf(id), List.of()),
                     "Cannot clear cached images of deleted tour " + id);
             AfterCommit.run(this::evictRandomTours, "Cannot evict the random tour cache");
         });
-    }
-
-    private List<String> galleryOf(int id) {
-        try {
-            return fileClient.getTourMedia(List.of(String.valueOf(id))).stream()
-                    .map(TourFileResponse::getUrl)
-                    .filter(Objects::nonNull)
-                    .toList();
-        } catch (RuntimeException unavailable) {
-            // Deleting without the gallery would leave rows pointing at a tour that no longer
-            // exists, and those rows are not part of the detached-image cleanup list.
-            throw new org.springframework.web.server.ResponseStatusException(
-                    org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
-                    "Không đọc được ảnh của tour; tour chưa bị xóa. Vui lòng thử lại.", unavailable);
-        }
-    }
-
-    private static String json(List<String> urls) {
-        try {
-            return new ObjectMapper().writeValueAsString(urls);
-        } catch (JsonProcessingException invalid) {
-            throw new IllegalArgumentException("Danh sách ảnh không hợp lệ", invalid);
-        }
     }
 
     public Page<TourResponse> searchTours(TourSearchRequest request, Pageable pageable) {

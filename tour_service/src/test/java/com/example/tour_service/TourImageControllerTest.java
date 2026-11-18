@@ -41,13 +41,13 @@ class TourImageControllerTest {
                 .andExpect(status().isBadRequest());
         verify(tours,never()).createTour(any());
     }
-    @Test void creatorsAndEditorsCanRetryImagesWithoutCreatingTours() throws Exception {
+    @Test void onlyEditorsCanRetryImagesOnAnExistingTour() throws Exception {
         when(tours.retryTourImages(eq(42),any())).thenReturn(TourResponse.builder().id(42).imageUploadStatus("COMPLETE").imageIds(List.of("image.png")).build());
-        for(String scope:List.of("PERM:TOURS_CREATE","PERM:TOURS_UPDATE")) {
-            mvc.perform(multipart("/tours/42/images").file(file()).with(jwt().authorities(new SimpleGrantedAuthority(scope))))
-                    .andExpect(status().isOk()).andExpect(jsonPath("$.result.imageIds[0]").value("image.png"));
-        }
-        verify(tours,never()).createTour(any());verify(tours,times(2)).retryTourImages(eq(42),any());
+        mvc.perform(multipart("/tours/42/images").file(file()).with(jwt().authorities(new SimpleGrantedAuthority("PERM:TOURS_CREATE"))))
+                .andExpect(status().isForbidden());
+        mvc.perform(multipart("/tours/42/images").file(file()).with(jwt().authorities(new SimpleGrantedAuthority("PERM:TOURS_UPDATE"))))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.result.imageIds[0]").value("image.png"));
+        verify(tours,never()).createTour(any());verify(tours).retryTourImages(eq(42),any());
     }
     @Test void customersCannotRetryImagesOnAnyTour() throws Exception {
         mvc.perform(multipart("/tours/42/images").file(file()).with(jwt().jwt(token->token.subject("2"))))

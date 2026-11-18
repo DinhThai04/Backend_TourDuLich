@@ -47,6 +47,7 @@ public class FileService {
     FileMgmtMapper fileMgmtMapper;
     org.springframework.jdbc.core.JdbcTemplate jdbc;
     TransactionTemplate transactions;
+    AvatarWritePolicy avatarAccess;
 
     public FileResponse uploadFile(MultipartFile file, Integer locationId) throws IOException {
         if (locationId != null && locationId < 1) throw new IllegalArgumentException("ID địa điểm không hợp lệ");
@@ -150,6 +151,7 @@ public class FileService {
     public FileResponse uploadAvt(String ownerId, MultipartFile file) throws IOException {
         try { if(ownerId==null || !ownerId.matches("[1-9][0-9]{0,18}") || Long.parseLong(ownerId)<1)throw new IllegalArgumentException(); }
         catch(RuntimeException invalid){throw new IllegalArgumentException("ID tài khoản không hợp lệ");}
+        avatarAccess.requireWritable(ownerId, false);
         ImageUploadPolicy.validateAvatar(file);
         // Detached avatars join the same cleanup backlog as content uploads.
         requireDetachedQuota();
@@ -167,6 +169,8 @@ public class FileService {
                     @Override public void afterCompletion(int code){ completion.set(code); }
                 });
                 lockAvatar(ownerId);
+                // Recheck under the target lock: archive/delete during a slow upload must not win.
+                avatarAccess.requireWritable(ownerId, true);
                 var previous=fileMgmtRepository.findByAvatarOwnerId(ownerId);
                 previous.ifPresent(old->{old.setAvatarOwnerId(null);old.setOwnerId(UNASSIGNED_OWNER);old.setTourId(DETACHED_TOUR_ID);fileMgmtRepository.save(old);});
                 // Release the unique avatar key before inserting its replacement.
@@ -221,6 +225,7 @@ public class FileService {
         if (remove.size() > 50 || remove.stream().anyMatch(url -> url == null || url.isBlank() || url.length() > 2048))
             throw new IllegalArgumentException("Danh sách ảnh không hợp lệ");
         ImageUploadPolicy.validate(files);
+        requireTour(tourId, false);
 
         var unique = new HashSet<>(remove);
         var previous = unique.isEmpty() ? List.<FileMgmt>of() : fileMgmtRepository.findByTourIdAndUrlIn(tourId, List.copyOf(unique));
@@ -278,9 +283,8 @@ public class FileService {
     /** Short locked section: re-check the gallery, then link the already-uploaded files. */
     private List<TourFileResponse> linkTourImages(String tourId, Set<String> removedUrls,
             List<FileMgmt> previous, List<FileMgmt> current, List<FileMgmt> uploaded, List<FileMgmt> superseded) {
-        // Separate lock row: locking the tour itself can deadlock a caller in tour_service's transaction.
-        jdbc.update("INSERT INTO tour_media_lock (tour_id) VALUES (?) ON DUPLICATE KEY UPDATE tour_id=tour_id",tourId);
-        jdbc.queryForObject("SELECT tour_id FROM tour_media_lock WHERE tour_id=? FOR UPDATE",String.class,tourId);
+        // Tour deletion uses the same row lock and detaches the gallery before committing.
+        requireTour(tourId, true);
         var locked = fileMgmtRepository.findByTourId(tourId);
         if (locked.size() != current.size() || !urls(locked).equals(urls(current)))
             throw new IllegalArgumentException("Ảnh đã thay đổi, vui lòng tải lại");
@@ -302,6 +306,13 @@ public class FileService {
         fileMgmtRepository.saveAll(previous);
         fileMgmtRepository.flush();
         return getTourMedia(List.of(tourId));
+    }
+
+    private void requireTour(String tourId, boolean lock) {
+        if (jdbc.queryForList("SELECT id FROM tour WHERE id=?" + (lock ? " FOR UPDATE" : ""),
+                Integer.parseInt(tourId)).isEmpty())
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.NOT_FOUND, "Không tìm thấy tour");
     }
 
     private static String fingerprint(MultipartFile upload) {
@@ -335,7 +346,7 @@ public class FileService {
     public record DetachedImage(String id, String url, String publicId, boolean verified) {}
 
     public void permanentlyDeleteDetachedImage(String id) {
-        var image = transactions.execute(status -> {
+        transactions.executeWithoutResult(status -> {
             var locked = fileMgmtRepository.lockById(id).orElseThrow(() -> new IllegalArgumentException("Không tìm thấy ảnh; hãy tải lại danh sách"));
             if (!DETACHED_TOUR_ID.equals(locked.getTourId()) || !UNASSIGNED_OWNER.equals(locked.getOwnerId()) || locked.getLocationId() != null || locked.getAvatarOwnerId()!=null)
                 throw new IllegalArgumentException("Phải gỡ ảnh khỏi tour trước khi xóa vĩnh viễn");
@@ -345,14 +356,17 @@ public class FileService {
             if (references.stream().anyMatch(reference -> !DETACHED_TOUR_ID.equals(reference.getTourId()) || !UNASSIGNED_OWNER.equals(reference.getOwnerId()) || reference.getLocationId() != null || reference.getAvatarOwnerId()!=null)
                     || fileMgmtRepository.countDeliveryUrlReferences(locked.getUrl()) > 0)
                 throw new IllegalArgumentException("Ảnh còn được tham chiếu ở nơi khác; chưa thể xóa Cloudinary");
+            // Cleanup is an explicit admin action. Keep reference locks until the provider confirms
+            // deletion, so a failed/uncertain remote call retains discoverable metadata for retry.
+            try { fileRepository.delete(locked); }
+            catch (RuntimeException failed) {
+                throw new org.springframework.web.server.ResponseStatusException(
+                        org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                        "Chưa xóa được ảnh trên Cloudinary; ảnh vẫn trong danh sách để thử lại", failed);
+            }
             fileMgmtRepository.deleteAll(references.isEmpty() ? List.of(locked) : references);
             fileMgmtRepository.flush();
-            return locked;
         });
-
-        // Delete Cloudinary only after the DB rows are committed; a failed commit must not lose the image.
-        try { fileRepository.delete(image); }
-        catch (RuntimeException failed) { log.warn("Cloudinary image remains after DB delete for public_id={}", image.getPath()); }
     }
 
 }
