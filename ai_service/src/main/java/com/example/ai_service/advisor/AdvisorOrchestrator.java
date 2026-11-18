@@ -40,6 +40,67 @@ public class AdvisorOrchestrator {
                 +String.format(VIETNAMESE,"%,d",highest-lowest)+" VND. Đây không phải tổng nhóm. Có lịch tương lai không đồng nghĩa còn đủ chỗ cho nhóm của bạn.";
         return draft(state,"ANSWER",reply,null,comparison,null);
     }
+    /** A page ID is validated by the public facts reader, never interpreted as a result position. */
+    public Draft pageTour(State state, int tourId, TourPageQuestion question) {
+        if (tourId < 1) throw ChatFailure.invalid();
+        var current = tours.pageFacts(tourId);
+        if (current == null) return missing(state);
+        var reply = new ArrayList<String>();
+        Long price = question.price() ? current.adultPriceVnd() : null;
+        if (price != null) {
+            reply.add("Giá tham khảo cho một người lớn là " + String.format(VIETNAMESE, "%,d", price)
+                    + " VND. Tổng tiền được tính theo danh sách hành khách khi đặt tour.");
+        } else if (question.price()) {
+            reply.add("Tạm thời chưa kiểm tra được giá người lớn.");
+        }
+        DepartureOverview departures = null;
+        if (question.departures() != null && current.futureDepartures() == null) {
+            reply.add("Tạm thời chưa kiểm tra được lịch khởi hành.");
+        } else if (question.departures() != null) {
+            var window = question.departures();
+            var today = LocalDate.now(clock);
+            var monday = today.with(java.time.temporal.TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY));
+            var next = current.futureDepartures().stream().filter(at -> switch (window) {
+                case UPCOMING -> true;
+                case THIS_WEEKEND -> !at.toLocalDate().isBefore(monday.plusDays(5)) && at.toLocalDate().isBefore(monday.plusWeeks(1));
+                case NEXT_WEEK -> !at.toLocalDate().isBefore(monday.plusWeeks(1)) && at.toLocalDate().isBefore(monday.plusWeeks(2));
+            }).min(Comparator.naturalOrder()).orElse(null);
+            boolean scheduled = next != null;
+            departures = new DepartureOverview(scheduled,next);
+            String period = switch (window) {
+                case UPCOMING -> "sắp tới";
+                case THIS_WEEKEND -> "cuối tuần này";
+                case NEXT_WEEK -> "tuần sau";
+            };
+            reply.add(scheduled
+                    ? "Có lịch khởi hành " + period + ". Bạn xem lịch trên trang tour để kiểm tra số chỗ và chọn chuyến."
+                    : "Chưa thấy lịch khởi hành " + period + " trong danh mục hiện tại.");
+        }
+        var overview = price != null || departures != null
+                ? new TourOverview(current.id(),current.title(),price,departures,current.checkedAt()) : null;
+        TourDetail detail = null;
+        if (question.itinerary()) {
+            try {
+                detail = tours.detail(current);
+                if (question.firstDay()) {
+                    reply.add(detail.itinerary().stream().filter(day -> day.dayNumber() == 1).findFirst()
+                            .map(day -> "Ngày đầu: " + day.title() + ". Bạn có thể xem chi tiết bên dưới.")
+                            .orElse("Chưa có nội dung ngày đầu trong lịch trình hiện tại."));
+                } else {
+                    reply.add(detail.itinerary().isEmpty()
+                            ? "Tour hiện chưa có lịch trình từng ngày."
+                            : "Bạn có thể mở từng ngày trong lịch trình bên dưới.");
+                }
+            } catch (ChatFailure failure) {
+                if (overview == null || failure.status() != 503) throw failure;
+                reply.add("Tạm thời chưa kiểm tra được lịch trình từng ngày.");
+            }
+        }
+        if (overview == null && detail == null) throw ChatFailure.catalog();
+        return new Draft(state.criteria(),state.pending(),state.latestPresentedTourIds(),state.page(),state.hasMore(),
+                "ANSWER","Tour “" + current.title() + "”: " + String.join(" ",reply),List.of(),null,null,false,
+                detail,null,null,overview);
+    }
     public Draft policy(State state,String message) {
         if(BookingQuestions.personal(message,null))
             return draft(state,"ANSWER","Để kiểm tra booking của chính bạn, hãy đăng nhập và dùng trợ lý trên website hoặc vào Lịch sử đặt tour. Tôi cần đọc hạn đã lưu của đúng đơn, không thể tính từ một ngày giả định.",null,null,policies.info("P16"));

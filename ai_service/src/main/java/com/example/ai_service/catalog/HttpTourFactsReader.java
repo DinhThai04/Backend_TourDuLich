@@ -16,6 +16,12 @@ public final class HttpTourFactsReader implements TourFactsReader {
     private final Clock clock;
     public HttpTourFactsReader(RestClient http,ObjectMapper json,Clock clock) { this.http=http; this.json=json; this.clock=clock; }
     @Override public Facts facts(int tourId) {
+        return readFacts(tourId,false);
+    }
+    @Override public Facts pageFacts(int tourId) {
+        return readFacts(tourId,true);
+    }
+    private Facts readFacts(int tourId,boolean allowPartial) {
         if(tourId<1) throw ChatFailure.catalog();
         try {
             JsonNode data=http.get().uri("/tours/{id}",tourId).exchange((request,response)->{
@@ -30,21 +36,32 @@ public final class HttpTourFactsReader implements TourFactsReader {
             int duration=integer(data,"duration"); if(duration<1) throw ChatFailure.catalog();
             String title=requiredText(data,"tourTitle",400);
             String destination=requiredText(data.path("destinationCity"),"city",120);
-            var adult=data.path("tourPrice").path("adultPrice");
-            if(!adult.isNumber()) throw ChatFailure.catalog();
-            long amount=adult.decimalValue().longValueExact(); if(amount<0) throw ChatFailure.catalog();
-            var departures=data.path("departures"); if(!departures.isArray() || departures.size()>10000) throw ChatFailure.catalog();
-            boolean future=false; var now=LocalDateTime.now(clock);
-            for(var departure:departures) {
-                if(integer(departure,"tourId")!=tourId || integer(departure,"id")<1 || integer(departure,"availableSeats")<0)
-                    throw ChatFailure.catalog();
-                var at=LocalDateTime.parse(rawText(departure,"departureDate"));
-                var back=LocalDateTime.parse(rawText(departure,"returnDate")); if(back.isBefore(at)) throw ChatFailure.catalog();
-                // Future != bookable. Comparison labels do not claim that a full departure has seats.
-                if(at.isAfter(now)) future=true;
-            }
-            return new Facts(tourId,title,duration,destination,amount,future,OffsetDateTime.now(clock));
+            Long amount=null;
+            List<LocalDateTime> future=null;
+            try { amount=adultPrice(data.path("tourPrice").path("adultPrice")); }
+            catch(RuntimeException invalid) { if(!allowPartial) throw invalid; }
+            try { future=departureDates(data.path("departures"),tourId); }
+            catch(RuntimeException invalid) { if(!allowPartial) throw invalid; }
+            return new Facts(tourId,title,duration,destination,amount,OffsetDateTime.now(clock),future);
         } catch(RuntimeException failure) { throw ChatFailure.catalog(); }
+    }
+    private long adultPrice(JsonNode adult) {
+        if(!adult.isNumber()) throw ChatFailure.catalog();
+        long amount=adult.decimalValue().longValueExact();
+        if(amount<0) throw ChatFailure.catalog();
+        return amount;
+    }
+    private List<LocalDateTime> departureDates(JsonNode departures,int tourId) {
+        if(!departures.isArray() || departures.size()>10000) throw ChatFailure.catalog();
+        var future=new ArrayList<LocalDateTime>(); var now=LocalDateTime.now(clock);
+        for(var departure:departures) {
+            if(integer(departure,"tourId")!=tourId || integer(departure,"id")<1 || integer(departure,"availableSeats")<0)
+                throw ChatFailure.catalog();
+            var at=LocalDateTime.parse(rawText(departure,"departureDate"));
+            var back=LocalDateTime.parse(rawText(departure,"returnDate")); if(back.isBefore(at)) throw ChatFailure.catalog();
+            if(at.isAfter(now)) future.add(at);
+        }
+        return future;
     }
     @Override public TourDetail detail(Facts facts) {
         try {
