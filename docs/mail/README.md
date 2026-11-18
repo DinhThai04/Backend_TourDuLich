@@ -1,8 +1,10 @@
 # SGU Tour — Spring Email và n8n
 
-Hướng dẫn vận hành hiện tại, đối chiếu source ngày **01/11/2026**. Database mail/giữ chỗ đã có trong **[SQL tổng](../../data_seed/database_all.sql)**; không import thêm SQL mail hay fixture test.
+## Giới thiệu
 
-## Ai làm việc gì?
+Tài liệu mô tả luồng email, cấu hình SMTP và workflow n8n. Database mail/giữ chỗ đã có trong **[SQL tổng](../../data_seed/database_all.sql)**; không import thêm SQL mail hay fixture test.
+
+## Luồng xử lý
 
 ```text
 Đặt tour / VNPay / hủy / hết hạn / dời lịch
@@ -37,19 +39,21 @@ Theo múi giờ Việt Nam:
 - Worker hết hạn riêng của backend xử lý khoảng mỗi 60 giây, lần đầu sau khoảng 5 giây. Worker SMTP thăm outbox mặc định mỗi 5 giây khi bật, mỗi lượt xử lý tối đa `batch-size` (mặc định 10) thư; hàng đợi lớn hơn bị giới hạn bởi nhịp này.
 - Workflow mẫu chạy **mỗi giờ**, không chỉ 08:00. Planner chọn mốc gần nhất còn hợp lệ khi máy bật lại, không gửi dồn mọi mốc đã lỡ; không tự gia hạn hạn thanh toán vì máy tắt.
 
-## Cấu hình và mở backend
+## Khởi chạy
 
 Cần MySQL, schema tổng và các service của luồng bạn muốn thử. Mở Docker Desktop/n8n nếu dùng workflow container.
 
-### Container n8n
+### n8n trong Docker Compose
 
-Repo có sẵn service `n8n` trong `docker-compose.yml` (profile `mail`, chỉ bind `127.0.0.1:5678`). Tại thư mục Backend:
+Service `n8n` trong `docker-compose.yml` dùng phiên bản `1.123.97` và thuộc profile `mail`. Khi nâng cấp từ bản cũ, hãy sao lưu volume `n8n_data` cùng cấu hình hoặc khóa mã hóa đã dùng để có thể khôi phục workflow và credential. n8n tự cập nhật cấu trúc dữ liệu trong lần khởi động đầu tiên. Chạy lệnh sau tại thư mục backend.
 
 ```powershell
 docker compose --profile mail up -d n8n
 ```
 
-Container này dùng chung mạng compose với backend nên workflow gọi `http://api_gateway:8888`, `http://booking_service:8081`, `http://auth_service:8099` (tên service), không dùng `localhost` hay `host.docker.internal`. Editor ở `http://127.0.0.1:5678`; volume `n8n_data` giữ workflow nhưng xóa volume là mất credential. Compose khai báo thêm `N8N_SGU_GATEWAY_URL`, `N8N_SGU_BOOKING_URL`, `N8N_SGU_AUTH_URL` đúng bằng các URL trên để dùng khi bạn đổi workflow sang `$env` (chỉ hoạt động khi n8n cho phép đọc env trong node).
+Khi backend cũng chạy bằng Compose (Cách 1), container n8n dùng chung mạng với backend nên workflow gọi `http://api_gateway:8888`, `http://booking_service:8081`, `http://auth_service:8099` (tên service), không dùng `localhost` hay `host.docker.internal`. Editor ở `http://127.0.0.1:5678`; volume `n8n_data` giữ workflow nhưng xóa volume là mất credential. Compose khai báo thêm `N8N_SGU_GATEWAY_URL`, `N8N_SGU_BOOKING_URL`, `N8N_SGU_AUTH_URL` đúng bằng các URL trên để dùng khi bạn đổi workflow sang `$env` (chỉ hoạt động khi n8n cho phép đọc env trong node).
+
+Khi backend chạy trên host bằng Maven/IDE hoặc helper Windows (Cách 2), workflow phải gọi gateway trên host, ví dụ `http://host.docker.internal:8888` khi n8n chạy trong Docker Desktop. Tên `api_gateway` chỉ dùng khi gateway thực sự chạy trong cùng mạng Compose. Nếu cả n8n và gateway đều chạy native, dùng `http://localhost:8888`. Cần bảo đảm gateway trên host nhận được kết nối từ container và vẫn giữ kiểm tra key nội bộ.
 
 Service n8n trong repo có các đặc điểm sau; không cần file compose nào bên ngoài đồ án:
 
@@ -59,7 +63,7 @@ Service n8n trong repo có các đặc điểm sau; không cần file compose n�
 - Credential và workflow nằm trong volume `n8n_data`; xóa volume là mất, không commit dữ liệu này.
 - Diagnostics tắt (`N8N_DIAGNOSTICS_ENABLED=false`).
 
-### Cách dùng helper local Windows đang có
+### Helper phát triển trên Windows
 
 Tại thư mục Backend:
 
@@ -73,11 +77,13 @@ Tại thư mục Backend:
 
 Setup hỏi Gmail App Password, giữ key hiện có khi chạy lại và copy key vào clipboard. Cấu hình được mã hóa theo user Windows tại `%LOCALAPPDATA%\J2eeTourMail\config.json`, không in key ra terminal. Hộp thư test là địa chỉ bạn nhập khi chạy setup (chạy lại script để đổi), không có địa chỉ cá nhân gắn sẵn trong mã nguồn. Không nhập mật khẩu đăng nhập Gmail thường thay App Password.
 
+Helper yêu cầu MySQL trên host tại cổng 3306. Khi dùng database ở cổng khác, chạy service bằng IDE/Maven với cấu hình datasource tương ứng.
+
 Start helper build/chạy **booking, payment, invoice, gateway** bằng JAR, nạp biến mail cho tiến trình con. Các service auth/tour/pricing/file vẫn cần mở riêng khi thao tác toàn bộ web. Log nằm tại `%LOCALAPPDATA%\J2eeTourMail\logs`. Đóng terminal không tự dừng các Java process này; không mở thêm bản IDE trùng cổng.
 
 Tùy chọn `-StartN8n` của helper chạy `docker compose -f docker-compose.yml --profile mail up -d n8n` ngay trong repo, dùng chung mạng compose với backend; không cần compose ngoài đồ án. Preflight của helper nhắc dùng SQL tổng `data_seed/database_all.sql`, không còn migration 001/003.
 
-### Hoặc chạy Spring Boot/IDE trực tiếp
+### Spring Boot trong IDE hoặc Maven
 
 Đặt các biến từ [booking_service/.env.mail.example](../../booking_service/.env.mail.example) trong môi trường/Run Configuration của **booking_service**. Đây là file mô tả, Spring không tự nạp bằng cách copy thành `.env`.
 
@@ -92,7 +98,7 @@ Tùy chọn `-StartN8n` của helper chạy `docker compose -f docker-compose.ym
 | MAIL_FRONTEND_BASE_URL | URL liên kết về web, mặc định localhost:5173 |
 | MAIL_BRAND | SGU Tour |
 
-`docker-compose.yml` chuyển tiếp toàn bộ biến `MAIL_*` ở bảng trên (SMTP, test mode, batch, URL frontend) từ môi trường máy host vào booking service. Bắt buộc export `MAIL_INTERNAL_API_KEY` (≥32 ký tự) trước khi chạy `docker compose --profile mail up`; nếu để trống, endpoint dispatch trả 503 và n8n không gửi được mail. Credential SMTP cũng phải export trên host, không ghi vào compose.
+Compose đọc cấu hình `MAIL_*` từ environment hoặc `.env` gốc backend và chuyển vào booking service. Đặt cùng `MAIL_INTERNAL_API_KEY` (tối thiểu 32 ký tự) cho booking và gateway; nếu thiếu hoặc không hợp lệ, endpoint dispatch trả 503. Credential SMTP thuộc cấu hình runtime, không ghi vào Compose hoặc workflow được commit.
 
 Các biến DB/JWT của service vẫn cần cấu hình theo [README backend](../../README.md). Setup helper lưu config nhưng không tự truyền environment vào các service bạn Run bằng IDE; chọn cách chạy/cấu hình nhất quán.
 
@@ -102,7 +108,7 @@ Test mode **không đổi địa chỉ khách thành địa chỉ của bạn** 
 
 1. Import [n8n-reminders.workflow.json](n8n-reminders.workflow.json). Không thêm node Send Email cho workflow này.
 2. Trong node **Cấu hình**:
-   - `baseUrl`: giữ `http://api_gateway:8888` khi n8n chạy trong compose của repo (profile `mail`) — dùng tên service, không dùng `localhost`/`host.docker.internal`; n8n chạy native trên Windows thì đổi thành `http://localhost:8888`.
+   - `baseUrl`: giữ `http://api_gateway:8888` khi n8n chạy trong compose của repo (profile `mail`) — dùng tên service, không dùng `localhost`/`host.docker.internal`; nếu backend chạy trên host, dùng `http://host.docker.internal:8888` từ n8n Docker Desktop; nếu cả hai chạy native, dùng `http://localhost:8888`.
    - `dryRun`: **Boolean true** để kiểm tra trước.
    - `batchSize`: 50, `afterBookingId`: 0, `maxPages`: 50 (chặn vòng lặp vô hạn nếu backend trả cursor không tiến).
 3. Trong HTTP node **Lập lượt nhắc**, chọn Generic Credential Type → Header Auth → tạo credential:
@@ -150,7 +156,7 @@ FROM mail_outbox ORDER BY id DESC LIMIT 30;
 
 Event key và lease chống lập/gửi lặp trong các trường hợp được xử lý, không bảo đảm email “exactly once” trước mọi lỗi SMTP. Không sửa trực tiếp SENT/SKIPPED/UNKNOWN về PENDING chỉ để thấy mail xuất hiện.
 
-Hiện **chưa có màn hình quản trị mail**. Theo dõi bằng DB/log/n8n Executions; trang admin chưa có chức năng đọc outbox, gửi lại hay thống kê mail.
+Theo dõi outbox bằng truy vấn chỉ đọc, log service và n8n Executions.
 
 | Lỗi | Kiểm tra |
 |---|---|
