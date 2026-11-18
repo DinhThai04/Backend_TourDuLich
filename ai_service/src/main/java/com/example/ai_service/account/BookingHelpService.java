@@ -64,7 +64,9 @@ public class BookingHelpService {
                     +(b.state().equals("CHECKOUT")?"Đây là đặt sát ngày: cần thanh toán ngay trong phiên tối đa 15 phút, không vượt giờ khởi hành. ":
                     "Theo P01, hạn là 08:00 ngày sớm hơn giữa ngày đặt + 6 ngày và ngày khởi hành − 6 ngày; không cộng thêm thời gian từ hôm nay. ")
                     +"Bạn thực hiện thanh toán tại đơn trên website; tôi chỉ tra cứu, không tự thanh toán hoặc gia hạn.";
-            case "SCHEDULE_CHANGE_REQUIRED" -> "Chuyến cũ buộc phải dừng do sự cố. Hệ thống đang tạm dừng hết hạn giữ chỗ trên chuyến này; không thanh toán qua lịch cũ. Vào Hồ sơ → Lịch sử đặt chỗ → Dời lịch để xem đề xuất và phản hồi hoặc liên hệ shop. Chưa phản hồi không được coi là đồng ý; tôi không tự chuyển lịch.";
+            case "SCHEDULE_CHANGE_REQUIRED" -> "Chuyến cũ đang dừng và đơn này có đề xuất dời lịch. Vào Hồ sơ → Lịch sử đặt chỗ → Dời lịch để xem và phản hồi. Đơn giữ chỗ có đề xuất đang xử lý được bảo toàn trên lịch tạm dừng. Chỉ thanh toán trên lịch hợp lệ sau khi xử lý xong.";
+            case "DEPARTURE_SUSPENDED" -> "Chuyến đang tạm dừng nên hiện không thể thanh toán. Đơn này chưa có đề xuất dời lịch. Với đơn chưa trả tiền, hệ thống vẫn áp dụng hạn giữ chỗ gốc ghi trong đơn. Hãy kiểm tra đơn hoặc liên hệ SGU Tour nếu bạn đã thực hiện giao dịch.";
+            case "DEPARTURE_CANCELLED" -> "Lịch khởi hành của đơn đã đóng và không tiếp nhận thanh toán. Hãy xem trạng thái đơn trong hồ sơ hoặc liên hệ SGU Tour kèm mã booking nếu bạn đã chuyển tiền.";
             case "REFUNDED" -> "Shop đã ghi nhận hoàn tiền thủ công toàn bộ và hủy booking. Vui lòng kiểm tra tài khoản nhận tiền và tham chiếu tại mục Dời lịch trong hồ sơ; hóa đơn thu tiền gốc được lưu làm lịch sử, không có nghĩa đơn còn hiệu lực.";
             case "PAID" -> "Hệ thống đã ghi nhận thanh toán khớp payment/hóa đơn. Bạn không cần thanh toán lại để giữ chỗ. Hạn cũ không còn là thời gian chờ trả tiền. Xem lịch sử đơn để kiểm tra chi tiết.";
             case "DEADLINE_PASSED" -> "Đơn chưa thanh toán đã qua hạn "+date(b.paymentDeadline())+". Không còn thời gian giữ chỗ hợp lệ; tác vụ hết hạn có thể chưa cập nhật trạng thái. Tôi không xác nhận chỗ đã trả kho và không tự gia hạn. Bạn kiểm tra lại trên website trước khi đặt mới.";
@@ -77,7 +79,7 @@ public class BookingHelpService {
         String policyKey=switch(b.state()) {
             case "HELD","CHECKOUT","DEADLINE_PASSED" -> "P01";
             case "PAID","REVIEW_REQUIRED" -> "P06";
-            case "SCHEDULE_CHANGE_REQUIRED" -> "P15";
+            case "SCHEDULE_CHANGE_REQUIRED","DEPARTURE_SUSPENDED","DEPARTURE_CANCELLED" -> "P15";
             case "REFUNDED" -> "P11";
             case "EXPIRED","CANCELLED" -> "P02";
             default -> "P16";

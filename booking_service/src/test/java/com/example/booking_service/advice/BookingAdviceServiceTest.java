@@ -81,7 +81,14 @@ class BookingAdviceServiceTest {
     @Test void pausedDepartureNeverReportsAnExpiredPaymentDeadlineAsValidHold() {
         db.jdbc.update("UPDATE tour_departure SET operational_status='SUSPENDED'");
         clock.set(LocalDateTime.of(2026,11,8,10,0));var b=service.mine(6).bookings().getFirst();
-        assertEquals("SCHEDULE_CHANGE_REQUIRED",b.state());assertEquals(0,b.remainingSeconds());
+        assertEquals("DEPARTURE_SUSPENDED",b.state());assertEquals(0,b.remainingSeconds());
         assertEquals(0,db.count("mail_outbox"));
+    }
+
+    @Test void closedDepartureDoesNotAdvertiseTheRemainingHoldTime() {
+        db.jdbc.update("UPDATE tour_departure SET operational_status='CANCELLED'");
+        var advice = service.mine(6).bookings().getFirst();
+        assertEquals("DEPARTURE_CANCELLED", advice.state());
+        assertEquals(0, advice.remainingSeconds());
     }
 }

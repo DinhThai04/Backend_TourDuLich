@@ -32,6 +32,8 @@ public class BookingAdviceService {
             SELECT b.id,b.created_at,b.status AS booking_status,t.id AS tour_id,t.tour_program,t.tour_title,
               d.id AS departure_id,d.departure_date,d.operational_status,
               (SELECT COUNT(*) FROM booking_change c WHERE c.booking_id=b.id AND c.status='REFUNDED') AS refund_count,
+              (SELECT COUNT(*) FROM booking_change c WHERE c.booking_id=b.id AND c.source_departure_id=d.id
+                  AND c.kind='SHOP' AND c.active_key=1) AS active_shop_offer,
               r.status AS reservation_status,r.expires_at,
               r.departure_id AS held_departure_id,r.departure_at AS held_departure_at,
               (SELECT COUNT(*) FROM payment p WHERE p.booking_id=b.id AND p.account_id=b.account_id AND p.status='PAID') AS payments,
@@ -58,14 +60,20 @@ public class BookingAdviceService {
         var paid=amount(r.get("payment_amount")); var invoice=amount(r.get("invoice_amount"));
         boolean complete=number(r,"payments")==1 && number(r,"invoices")==1 && paid!=null && paid.signum()>0
                 && invoice!=null && paid.compareTo(invoice)==0;
+        boolean expired = "EXPIRED".equals(hold) || "EXPIRED".equals(r.get("booking_status"));
+        boolean cancelled = "CANCELLED".equals(hold) || "CANCELLED".equals(r.get("booking_status"));
+        boolean confirmedPaid = complete && "CONFIRMED".equals(r.get("booking_status"))
+                && (hold == null || "PAID".equals(hold));
         String state;
         if (!matches || number(r,"reconciliation")>0) state="REVIEW_REQUIRED";
         else if(number(r,"refund_count")>0) state="REFUNDED";
-        else if("SUSPENDED".equals(r.get("operational_status"))) state="SCHEDULE_CHANGE_REQUIRED";
-        else if (complete && "CONFIRMED".equals(r.get("booking_status")) && (hold==null || "PAID".equals(hold))) state="PAID";
-        else if (number(r,"paid_evidence")>0 || "PAID".equals(hold)) state="REVIEW_REQUIRED";
-        else if ("EXPIRED".equals(hold) || "EXPIRED".equals(r.get("booking_status"))) state="EXPIRED";
-        else if ("CANCELLED".equals(hold) || "CANCELLED".equals(r.get("booking_status"))) state="CANCELLED";
+        else if (!confirmedPaid && (number(r,"paid_evidence")>0 || "PAID".equals(hold))) state="REVIEW_REQUIRED";
+        else if (expired) state="EXPIRED";
+        else if (cancelled) state="CANCELLED";
+        else if ("SUSPENDED".equals(r.get("operational_status")))
+            state=number(r,"active_shop_offer")>0 ? "SCHEDULE_CHANGE_REQUIRED" : "DEPARTURE_SUSPENDED";
+        else if ("CANCELLED".equals(r.get("operational_status"))) state="DEPARTURE_CANCELLED";
+        else if (confirmedPaid) state="PAID";
         else if (departure==null || !departure.isAfter(now)) state="DEPARTURE_PASSED";
         else if (hold==null) state="LEGACY_UNVERIFIED";
         else if (deadline==null || created==null || !deadline.isAfter(created) || deadline.isAfter(departure)) state="REVIEW_REQUIRED";
