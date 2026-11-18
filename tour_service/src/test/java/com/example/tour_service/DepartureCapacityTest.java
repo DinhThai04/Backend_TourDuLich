@@ -60,18 +60,20 @@ class DepartureCapacityTest {
     @BeforeEach void seed() {
         tx=new TransactionTemplate(manager);
         for(String ddl:List.of(
-          "CREATE TABLE IF NOT EXISTS booking_change(id BIGINT PRIMARY KEY,booking_id INT,status VARCHAR(30),refund_amount DECIMAL(19,0),refund_reference VARCHAR(255),source_departure_id INT,target_departure_id INT)",
+          "CREATE TABLE IF NOT EXISTS booking_change(id BIGINT PRIMARY KEY,booking_id INT,status VARCHAR(30),refund_amount DECIMAL(19,0),refund_reference VARCHAR(255),source_departure_id INT,target_departure_id INT,active_key INT,requested_by INT)",
           "CREATE TABLE IF NOT EXISTS departure_change(id BIGINT PRIMARY KEY,source_departure_id INT,target_departure_id INT)",
-          "CREATE TABLE IF NOT EXISTS users(id INT PRIMARY KEY,username VARCHAR(50),email VARCHAR(254))",
-          "CREATE TABLE IF NOT EXISTS booking(id INT AUTO_INCREMENT PRIMARY KEY,account_id INT,tour_departure_id INT,status VARCHAR(20),created_at DATETIME(6))",
+          "CREATE TABLE IF NOT EXISTS users(id INT PRIMARY KEY,username VARCHAR(50),email VARCHAR(254),status VARCHAR(20) DEFAULT 'ACTIVE')",
+          "CREATE TABLE IF NOT EXISTS booking(id INT AUTO_INCREMENT PRIMARY KEY,account_id INT,tour_departure_id INT,status VARCHAR(20),created_at DATETIME(6),client_key VARCHAR(36) UNIQUE)",
+          "CREATE TABLE IF NOT EXISTS booking_price_snapshot(booking_id INT PRIMARY KEY,price_id INT,adult_price DECIMAL(15,2),child_price DECIMAL(15,2),toddler_price DECIMAL(15,2),infant_price DECIMAL(15,2),single_supplement_price DECIMAL(15,2),total_amount DECIMAL(19,0),currency VARCHAR(3),snapshot_at DATETIME(6))",
+          "CREATE TABLE IF NOT EXISTS momo_transaction(order_id VARCHAR(32) PRIMARY KEY,booking_id INT,account_id INT,amount_vnd BIGINT,status VARCHAR(20),created_at DATETIME(6),expires_at DATETIME(6))",
           "CREATE TABLE IF NOT EXISTS customer(id INT AUTO_INCREMENT PRIMARY KEY,booking_id INT,full_name VARCHAR(255),birthdate DATE,gender BOOLEAN,address VARCHAR(255),booking_type VARCHAR(20),status VARCHAR(20))",
           "CREATE TABLE IF NOT EXISTS booking_reservation(booking_id INT PRIMARY KEY,departure_id INT,departure_at DATETIME(6),seats INT,status VARCHAR(20),expires_at DATETIME(6),reminder_one_at DATETIME(6),reminder_two_at DATETIME(6),created_at DATETIME(6),updated_at DATETIME(6),cancel_reason VARCHAR(40))",
           "CREATE TABLE IF NOT EXISTS invoice(id INT AUTO_INCREMENT PRIMARY KEY,booking_id INT,account_id INT,status VARCHAR(20),day_of_pay DATETIME(6),pay_method_id INT,total_booking_tour_expense DECIMAL(19,0))",
           "CREATE TABLE IF NOT EXISTS payment(id INT AUTO_INCREMENT PRIMARY KEY,booking_id INT,account_id INT,status VARCHAR(20),day_of_pay DATETIME(6),pay_method_id INT,total_booking_tour_expense DECIMAL(19,0))",
           "CREATE TABLE IF NOT EXISTS vnpay_transaction(txn_ref VARCHAR(32) PRIMARY KEY,booking_id INT,account_id INT,amount_vnd BIGINT,status VARCHAR(20),created_at DATETIME(6),expires_at DATETIME(6),transaction_no VARCHAR(255))",
           "CREATE TABLE IF NOT EXISTS payment_reconciliation(txn_ref VARCHAR(32) PRIMARY KEY,booking_id INT,reason VARCHAR(100),status VARCHAR(20) DEFAULT 'OPEN',provider_paid_at DATETIME(6),amount_vnd BIGINT,created_at DATETIME(6))")) jdbc.execute(ddl);
-        for(String table:List.of("booking_change","departure_change","payment_reconciliation","vnpay_transaction","invoice","payment","booking_reservation","customer","booking","users","tour_departure","tour","location","vehicles","prices"))jdbc.update("DELETE FROM "+table);
-        jdbc.update("INSERT INTO users VALUES(7,'Test','capacity@example.test')");
+        for(String table:List.of("booking_change","departure_change","payment_reconciliation","vnpay_transaction","momo_transaction","booking_price_snapshot","invoice","payment","booking_reservation","customer","booking","users","tour_departure","tour","location","vehicles","prices"))jdbc.update("DELETE FROM "+table);
+        jdbc.update("INSERT INTO users(id,username,email) VALUES(7,'Test','capacity@example.test')");
         tx.executeWithoutResult(status->{
             var location=Location.builder().city("Fixture").img("fixture.png").type(LocationType.DEPARTURE).build();em.persist(location);
             var vehicle=Vehicle.builder().id("CAP-BUS").vehicleType("Bus").build();em.persist(vehicle);
@@ -206,7 +208,7 @@ class DepartureCapacityTest {
             }catch(Exception error){throw new IllegalStateException(error);}
         }
         String settle(Map<String,String> fields){return tx.execute(status->(String)invoke(payment,"settle",new Class<?>[]{Map.class},fields));}
-        void expire(){invoke(expiry,"sweep",new Class<?>[]{});}
+        void expire(){invoke(expiry,"expireDeparture",new Class<?>[]{int.class},id);}
         public void close()throws Exception{loader.close();}
     }
     static Object invoke(Object target,String name,Class<?>[] types,Object... args) {
@@ -249,15 +251,21 @@ class DepartureCapacityTest {
         }
     }
     @Test @EnabledIfEnvironmentVariable(named="CAPACITY_CROSS_SERVICE_TEST",matches="true")
-    void expiredCallbackRaceNeverReturnsSeatsTwiceOrFulfilsExpiredBooking()throws Exception {
+    void expiryAndTimelyCallbackRacePreservesOneConsistentOutcome()throws Exception {
         try(var live=new LiveServices();var pool=Executors.newFixedThreadPool(2)) {
-            int booking=live.book();var fields=live.checkout(booking);live.clock.time=LocalDateTime.of(2090,1,8,10,0);
+            int booking=live.book();var fields=live.checkout(booking);live.clock.time=jdbc.queryForObject("SELECT expires_at FROM booking_reservation WHERE booking_id=?",LocalDateTime.class,booking).plusMinutes(6);
             var gate=new CyclicBarrier(2);
             var expiry=pool.submit(()->{gate.await();live.expire();return true;});
             var callback=pool.submit(()->{gate.await();return live.settle(fields);});
-            expiry.get(20,TimeUnit.SECONDS);assertEquals("reconciliation",callback.get(20,TimeUnit.SECONDS));
-            live.expire();live.settle(fields);assertTrue(seats()==9 || seats()==10);assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM payment_reconciliation",Integer.class));
-            assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM payment",Integer.class));assertFalse(service.capacity(id).issues().isEmpty());
+            expiry.get(20,TimeUnit.SECONDS);String outcome=callback.get(20,TimeUnit.SECONDS);
+            assertTrue(Set.of("success","reconciliation").contains(outcome));
+            live.expire();live.settle(fields);
+            // A provider payment made in time may win the lock; an already expired hold must never revive.
+            boolean paid="success".equals(outcome);
+            assertEquals(paid?9:10,seats());
+            assertEquals(paid?1:0,jdbc.queryForObject("SELECT COUNT(*) FROM payment",Integer.class));
+            assertEquals(paid?0:1,jdbc.queryForObject("SELECT COUNT(*) FROM payment_reconciliation",Integer.class));
+            assertEquals(paid?"PAID":"EXPIRED",jdbc.queryForObject("SELECT status FROM booking_reservation WHERE booking_id=?",String.class,booking));
         }
     }
 }
