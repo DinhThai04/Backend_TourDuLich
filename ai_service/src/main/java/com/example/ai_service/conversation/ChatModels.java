@@ -47,7 +47,10 @@ public final class ChatModels {
     }
     public record ChatRequest(@NotBlank @Pattern(regexp=CONVERSATION_ID_PATTERN) String conversationId,
                               @NotBlank @Pattern(regexp=REQUEST_ID_PATTERN) String requestId,
-                              @NotBlank String message) {
+                              @NotBlank String message, @Min(1) Integer selectedTourId) {
+        public ChatRequest(String conversationId, String requestId, String message) {
+            this(conversationId, requestId, message, null);
+        }
         @Override public String toString() { return "ChatRequest[REDACTED]"; }
     }
     public record Clarification(String reason, List<String> fields, String question, List<String> suggestedReplies) {}
@@ -63,6 +66,9 @@ public final class ChatModels {
     public record SearchRequest(Criteria criteria, int page, int size) {}
     public record ItineraryDay(int dayNumber,String title,String description,String meal) {}
     public record TourDetail(int tourId,String title,List<ItineraryDay> itinerary,OffsetDateTime dataAsOf,boolean truncated) {}
+    public record DepartureOverview(boolean scheduled,LocalDateTime nextAt) {}
+    public record TourOverview(int tourId,String title,Long referenceAdultPriceVnd,
+                               DepartureOverview departures,OffsetDateTime dataAsOf) {}
     public record ComparisonItem(int tourId,String title,int durationDays,String destinationName,
                                  long referenceAdultPriceVnd,boolean hasFutureDeparture) {}
     public record TourComparison(List<Integer> tourIds,List<ComparisonItem> items,OffsetDateTime dataAsOf) {}
@@ -71,7 +77,8 @@ public final class ChatModels {
                            List<Integer> aliasIds, boolean adviceSupported) {}
     public record ChatResult(String conversationId, String requestId, long turnVersion, String status, String reply,
                              Criteria criteria, List<TourCard> tours, Clarification clarification,
-                             TourDetail detail, TourComparison comparison, PolicyInfo policy, Summary searchSummary, OffsetDateTime expiresAt) {
+                             TourDetail detail, TourComparison comparison, PolicyInfo policy, Summary searchSummary, OffsetDateTime expiresAt,
+                             TourOverview tourOverview) {
         @Override public String toString() { return "ChatResult[content=REDACTED, turnVersion="+turnVersion+"]"; }
     }
     public record Envelope<T>(int code, String message, T result) {
@@ -87,7 +94,12 @@ public final class ChatModels {
     }
     public record Draft(Criteria criteria, Hint pending, List<Integer> presentedIds, int page, boolean hasMore,
                         String status, String reply, List<TourCard> tours, Clarification clarification,
-                        Summary summary, boolean clearHistory,TourDetail detail,TourComparison comparison,PolicyInfo policy) {
+                        Summary summary, boolean clearHistory,TourDetail detail,TourComparison comparison,PolicyInfo policy,TourOverview tourOverview) {
+        public Draft(Criteria criteria, Hint pending, List<Integer> ids, int page, boolean hasMore, String status,
+                     String reply,List<TourCard> tours,Clarification clarification,Summary summary,boolean clearHistory,
+                     TourDetail detail,TourComparison comparison,PolicyInfo policy) {
+            this(criteria,pending,ids,page,hasMore,status,reply,tours,clarification,summary,clearHistory,detail,comparison,policy,null);
+        }
         public Draft(Criteria criteria,Hint pending,List<Integer> ids,int page,boolean hasMore,String status,String reply,
                      List<TourCard> tours,Clarification clarification,Summary summary,boolean clearHistory) {
             this(criteria,pending,ids,page,hasMore,status,reply,tours,clarification,summary,clearHistory,null,null,null);

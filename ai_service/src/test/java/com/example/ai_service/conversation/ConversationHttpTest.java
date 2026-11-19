@@ -37,6 +37,8 @@ class ConversationHttpTest {
     static final AtomicInteger modelCalls=new AtomicInteger(),catalogCalls=new AtomicInteger();
     static final AtomicInteger locationsCalls=new AtomicInteger();
     static final AtomicInteger factsCalls=new AtomicInteger(),itineraryCalls=new AtomicInteger();
+    static final AtomicInteger itineraryStatus=new AtomicInteger(200);
+    static final AtomicBoolean pagePriceAvailable=new AtomicBoolean(true);
     static final AtomicLong currentAdultPrice=new AtomicLong(1100000);
     static final List<JsonNode> searches=new CopyOnWriteArrayList<>();
     static final AtomicReference<String> lastPrompt=new AtomicReference<>();
@@ -79,9 +81,10 @@ class ConversationHttpTest {
                     assertThat(exchange.getRequestMethod()).isEqualTo("GET"); assertThat(exchange.getRequestHeaders().getFirst("Authorization")).isNull();
                     body=JSON.writeValueAsString(Map.of("code",1000,"result",Map.of("id",tourId,"tourTitle","Tour legacy "+tourId,
                             "duration",1,"basePrice",999,"destinationCity",Map.of("city","Quảng Nam"),
-                            "tourPrice",Map.of("adultPrice",currentAdultPrice.get()),"departures",List.of())));
+                            "tourPrice",pagePriceAvailable.get()?Map.of("adultPrice",currentAdultPrice.get()):Map.of(),
+                            "departures",List.of())));
                 } else if(path.matches("/api/v1/tour/itineraries/tour/[0-9]+")) {
-                    itineraryCalls.incrementAndGet(); status=200;
+                    itineraryCalls.incrementAndGet(); status=itineraryStatus.get();
                     body=JSON.writeValueAsString(Map.of("code",1000,"result",List.of(Map.of("dayNumber",1,"title","Ngày 1",
                             "description","<p>injected_backend_string</p><script>bad()</script>","meal","Trưa"))));
                 }
@@ -99,7 +102,8 @@ class ConversationHttpTest {
     @BeforeEach void defaults() {
         nextPlan.set(plan(set(Field.REGION,"CENTRAL"),set(Field.MAX_BUDGET_VND,"5000000"),set(Field.BUDGET_SCOPE,"PER_ADULT")));
         modelStatus.set(200); catalogStatus.set(200); modelCalls.set(0); catalogCalls.set(0); searches.clear();
-        factsCalls.set(0); itineraryCalls.set(0); locationsCalls.set(0); lastPrompt.set(null); currentAdultPrice.set(1100000);
+        factsCalls.set(0); itineraryCalls.set(0); itineraryStatus.set(200); pagePriceAvailable.set(true);
+        locationsCalls.set(0); lastPrompt.set(null); currentAdultPrice.set(1100000);
         FIXTURE.ids=List.of(901,902); FIXTURE.fail=false;
         // This context uses the real clock, so fixture departures must be future-dated or the
         // availability guard rejects them as expired (the same fixture is pinned in unit tests).
@@ -128,6 +132,62 @@ class ConversationHttpTest {
     }
     String message(String token,String request,String text) throws Exception {
         return JSON.writeValueAsString(Map.of("conversationId",token,"requestId",request,"message",text));
+    }
+    @Test void pageContextTraversesHttpWithoutSearchOrModelAndValidatesId() throws Exception {
+        String token=token();
+        for(String question:List.of("Xem lịch trình tour này","Giá tham khảo tour này","Tour này còn lịch khởi hành không?")) {
+            String body=JSON.writeValueAsString(Map.of("conversationId",token,"requestId",UUID.randomUUID().toString(),
+                    "message",question,"selectedTourId",902));
+            var reply=post("/chat",body);
+            assertThat(reply.status()).isEqualTo(200);
+            var payload=reply.json().path("result");
+            var section=question.startsWith("Xem")?"detail":"tourOverview";
+            assertThat(payload.path(section).path("tourId").asInt()).isEqualTo(902);
+        }
+        assertThat(factsCalls.get()).isEqualTo(3);assertThat(itineraryCalls.get()).isEqualTo(1);
+        assertThat(modelCalls.get()).isZero();assertThat(catalogCalls.get()).isZero();
+        var bad=post("/chat",JSON.writeValueAsString(Map.of("conversationId",token,"requestId",UUID.randomUUID().toString(),
+                "message","Xem lịch trình tour này","selectedTourId",0)));
+        assertThat(bad.status()).isEqualTo(400);assertThat(factsCalls.get()).isEqualTo(3);
+    }
+    @Test void itineraryOutageDoesNotBreakPriceOrDepartureQuestions() throws Exception {
+        String token=token();
+        itineraryStatus.set(503);
+        var combined=pageChat(token,"Tour này bao nhiêu tiền, cuối tuần còn chuyến không?");
+        assertThat(combined.status()).isEqualTo(200);
+        var overview=combined.json().path("result").path("tourOverview");
+        assertThat(overview.path("referenceAdultPriceVnd").asLong()).isEqualTo(1100000);
+        assertThat(overview.path("departures").path("scheduled").isBoolean()).isTrue();
+        assertThat(combined.json().path("result").path("reply").asText()).contains("cuối tuần này");
+        assertThat(itineraryCalls.get()).isZero();
+        var partial=pageChat(token,"Giá tour này và ngày đầu đi đâu?");
+        assertThat(partial.status()).isEqualTo(200);
+        assertThat(partial.json().path("result").path("reply").asText()).contains("chưa kiểm tra được lịch trình");
+        assertThat(partial.json().path("result").path("tourOverview").path("referenceAdultPriceVnd").asLong()).isEqualTo(1100000);
+        assertThat(pageChat(token,"Ngày đầu tour này đi đâu?").status()).isEqualTo(503);
+        assertThat(itineraryCalls.get()).isEqualTo(2);
+        assertThat(modelCalls.get()).isZero();
+    }
+    @Test void explicitlyNamedTourDoesNotUseThePageId() throws Exception {
+        var reply=pageChat(token(),"Tour Sa Pa giá bao nhiêu?");
+        assertThat(reply.status()).isEqualTo(200);
+        assertThat(modelCalls.get()).isEqualTo(1);
+        assertThat(factsCalls.get()).isZero();
+        assertThat(itineraryCalls.get()).isZero();
+    }
+    @Test void missingPriceIsReportedWhileTheVerifiedScheduleStillAnswers() throws Exception {
+        pagePriceAvailable.set(false);
+        var reply=pageChat(token(),"Giá tour này và có lịch khởi hành không?");
+        assertThat(reply.status()).isEqualTo(200);
+        var result=reply.json().path("result");
+        assertThat(result.path("reply").asText()).contains("chưa kiểm tra được giá","Chưa thấy lịch");
+        assertThat(result.path("tourOverview").path("referenceAdultPriceVnd").isNull()).isTrue();
+        assertThat(result.path("tourOverview").path("departures").path("scheduled").booleanValue()).isFalse();
+        assertThat(itineraryCalls.get()).isZero();
+    }
+    private Reply pageChat(String token,String question) throws Exception {
+        return post("/chat",JSON.writeValueAsString(Map.of("conversationId",token,
+                "requestId",UUID.randomUUID().toString(),"message",question,"selectedTourId",902)));
     }
     @Test void createAndResetDoNotCallModelAndOldTokenIsGone() throws Exception {
         var token=token(); var reset=post("/conversations/reset",JSON.writeValueAsString(Map.of("conversationId",token)));

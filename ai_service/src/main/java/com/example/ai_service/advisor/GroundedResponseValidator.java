@@ -51,9 +51,10 @@ public class GroundedResponseValidator {
         return new SearchResult(List.copyOf(clean),result.searchSummary(),result.page(),result.size());
     }
     public Draft answer(Draft draft) {
-        int payloads=(draft.detail()==null?0:1)+(draft.comparison()==null?0:1)+(draft.policy()==null?0:1);
+        int payloads=(draft.detail()==null && draft.tourOverview()==null?0:1)+(draft.comparison()==null?0:1)+(draft.policy()==null?0:1);
         boolean answer="ANSWER".equals(draft.status());
-        if(answer!=(payloads==1)) {
+        if(payloads!=(answer?1:0) || draft.detail()!=null && draft.tourOverview()!=null
+                && draft.detail().tourId()!=draft.tourOverview().tourId()) {
             LOG.error("ai_draft_invalid status={} payloads={}",draft.status(),payloads);
             throw new ChatFailure(500,"AI_INTERNAL_ERROR");
         }

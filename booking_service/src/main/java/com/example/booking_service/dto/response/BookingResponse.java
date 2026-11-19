@@ -14,6 +14,8 @@ import java.util.Map;
 @FieldDefaults(level = AccessLevel.PRIVATE)
 @JsonInclude(JsonInclude.Include.ALWAYS)
 public class BookingResponse {
+    /** A saved request ended without an active hold. The client can offer a separate new request. */
+    private boolean restartAllowed;
     private String id;
     private String accountId;
     private String createdAt;

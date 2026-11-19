@@ -1,6 +1,6 @@
 # SGU Tour — AI service
 
-Module Spring Boot độc lập của trợ lý SGU Tour. Cập nhật theo source ngày **01/11/2026**: Java 21, **Spring Boot 3.5.16**, **Spring AI 1.1.8**, Groq API; mặc định bind `127.0.0.1:8091`, context `/ai`.
+Module Spring Boot độc lập của trợ lý SGU Tour. Nền tảng: Java 21, **Spring Boot 3.5.16**, **Spring AI 1.1.8**, Groq API; mặc định bind `127.0.0.1:8091`, context `/ai`.
 
 ## Phạm vi hiện có
 
@@ -12,17 +12,19 @@ Module Spring Boot độc lập của trợ lý SGU Tour. Cập nhật theo sour
 
 Model/provider hiện dùng **Groq**, model mặc định `openai/gpt-oss-120b`. Đây không phải giao diện nhận tùy ý provider URL/API key từ trình duyệt. Nguồn dữ liệu là API có schema cố định; không nạp cả DB hoặc toàn bộ frontend vào prompt. Không có vector database, embedding/RAG kho tài liệu tự do hay model chạy local.
 
-## Chạy như một Spring Boot service
+## Khởi chạy
 
 Tại `Backend_TourDuLich/ai_service`, dùng JDK 21 và Maven:
 
 ```powershell
-# Chỉ copy khi chưa có .env; mở file và điền key cục bộ:
-if (-not (Test-Path -LiteralPath .env)) { Copy-Item .env.example .env }
 mvn spring-boot:run
 ```
 
 Hoặc Run `com.example.ai_service.AiServiceApplication` trong IDE, working directory là module. Không cần launcher PS1. Module có Dockerfile riêng và chạy qua profile `ai` của compose gốc khi cần container hoá. Trong container, compose mặc định `AI_ENABLED=false` và tự trỏ catalog/booking sang `api_gateway`/`booking_service`, nên hãy đặt cả `GROQ_API_KEY` và `AI_ENABLED=true` nếu muốn gọi model.
+
+## Cấu hình
+
+Nếu dùng file cục bộ, sao chép `.env.example` thành `.env` khi chưa có và điền `GROQ_API_KEY`.
 
 `.env` chỉ được bộ nạp riêng đọc **GROQ_API_KEY**; environment tiến trình được ưu tiên. Bộ nạp tìm tại working directory, `ai_service/.env` hoặc `Backend_TourDuLich/ai_service/.env` tương ứng cách chạy. Không thực thi nội dung file như shell. Có key thì mặc định bật model; đặt `AI_ENABLED=false` trong environment/IDE để tắt model và không đọc key từ file. Các biến khác đặt ở environment/IDE, không chỉ thêm vào `.env` rồi kỳ vọng được nạp.
 
@@ -60,7 +62,7 @@ Frontend dùng gateway `http://localhost:8888/api/v1/ai`; các URL dưới là p
 | Method / path | Quyền / nội dung |
 |---|---|
 | POST `/conversations` | Public, JSON `{}`, tạo phiên |
-| POST `/chat` | Public với conversationId hợp lệ; requestId UUID, message; kiểm tra scope/giới hạn |
+| POST `/chat` | Public với conversationId hợp lệ; requestId UUID, message và selectedTourId tùy chọn; kiểm tra scope/giới hạn |
 | POST `/conversations/reset` | Public với conversationId; xóa phiên cũ và cấp phiên mới |
 | GET `/policies` | Public; nguồn chính sách đã duyệt theo version |
 | POST `/booking-help` | JWT website, chỉ dữ liệu chủ tài khoản; body question, selectedBookingId tùy chọn |
@@ -77,11 +79,15 @@ Ví dụ chat, thay ID bằng kết quả tạo phiên và tạo requestId mới
 }
 ```
 
+`selectedTourId` là số nguyên dương của trang tour đang xem. Các câu hỏi nhanh và câu tự nhiên được nhận diện như “Tour này bao nhiêu tiền, cuối tuần còn chuyến không?” đọc lại dữ liệu công khai của tour mà không cần tìm trước. Trường `tourOverview` trả giá người lớn tham khảo, lịch gần nhất trong khoảng hỏi nếu có và thời điểm kiểm tra. “Cuối tuần” là thứ Bảy và Chủ Nhật của tuần hiện tại theo giờ Việt Nam. Lịch khởi hành không xác nhận còn đủ chỗ.
+
+`detail` chỉ được đọc khi khách hỏi lịch trình. Nếu hỏi cả giá và lịch trình, trợ lý vẫn trả giá khi nguồn lịch trình lỗi. Câu hỏi nêu tên tour khác tiếp tục dùng luồng tìm tour. Khi gửi lại cùng `requestId`, giữ nguyên `message` và `selectedTourId`.
+
 Gateway bỏ Authorization/Cookie khỏi chat public và chính sách; riêng booking-help giữ Authorization để booking service xác thực/kiểm tra owner. Không gửi hồ sơ/đơn riêng tư sang model để nhờ nó tự phân quyền. Frontend đã có client và widget, không cần thêm chatbot/n8n webhook khác.
 
 ## Phiên, dữ liệu và giới hạn
 
-- Phiên lưu **RAM**, token ngẫu nhiên 43 ký tự, TTL mặc định 30 phút, tối đa 100 phiên; restart làm mất phiên. Frontend giữ tham chiếu phiên theo tab/owner bằng sessionStorage, không biến Redis/DB thành kho hội thoại bền.
+- Phiên lưu **RAM**, token ngẫu nhiên 43 ký tự, TTL mặc định 30 phút, tối đa 100 phiên; restart làm mất phiên. Frontend chỉ lưu phiên khách trong sessionStorage theo tab; hội thoại đăng nhập chỉ giữ trong RAM, không biến Redis/DB thành kho hội thoại bền.
 - Lưu criteria và lịch sử rút gọn tối đa 10 lượt; cache kết quả theo requestId tối đa 20 mục để tránh lặp. Một phiên chỉ xử lý một lượt tại một thời điểm.
 - Thay tiêu chí thì backend đọc/tìm lại qua API; kết quả giá/chỗ có thời điểm kiểm tra và cần xác nhận lại ở bước booking. Không mặc định coi kết quả hội thoại trước là tồn kho hiện tại.
 - Tin nhắn tối đa 16.000 Unicode code point (tối đa 64.000 byte UTF-8) qua kiểm tra policy; body JSON được chặn ở 65.024 byte trước khi xử lý, quá giới hạn trả 413. Có kiểm tra JSON/field/token/requestId. Đây là giới hạn transport/policy; từng lượt gọi model còn bị chặn bởi ngân sách prompt `app.ai.guard.prompt-utf8-bytes` (mặc định 11.000 byte UTF-8 cho system + lịch sử + tin nhắn), nên tin nhắn rất dài hoặc tiếng Việt nhiều dấu có thể bị trả 400 `AI_INPUT_TOO_LARGE` dù chưa chạm 16.000 code point. Chặn mẫu mã/lệnh/secret chỉ là một lớp phòng vệ; ranh giới chính là kế hoạch có kiểu, API đọc cố định, quyền owner và không có công cụ thực thi.
@@ -106,4 +112,14 @@ Test mock/H2 hoặc HTTP fixture không cần key thật cho từng ca; các ki�
 | Booking-help 401/403 | Login/refresh, trạng thái tài khoản, owner; không gửi booking ID người khác để vượt quyền |
 | FAQ không khởi động | Version duyệt phải khớp policies-v2.json; không bỏ qua kiểm tra bằng chat instruction |
 
-[Chỉ mục tài liệu AI](../docs/ai/README.md) · [README backend](../README.md) · [Tổng quan hệ thống](../docs/PROJECT.md).
+[README backend](../README.md) · [Tổng quan hệ thống](../docs/PROJECT.md).
+
+## Kiểm thử
+
+Tại thư mục `ai_service`:
+
+```bash
+mvn test
+```
+
+Bộ test mặc định dùng fixture/mock để kiểm tra hợp đồng, giới hạn, phiên, kế hoạch, dữ liệu tour, chính sách và quyền truy cập. Các bài thử provider hoặc database có điều kiện kích hoạt riêng; kết quả mock không chứng minh đã gọi Groq thành công.

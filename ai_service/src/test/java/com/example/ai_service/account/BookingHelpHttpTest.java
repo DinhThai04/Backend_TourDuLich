@@ -87,7 +87,7 @@ class BookingHelpHttpTest {
         }
     }
     @Test void strictStateValidationAllowsCurrentScheduleRefundStatesButRejectsUnknownCommands() throws Exception {
-        for(String state:List.of("SCHEDULE_CHANGE_REQUIRED","REFUNDED")) {
+        for(String state:List.of("SCHEDULE_CHANGE_REQUIRED","DEPARTURE_SUSPENDED","DEPARTURE_CANCELLED","REFUNDED")) {
             bookingState.set(state);
             var response=post("/booking-help","{\"message\":\"Booking #6 còn bao lâu?\"}","Bearer fixture.jwt.owner-seven.123456789");
             assertThat(response.statusCode()).isEqualTo(200);

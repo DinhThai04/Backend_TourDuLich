@@ -52,8 +52,10 @@ public class ConversationService {
         try(var scope=TurnTrace.bind(trace)) {
             AiInputPolicy.requireMessage(request.message());
             String message=request.message();
-            return store.turn(request.conversationId(),request.requestId(),message,
-                    state->answerTurn(state,message));
+            Integer selected = request.selectedTourId();
+            if (selected != null && selected < 1) throw ChatFailure.invalid();
+            return store.turn(request.conversationId(),request.requestId(),message,selected,
+                    state->answerTurn(state,message,selected));
         } catch(ModelFailure failure) {
             status=failure.httpStatus();
             outcome=failure.type().name();
@@ -75,13 +77,16 @@ public class ConversationService {
                     trace.promptTokens,trace.completionTokens,trace.totalTokens);
         }
     }
-    private Draft answerTurn(State state,String message) {
+    private Draft answerTurn(State state,String message,Integer selectedTourId) {
         String stripped=message.strip();
         return execution==null
-                ? responses.answer(process(state,stripped))
-                : execution.execute(()->responses.answer(process(state,stripped)));
+                ? responses.answer(process(state,stripped,selectedTourId))
+                : execution.execute(()->responses.answer(process(state,stripped,selectedTourId)));
     }
-    private Draft process(State state,String message) {
+    private Draft process(State state,String message,Integer selectedTourId) {
+        var question = com.example.ai_service.advisor.TourPageQuestion.parse(message);
+        if (selectedTourId != null && question != null)
+            return advisor.pageTour(state, selectedTourId, question);
         Plan plan=interpreter.interpret(state,message);
         if(plan==null || !validator.validate(plan).isEmpty()) throw new ModelFailure(ModelFailure.Type.AI_INVALID_OUTPUT);
         var merged=merger.merge(state.criteria(),plan,catalog::locations,LocalDate.now(clock));

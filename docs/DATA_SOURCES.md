@@ -1,4 +1,4 @@
-# Dữ Liệu Tour Miền Bắc
+# SGU Tour — Nguồn dữ liệu tour
 
 Bộ mẫu ban đầu gồm 5 tour miền Bắc được tổng hợp từ các trang tour công khai truy cập ngày **2026-10-01**. File Excel gốc không còn kèm trong repo; database demo hiện tại (`data_seed/database_all.sql`) có 15 tour, gồm 5 tour này và các tour bổ sung được chuẩn hóa cùng quy ước. Dữ liệu chỉ phục vụ demo/học tập; không phải dữ liệu thương mại đã được cấp quyền sử dụng.
 
@@ -12,7 +12,7 @@ Bộ mẫu ban đầu gồm 5 tour miền Bắc được tổng hợp từ các 
 | `NOI_BO` | Được tạo cho đồ án: mã tour, mã đợt đi, số ghế, ngày đi cụ thể, mã xe, mã ảnh. |
 | `GIA_NOI_BO` | Giá do đồ án ước tính vì nguồn không công khai giá. Không được trình bày là giá của nhà cung cấp. |
 
-## Năm tour và nguồn
+## Nguồn bộ mẫu ban đầu
 
 | Mã nội bộ | Tour | Nguồn | Dữ liệu web chính |
 |---|---|---|---|
@@ -25,18 +25,16 @@ Bộ mẫu ban đầu gồm 5 tour miền Bắc được tổng hợp từ các 
 ## Phần do đồ án tạo
 
 - `tourProgram`, `tourCode`, `tourPriceId`, `vehicleId`, `imageIds`: mã nội bộ theo quy ước dễ đọc.
-- `departureDate`, `returnDate`, `availableSeats`: lịch demo tháng 10/2026. Chúng **không phải** lịch/ghế của nhà cung cấp.
+- `departureDate`, `returnDate`, `availableSeats`: lịch mẫu do SQL tổng sinh theo ngày import. Chúng **không phải** lịch/ghế của nhà cung cấp.
 - `singleSupplementPrice`: không có trong 4/5 nguồn nên là số demo. Riêng Ninh Bình nguồn không công bố phụ thu cho tour PAS Travel, nên cũng là số demo.
 - Giá người lớn của tour Khoang Xanh - Suối Tiên là `1.350.000đ`: ước tính nội bộ vì trang nguồn không hiển thị giá.
 - Dữ liệu giá trẻ em/toddler/infant được chuẩn hóa theo entity `TourPrice`. Nơi nguồn chỉ ghi một nhóm tuổi miễn phí thì `toddlerPrice` và `infantPrice` được gán `0`.
 
 ## Ảnh và bản quyền
 
-Bộ mẫu ban đầu có sheet `IMAGE_SOURCE` giữ URL ảnh công khai tại trang nguồn. Entity `Tour.imageIds` cần **ID file_service**, không dùng trực tiếp URL ngoài. Khi import:
+Bộ mẫu ban đầu ghi URL ảnh trong bảng nguồn ngoài repository. Trong mã hiện tại, file service quản lý metadata và URL tài nguyên; tour service dựng ảnh cho response từ nguồn này. Không dùng hướng dẫn thay mã `IMG-...` trong Excel để import database hiện tại.
 
-1. Chỉ sử dụng ảnh khi có quyền sử dụng hoặc thay bằng ảnh tự chụp/ảnh có license phù hợp.
-2. Upload ảnh hợp lệ qua `file_service`.
-3. Thay các mã tạm `IMG-...` trong sheet `TOUR` bằng ID thật trả về từ file_service.
+Ảnh sử dụng cần có quyền phù hợp. Upload qua file service để cập nhật metadata nhất quán; không thay ID/URL trực tiếp trong database đang chạy. Nguồn ảnh banner trang chủ được ghi trong `src/assets/images/ATTRIBUTION.md` của repository frontend.
 
 ## Cảnh báo cập nhật
 

@@ -55,7 +55,7 @@
                     .hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOUR_DEPARTURES_GET_LIST", "PERM:SHOP_CHANGE_CREATE")
                     .requestMatchers(HttpMethod.GET, PUBLIC_URLS)
                     .permitAll()
-                    .requestMatchers(HttpMethod.POST, "/tours/*/images").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOURS_CREATE", "PERM:TOURS_UPDATE")
+                    .requestMatchers(HttpMethod.POST, "/tours/*/images").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOURS_UPDATE")
                     .requestMatchers(HttpMethod.POST, "/tours", "/tours/**").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOURS_CREATE")
                     .requestMatchers(HttpMethod.PUT, "/tours", "/tours/**").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOURS_UPDATE")
                     .requestMatchers(HttpMethod.DELETE, "/tours", "/tours/**").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOURS_DELETE")

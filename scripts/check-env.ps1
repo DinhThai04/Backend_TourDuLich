@@ -103,8 +103,10 @@ if (-not $SkipDependencies) {
 Write-Section '2. Database and Docker'
 if (Test-TcpPort 3306) {
     Write-Pass 'MySQL is listening on 127.0.0.1:3306'
+} elseif (Test-TcpPort 3307) {
+    Write-Pass 'Database port 127.0.0.1:3307 is reachable (Docker default; verify docker compose ps mysql)'
 } else {
-    Write-Warn 'MySQL is not listening on 127.0.0.1:3306. Start XAMPP MySQL, or set DB_URL to your server.'
+    Write-Warn 'No database on 3306/3307. Run docker compose up -d mysql, start native MySQL, or set DB_URL.'
 }
 
 if (-not $SkipDocker) {
@@ -149,10 +151,87 @@ function Get-Setting([string]$name) {
     return $null
 }
 
-$jwt = Get-Setting 'JWT_SIGNER_KEY'
-if (-not $jwt) { Write-Fail 'JWT_SIGNER_KEY is missing; every service needs the same key.' }
-elseif ($jwt.Length -lt 64) { Write-Fail ('JWT_SIGNER_KEY is only ' + $jwt.Length + ' characters; HS512 needs at least 64.') }
-else { Write-Pass 'JWT_SIGNER_KEY is present and long enough' }
+$compromisedFile = Join-Path $PSScriptRoot 'security/compromised-credentials.json'
+$compromisedFingerprints = @()
+try {
+    $compromisedFingerprints = @(Get-Content -LiteralPath $compromisedFile -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop)
+    if ($compromisedFingerprints.Count -eq 0 -or @($compromisedFingerprints | Where-Object { $_.sha256 -notmatch '^[0-9a-f]{64}$' }).Count -gt 0) {
+        throw 'Invalid credential fingerprint registry.'
+    }
+} catch {
+    Write-Fail 'Cannot load the credential fingerprint registry. Restore scripts/security/compromised-credentials.json.'
+}
+function Test-CompromisedValue([string]$value, [string]$context) {
+    if ([string]::IsNullOrWhiteSpace($value)) { return $false }
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+        $digest = [BitConverter]::ToString($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($value))).Replace('-', '').ToLowerInvariant()
+    } finally { $sha.Dispose() }
+    if ($compromisedFingerprints.sha256 -contains $digest) {
+        Write-Fail "$context uses a credential from repository history. Replace it before starting services."
+        return $true
+    }
+    return $false
+}
+
+# A different launch mode can use a file even when this shell overrides it.
+# Check persisted assignments separately from the effective process settings.
+$credentialFiles = @(
+    Get-ChildItem -LiteralPath $localDir -Filter '*.properties' -File -ErrorAction SilentlyContinue |
+        ForEach-Object { $_.FullName }
+)
+$credentialFiles += @(Join-Path $backendRoot '.env'; Join-Path $backendRoot 'ai_service/.env')
+foreach ($file in $credentialFiles) {
+    if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { continue }
+    $relativePath = $file.Substring($backendRoot.Length + 1)
+    $lineNumber = 0
+    foreach ($line in Get-Content -LiteralPath $file) {
+        $lineNumber++
+        if ($line -notmatch '^\s*(?:export\s+)?[A-Za-z_][\w.\-]*\s*[=:]\s*(.*)$') { continue }
+        $value = $Matches[1].Trim()
+        if ($file.EndsWith('.env')) {
+            if ($value -match '^"([^"]*)"\s*(?:#.*)?$' -or $value -match "^'([^']*)'\s*(?:#.*)?$") {
+                $value = $Matches[1]
+            } else {
+                $value = ($value -replace '\s+#.*$', '').Trim()
+            }
+        }
+        Test-CompromisedValue $value "${relativePath}:$lineNumber" | Out-Null
+    }
+}
+
+$jwtModules = @('auth_service', 'booking_service', 'payment_service', 'pricing_service',
+    'tour_service', 'file_service', 'invoice_service', 'search_service')
+$processJwt = [Environment]::GetEnvironmentVariable('JWT_SIGNER_KEY', 'Process')
+$jwtValues = @()
+foreach ($module in $jwtModules) {
+    $moduleJwt = $processJwt
+    if ([string]::IsNullOrWhiteSpace($moduleJwt)) {
+        $moduleFile = Join-Path $localDir "$module.properties"
+        if (Test-Path -LiteralPath $moduleFile) {
+            foreach ($line in Get-Content -LiteralPath $moduleFile) {
+                if ($line -match '^\s*JWT_SIGNER_KEY\s*[=:]\s*(.*)$') { $moduleJwt = $Matches[1].Trim() }
+            }
+        }
+    }
+    if ([string]::IsNullOrWhiteSpace($moduleJwt)) {
+        Write-Fail "$module is missing JWT_SIGNER_KEY in its local file or this process environment."
+    } elseif ([Text.Encoding]::UTF8.GetByteCount($moduleJwt) -lt 64) {
+        Write-Fail "$module JWT_SIGNER_KEY needs at least 64 UTF-8 bytes."
+    } elseif (-not (Test-CompromisedValue $moduleJwt "$module JWT_SIGNER_KEY")) {
+        $jwtValues += $moduleJwt
+    }
+}
+if (@($jwtValues | Select-Object -Unique).Count -gt 1) {
+    Write-Fail 'JWT_SIGNER_KEY differs between services. Use the same key in all eight services.'
+} elseif ($jwtValues.Count -eq $jwtModules.Count) {
+    Write-Pass 'All eight JWT-verifying services have the same key of sufficient length'
+}
+
+foreach ($name in @('VNPAY_HASH_SECRET', 'CLOUDINARY_API_SECRET', 'GROQ_API_KEY', 'MOMO_SECRET_KEY',
+    'MAIL_SMTP_PASSWORD', 'MAIL_INTERNAL_API_KEY', 'CATALOG_INTERNAL_KEY')) {
+    Test-CompromisedValue (Get-Setting $name) $name | Out-Null
+}
 
 if ($localConfig.ContainsKey('DB_PASSWORD') -or -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable('DB_PASSWORD', 'Process'))) {
     Write-Pass 'DB_PASSWORD is configured (an empty value is valid for a passwordless local MySQL)'
@@ -161,10 +240,10 @@ if ($localConfig.ContainsKey('DB_PASSWORD') -or -not [string]::IsNullOrWhiteSpac
 }
 
 if ((Get-Setting 'VNPAY_HASH_SECRET')) { Write-Pass 'VNPAY_HASH_SECRET is present' }
-else { Write-Warn 'VNPAY_HASH_SECRET is missing; VNPay checkout will not work.' }
+else { Write-Fail 'VNPAY_HASH_SECRET is missing; payment_service refuses to start without it.' }
 
 if ((Get-Setting 'VNPAY_TMN_CODE')) { Write-Pass 'VNPAY_TMN_CODE is present' }
-else { Write-Warn 'VNPAY_TMN_CODE is missing; payment_service refuses to start without it.' }
+else { Write-Fail 'VNPAY_TMN_CODE is missing; payment_service refuses to start without it.' }
 
 if ((Get-Setting 'CLOUDINARY_API_KEY') -and (Get-Setting 'CLOUDINARY_API_SECRET')) { Write-Pass 'Cloudinary credentials are present' }
 else { Write-Warn 'Cloudinary credentials are missing; image upload will not work.' }

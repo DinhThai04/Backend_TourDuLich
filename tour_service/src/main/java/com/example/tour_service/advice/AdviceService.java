@@ -81,8 +81,10 @@ public class AdviceService {
         List<AdviceCatalogRepository.Candidate> candidates=new ArrayList<>();
         for (var t:repository.candidates()) {
             var destination=byId.get(t.destinationId()); var origin=byId.get(t.originId());
-            if (destination==null || origin==null || !"DESTINATION".equals(destination.type()) || !"DEPARTURE".equals(origin.type()))
-                throw AdviceException.unavailable();
+            if (destination==null || origin==null || !"DESTINATION".equals(destination.type()) || !"DEPARTURE".equals(origin.type())) {
+                LOG.warn("Skipping tour {} with invalid location references", t.id());
+                continue;
+            }
             if (!destinationIds.isEmpty() && !destinationIds.contains(t.destinationId())) continue;
             if (!originIds.isEmpty() && !originIds.contains(t.originId())) continue;
             Region region=locations.region(destination.name());

@@ -22,10 +22,15 @@ import static org.mockito.Mockito.*;
 // Transaction-bound upload cleanup fires on the test rollback, after Mockito has reset the shared mock.
 @org.springframework.test.annotation.DirtiesContext(classMode = org.springframework.test.annotation.DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 class GalleryPersistenceTest {
+    @MockBean com.example.file_service.service.AvatarWritePolicy avatarAccess;
     @Autowired FileService service;
     @Autowired FileMgmtRepository records;
     @Autowired EntityManager em;
     @MockBean FileRepository storage;
+    @org.junit.jupiter.api.BeforeEach void existingTours() {
+        em.createNativeQuery("CREATE TABLE IF NOT EXISTS tour (id INT PRIMARY KEY)").executeUpdate();
+        em.createNativeQuery("MERGE INTO tour (id) KEY(id) VALUES (1),(2)").executeUpdate();
+    }
     @Test void galleryUpdatePersistsAndPreservesSharedImagesLinkedToAnotherTour() throws Exception {
         records.saveAll(List.of(record("1","shared.jpg"),record("2","shared.jpg"),record("1","keep.jpg")));
         var file=new MockMultipartFile("files","new.png","image/png",validPng());

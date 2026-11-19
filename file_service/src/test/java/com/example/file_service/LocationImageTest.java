@@ -32,6 +32,7 @@ import static org.mockito.Mockito.*;
 @Import({FileService.class,FileMgmtMapperImpl.class})
 @Transactional(propagation=Propagation.NOT_SUPPORTED)
 class LocationImageTest {
+    @MockBean com.example.file_service.service.AvatarWritePolicy avatarAccess;
     @Autowired FileService service;
     @Autowired FileMgmtRepository records;
     @MockBean FileRepository storage;

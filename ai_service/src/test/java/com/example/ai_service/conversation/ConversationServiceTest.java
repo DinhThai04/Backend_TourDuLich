@@ -51,9 +51,10 @@ class ConversationServiceTest {
         boolean fail;
         boolean missing;
         long price=1100000;
+        List<LocalDateTime> departureDates=List.of(LocalDateTime.parse("2026-10-24T08:00:00"));
         public Facts facts(int id) {
             calls++; if(fail) throw ChatFailure.catalog(); if(missing) return null;
-            return new Facts(id,"Tour fixture "+id,1,"Quảng Nam",price,true,OffsetDateTime.parse("2026-10-23T08:00:00+07:00"));
+            return new Facts(id,"Tour fixture "+id,1,"Quảng Nam",price,OffsetDateTime.parse("2026-10-23T08:00:00+07:00"),departureDates);
         }
         public TourDetail detail(Facts facts) {
             return new TourDetail(facts.id(),facts.title(),List.of(new ItineraryDay(1,"Ngày 1","Mô tả fixture","Trưa")),facts.checkedAt(),false);
@@ -63,6 +64,57 @@ class ConversationServiceTest {
         plans.add(plan); return service.chat(new ChatRequest(token,ConversationStoreTest.id(),text));
     }
     Plan initial() { return plan(set(Field.REGION,"CENTRAL"),set(Field.MAX_BUDGET_VND,"5000000"),set(Field.BUDGET_SCOPE,"PER_ADULT")); }
+    @Test void pageTourWorksWithoutSearchAndWithoutCallingModel() {
+        var token=service.create().conversationId();
+        var result=service.chat(new ChatRequest(token,ConversationStoreTest.id(),"Xem lịch trình tour này",902));
+        assertThat(result.status()).isEqualTo("ANSWER");
+        assertThat(result.detail().tourId()).isEqualTo(902);
+        assertThat(catalog.requests).isEmpty();
+        assertThat(store.snapshot(token).latestPresentedTourIds()).isEmpty();
+    }
+    @Test void pageTourReadsFreshPriceAndPreservesSearchSelection() {
+        var token=service.create().conversationId();turn(token,"first",initial());var before=store.snapshot(token);
+        facts.price=2700000;
+        var price=service.chat(new ChatRequest(token,ConversationStoreTest.id(),"Giá tham khảo tour này",999));
+        assertThat(price.reply()).contains("2.700.000","999");
+        assertThat(price.criteria()).isEqualTo(before.criteria());
+        assertThat(store.snapshot(token).latestPresentedTourIds()).isEqualTo(before.latestPresentedTourIds());
+        var departures=service.chat(new ChatRequest(token,ConversationStoreTest.id(),"Tour này còn lịch khởi hành không?",999));
+        assertThat(departures.reply()).contains("Có lịch khởi hành sắp tới","kiểm tra số chỗ");
+        assertThat(departures.tourOverview().departures().scheduled()).isTrue();
+        assertThat(departures.detail()).isNull();
+    }
+    @Test void pageTourContextIsPartOfIdempotencyIdentity() {
+        var token=service.create().conversationId();var request=ConversationStoreTest.id();
+        var first=service.chat(new ChatRequest(token,request,"Xem lịch trình tour này",901));
+        assertThat(service.chat(new ChatRequest(token,request,"Xem lịch trình tour này",901))).isEqualTo(first);
+        assertThat(facts.calls).isEqualTo(1);
+        assertThatThrownBy(()->service.chat(new ChatRequest(token,request,"Xem lịch trình tour này",902)))
+                .isInstanceOf(ChatFailure.class);
+        assertThat(facts.calls).isEqualTo(1);
+    }
+    @Test void pageContextFiltersWeekendAndNextWeekOnTheVietnamCalendar() {
+        var weekend=LocalDateTime.parse("2026-10-24T08:00:00");
+        var monday=LocalDateTime.parse("2026-10-26T08:00:00");
+        facts.departureDates=List.of(monday,weekend);
+        var token=service.create().conversationId();
+        var saturday=service.chat(new ChatRequest(token,ConversationStoreTest.id(),
+                "Tour này giá bao nhiêu và cuối tuần còn chuyến không?",902));
+        assertThat(saturday.tourOverview().departures().nextAt()).isEqualTo(weekend);
+        var nextWeek=service.chat(new ChatRequest(token,ConversationStoreTest.id(),"Tuần sau có chuyến không?",902));
+        assertThat(nextWeek.tourOverview().departures().nextAt()).isEqualTo(monday);
+    }
+    @Test void pageTourReadFailureDoesNotCommitAndMissingTourClarifies() {
+        var token=service.create().conversationId();var before=store.snapshot(token);facts.fail=true;
+        assertThatThrownBy(()->service.chat(new ChatRequest(token,ConversationStoreTest.id(),"Xem lịch trình tour này",901)))
+                .hasMessage("CATALOG_UNAVAILABLE");
+        assertThat(store.snapshot(token)).isEqualTo(before);
+        facts.fail=false;facts.missing=true;
+        var missing=service.chat(new ChatRequest(token,ConversationStoreTest.id(),"Xem lịch trình tour này",901));
+        assertThat(missing.status()).isEqualTo("CLARIFICATION");assertThat(missing.detail()).isNull();
+        assertThatThrownBy(()->service.chat(new ChatRequest(token,ConversationStoreTest.id(),"Xem lịch trình tour này",0)))
+                .isInstanceOf(ChatFailure.class);
+    }
     @Test void reducedBudgetQueriesBackendAgainAndCanDiscoverNewTour() {
         var token=service.create().conversationId(); var first=turn(token,"Miền Trung 5 triệu/người lớn",initial());
         catalog.ids=List.of(902,903);

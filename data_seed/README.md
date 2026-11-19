@@ -1,12 +1,18 @@
-# Database SGU Tour — một file dựng đủ
+# SGU Tour — Database
+
+## Giới thiệu
 
 `database_all.sql` là bản database tổng duy nhất của đồ án. File tự tạo database `dbtour_v2`, toàn bộ 31 bảng, khóa/index và dữ liệu demo; không cần chạy thêm migration hay SQL bổ sung.
 
-- Định dạng: MySQL dump, `utf8mb4`, kiểm chứng trên XAMPP MariaDB 10.4.32 và MySQL 8.0.
+- Định dạng: MySQL dump, `utf8mb4`, kiểm chứng trên MariaDB 10.4.32, MySQL 8.0 và MySQL 8.4.
 - Dung lượng khoảng 327 KB; cập nhật lần cuối **04/11/2026**.
 - Chỉ dùng cho database mới/trống. Mọi thay đổi schema trước đây đã được hợp nhất vào file này.
 
-## Cách import
+## Docker
+
+Compose gốc tự chạy file SQL này khi volume MySQL mới/trống. Không cần phpMyAdmin/Workbench hoặc import thủ công. Xem [hướng dẫn Docker](../docs/DOCKER.md); khởi động lại không import lại và không ảnh hưởng database XAMPP.
+
+## Cách import thủ công
 
 1. Dừng các service đang ghi dữ liệu và chuẩn bị **`dbtour_v2` mới/trống**. Nếu đang có dữ liệu cần giữ, export/sao lưu trước.
 2. Trong phpMyAdmin, chọn Import → `database_all.sql` → UTF-8 → Go. File có lệnh tạo/chọn `dbtour_v2`, tạo bảng, khóa/index và nạp dữ liệu theo thứ tự phụ thuộc.

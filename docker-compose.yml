@@ -9,10 +9,11 @@
 # Kèm n8n cho workflow mail (gọi backend bằng tên service trong mạng compose):
 #   docker compose --profile mail up -d n8n
 #
-# MySQL chạy ngoài Docker (XAMPP) trên máy host. Các biến bí mật
-# (DB_PASSWORD, JWT_SIGNER_KEY, VNPAY_HASH_SECRET, CLOUDINARY_*) được đọc từ
+# MySQL 8.4 chạy trong Compose, tự import SQL khi volume mới/trống.
+# Không cần XAMPP hay MySQL Workbench. Các biến bí mật
+# (JWT_SIGNER_KEY, VNPAY_HASH_SECRET, CLOUDINARY_*) được đọc từ
 # .local/*.properties của repo backend, gắn vào /app/.local của từng container,
-# nên file này không chứa bí mật.
+# DB_PASSWORD lấy từ MYSQL_PASSWORD trong .env; mặc định chỉ cho local/demo.
 name: sgu-tour
 
 x-backend: &backend
@@ -34,7 +35,9 @@ x-health: &health
   start_period: 90s
 
 x-db-env: &db-env
-  DB_URL: ${DB_URL:-jdbc:mysql://host.docker.internal:3306/dbtour_v2}
+  DB_URL: jdbc:mysql://mysql:3306/dbtour_v2?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
+  SPRING_DATASOURCE_USERNAME: sgu_tour
+  DB_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}
   DB_POOL_MAX: ${DB_POOL_MAX:-10}
   DB_POOL_MIN: ${DB_POOL_MIN:-2}
   DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
@@ -46,9 +49,41 @@ x-java-env: &java-env
   # máy nhiều RAM đặt JAVA_XMX=512m hoặc 1g nhưng phải chừa RAM cho OS/MySQL.
   JAVA_XMX: ${JAVA_XMX:-}
 
+# Only datasource services inherit this dependency. Gateway has its own health dependencies.
+x-database-client: &database-client
+  depends_on:
+    mysql:
+      condition: service_healthy
+
 services:
+  mysql:
+    image: mysql:8.4
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      MYSQL_DATABASE: dbtour_v2
+      MYSQL_USER: sgu_tour
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-sgu-tour-root-local-only}
+      TZ: Asia/Ho_Chi_Minh
+    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci", "--default-time-zone=+07:00"]
+    ports:
+      # Separate port avoids colliding with XAMPP on 3306. Workbench is optional.
+      - "127.0.0.1:${MYSQL_PORT:-3307}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./data_seed/database_all.sql:/docker-entrypoint-initdb.d/10-database.sql:ro
+    healthcheck:
+      # A real TCP query runs only after initdb, and verifies the seed completed.
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=TCP -h 127.0.0.1 -u sgu_tour -D dbtour_v2 --skip-column-names -e 'SELECT COUNT(*) FROM booking_price_snapshot' >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 90s
+    stop_grace_period: 30s
+
   auth_service:
-    <<: *backend
+    <<: [*backend, *database-client]
     build: ./auth_service
     image: sgu-tour/auth-service
     environment:
@@ -73,7 +108,7 @@ services:
       <<: *health
 
   booking_service:
-    <<: *backend
+    <<: [*backend, *database-client]
     build: ./booking_service
     image: sgu-tour/booking-service
     environment:
@@ -104,7 +139,7 @@ services:
       <<: *health
 
   payment_service:
-    <<: *backend
+    <<: [*backend, *database-client]
     build: ./payment_service
     image: sgu-tour/payment-service
     environment:
@@ -126,7 +161,7 @@ services:
       <<: *health
 
   pricing_service:
-    <<: *backend
+    <<: [*backend, *database-client]
     build: ./pricing_service
     image: sgu-tour/pricing-service
     environment:
@@ -138,7 +173,7 @@ services:
       <<: *health
 
   tour_service:
-    <<: *backend
+    <<: [*backend, *database-client]
     build: ./tour_service
     image: sgu-tour/tour-service
     environment:
@@ -160,7 +195,7 @@ services:
       <<: *health
 
   file_service:
-    <<: *backend
+    <<: [*backend, *database-client]
     build: ./file_service
     image: sgu-tour/file-service
     environment:
@@ -172,7 +207,7 @@ services:
       <<: *health
 
   invoice_service:
-    <<: *backend
+    <<: [*backend, *database-client]
     build: ./invoice_service
     image: sgu-tour/invoice-service
     environment:
@@ -329,7 +364,7 @@ services:
   # auth_service:8099 thay vì localhost/host.docker.internal.
   n8n:
     profiles: ["mail"]
-    image: n8nio/n8n:1.70.0
+    image: n8nio/n8n:1.123.97
     restart: unless-stopped
     logging: *logging
     environment:
@@ -358,6 +393,7 @@ services:
       start_period: 30s
 
 volumes:
+  mysql_data:
   es_data:
   tour_images:
   n8n_data:

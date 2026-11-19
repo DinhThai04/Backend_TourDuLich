@@ -24,7 +24,7 @@ class AvatarCleanupTest {
     }
 
     private FileService service(int completionStatus) {
-        return new FileService(storage,records,mapper,mock(JdbcTemplate.class),new TestTransactionTemplate(completionStatus));
+        return new FileService(storage,records,mapper,mock(JdbcTemplate.class),new TestTransactionTemplate(completionStatus),mock(com.example.file_service.service.AvatarWritePolicy.class));
     }
 
     @Test void uncertainCommitDoesNotDeleteAnAssetThatMayHaveBeenCommitted() throws Exception {

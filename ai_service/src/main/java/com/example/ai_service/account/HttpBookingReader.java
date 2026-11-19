@@ -41,7 +41,8 @@ public final class HttpBookingReader implements BookingReader {
                             if(b.bookingId()<1 || b.tourId()<1 || !ids.add(b.bookingId()) || b.tourTitle()==null || b.tourTitle().isBlank()
                                     || cleanTitle.truncated() || !cleanTitle.text().equals(b.tourTitle())
                                     || b.state()==null || !List.of("HELD","CHECKOUT","PAID","CANCELLED","EXPIRED","DEADLINE_PASSED",
-                                            "DEPARTURE_PASSED","LEGACY_UNVERIFIED","REVIEW_REQUIRED","SCHEDULE_CHANGE_REQUIRED","REFUNDED").contains(b.state())
+                                            "DEPARTURE_PASSED","LEGACY_UNVERIFIED","REVIEW_REQUIRED","SCHEDULE_CHANGE_REQUIRED",
+                                            "DEPARTURE_SUSPENDED","DEPARTURE_CANCELLED","REFUNDED").contains(b.state())
                                     || b.checkedAt()==null || !b.checkedAt().equals(page.checkedAt()) || !"reservation-v1".equals(b.ruleVersion())
                                     || b.remainingSeconds()<0 || bookingId!=null && b.bookingId()!=bookingId) throw unavailable();
                             if(List.of("HELD","CHECKOUT").contains(b.state()) && (b.createdAt()==null || b.departureAt()==null

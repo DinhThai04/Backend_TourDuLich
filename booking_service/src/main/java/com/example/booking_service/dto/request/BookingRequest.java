@@ -24,4 +24,6 @@ public class BookingRequest {
     private List<CustomerRequest> listOfCustomers;
     /** UUID generated once per checkout attempt; a retry reuses it instead of creating another booking. */
     private String clientKey;
+    /** Vietnam calendar date used for the preview. Older clients may omit it. */
+    private java.time.LocalDate pricingDate;
 }

@@ -77,12 +77,16 @@ public final class ConversationStore {
         return new Created(token,0,at(expires));
     }
     public ChatResult turn(String token, String requestId, String message, Function<State,Draft> work) {
+        return turn(token, requestId, message, null, work);
+    }
+    public ChatResult turn(String token, String requestId, String message, Integer selectedTourId, Function<State,Draft> work) {
         validateToken(token);
+        if (selectedTourId != null && selectedTourId < 1) throw ChatFailure.invalid();
         if(requestId == null || !requestId.matches(REQUEST_ID_PATTERN)) throw ChatFailure.invalid();
         AiInputPolicy.requireMessage(message);
         String request=UUID.fromString(requestId).toString();
         String text=message.strip();
-        String digest=digest(text);
+        String digest=digest((selectedTourId == null ? "-" : selectedTourId.toString()) + ":" + text);
         Entry entry;
         State state;
         synchronized(this) {
@@ -105,7 +109,7 @@ public final class ConversationStore {
                 Instant expiry=clock.instant().plus(limits.ttl());
                 long version=state.version()+1;
                 var result=new ChatResult(token,request,version,draft.status(),draft.reply(),draft.criteria(),
-                        List.copyOf(draft.tours()),draft.clarification(),draft.detail(),draft.comparison(),draft.policy(),draft.summary(),at(expiry));
+                        List.copyOf(draft.tours()),draft.clarification(),draft.detail(),draft.comparison(),draft.policy(),draft.summary(),at(expiry),draft.tourOverview());
                 var history=new ArrayList<>(draft.clearHistory()?List.<HistoryTurn>of():state.history());
                 if(!"OUT_OF_SCOPE".equals(draft.status()) && AiInputPolicy.safeHistory(text))
                     history.add(new HistoryTurn(clip(text,600),clip(draft.reply(),400)));

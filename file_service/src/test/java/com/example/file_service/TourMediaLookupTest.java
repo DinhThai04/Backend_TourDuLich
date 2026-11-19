@@ -13,7 +13,7 @@ import static org.mockito.Mockito.*;
 
 class TourMediaLookupTest {
     FileMgmtRepository repository=mock(FileMgmtRepository.class);
-    FileService service=new FileService(mock(FileRepository.class),repository,mock(FileMgmtMapper.class),mock(org.springframework.jdbc.core.JdbcTemplate.class),new TestTransactionTemplate(org.springframework.transaction.support.TransactionSynchronization.STATUS_COMMITTED));
+    FileService service=new FileService(mock(FileRepository.class),repository,mock(FileMgmtMapper.class),mock(org.springframework.jdbc.core.JdbcTemplate.class),new TestTransactionTemplate(org.springframework.transaction.support.TransactionSynchronization.STATUS_COMMITTED),mock(com.example.file_service.service.AvatarWritePolicy.class));
     @Test void filteredLookupIsBoundedNormalizesIdsAndDoesNotReadAllAssets() {
         when(repository.findByTourIdInOrderByIdAsc(List.of("1","2"))).thenReturn(List.of(
                 FileMgmt.builder().id("a").tourId("2").url("https://res.cloudinary.com/demo/image/upload/a.jpg").build()));
