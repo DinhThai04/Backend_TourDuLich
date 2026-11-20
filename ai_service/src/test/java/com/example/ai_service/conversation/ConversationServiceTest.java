@@ -52,6 +52,8 @@ class ConversationServiceTest {
         boolean missing;
         long price=1100000;
         List<LocalDateTime> departureDates=List.of(LocalDateTime.parse("2026-10-24T08:00:00"));
+        List<DepartureOption> options=List.of();
+        public List<DepartureOption> upcomingDepartures(int tourId) { return options; }
         public Facts facts(int id) {
             calls++; if(fail) throw ChatFailure.catalog(); if(missing) return null;
             return new Facts(id,"Tour fixture "+id,1,"Quảng Nam",price,OffsetDateTime.parse("2026-10-23T08:00:00+07:00"),departureDates);
@@ -64,6 +66,16 @@ class ConversationServiceTest {
         plans.add(plan); return service.chat(new ChatRequest(token,ConversationStoreTest.id(),text));
     }
     Plan initial() { return plan(set(Field.REGION,"CENTRAL"),set(Field.MAX_BUDGET_VND,"5000000"),set(Field.BUDGET_SCOPE,"PER_ADULT")); }
+    @Test void checksSelectedDepartureAndSuggestsTheNearestDateWithEnoughSeats() {
+        var selected = new DepartureOption(10, LocalDateTime.parse("2026-11-04T08:00:00"), 2);
+        var closest = new DepartureOption(11, LocalDateTime.parse("2026-11-06T08:00:00"), 4);
+        facts.options = List.of(selected, closest, new DepartureOption(12, LocalDateTime.parse("2026-10-24T08:00:00"), 5));
+        var token = service.create().conversationId();
+        var result = service.chat(new ChatRequest(token, ConversationStoreTest.id(),
+                "Ngày tôi vừa chọn còn đủ cho 4 người không?", 902, 10));
+        assertThat(result.tourOverview().availability()).isEqualTo(new DepartureAvailability(4, selected, closest));
+        assertThat(result.reply()).contains("chưa đủ cho 4 người");
+    }
     @Test void pageTourWorksWithoutSearchAndWithoutCallingModel() {
         var token=service.create().conversationId();
         var result=service.chat(new ChatRequest(token,ConversationStoreTest.id(),"Xem lịch trình tour này",902));

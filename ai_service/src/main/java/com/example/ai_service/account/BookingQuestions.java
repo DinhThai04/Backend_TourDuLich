@@ -19,13 +19,18 @@ public final class BookingQuestions {
         if(has(s,"don cua toi","don cua minh","booking cua toi","booking cua minh","tour da dat","toi da dat",
                 "minh da dat","em da dat","toi dat tour","minh dat tour","toi chua thanh toan","toi chua tra tien",
                 "lich su dat","kiem tra booking","tra cuu booking","tra cuu don","toi con bao lau","con may ngay",
+                "toi bi tru tien","minh bi tru tien","ngan hang da tru tien","da chuyen tien",
                 "don cua nguoi khac","booking cua nguoi khac")) return true;
         boolean subject=has(s,"toi","minh","em","cua toi","cua minh");
         boolean fact=has(s,"thanh toan","tra tien","giu cho","dat cho","dat tour","booking","hoa don","han");
         if(subject && fact && has(s,"da","chua","con","khi nao","bao lau","kiem tra","tinh trang","trang thai")) return true;
-        return selected!=null && has(s,"con bao lau","con bao nhieu","han luc nao","het han chua","tra tien khi nao",
-                "da tra tien chua","da thanh toan chua","con cho khong","don nay","tour nay");
+        return selected!=null && (meetingPoint(s) || has(s,"con bao lau","con bao nhieu","han luc nao","het han chua","tra tien khi nao",
+                "da tra tien chua","da thanh toan chua","con cho khong","don nay","tour nay"));
     }
+    static boolean meetingPoint(String text) {
+        return has(text, "diem tap trung", "gio co mat", "diem hen", "tap trung o dau");
+    }
+
     public static boolean has(String normalized,String... phrases) {
         String s=" "+normalized.strip()+" ";
         for(String p:phrases) if(s.contains(" "+p+" ")) return true;

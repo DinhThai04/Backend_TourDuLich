@@ -101,6 +101,51 @@ public class AdvisorOrchestrator {
                 "ANSWER","Tour “" + current.title() + "”: " + String.join(" ",reply),List.of(),null,null,false,
                 detail,null,null,overview);
     }
+    public Draft pageDeparture(State state, int tourId, Integer departureId, int partySize) {
+        var tour = tours.pageFacts(tourId);
+        if (tour == null) return missing(state);
+        DepartureOption selected = null;
+        DepartureOption alternative = null;
+        String reply;
+        if (departureId == null) {
+            reply = "Bạn chọn ngày khởi hành trên trang tour để tôi kiểm tra số chỗ cho đúng chuyến.";
+        } else {
+            var departures = tours.upcomingDepartures(tourId);
+            selected = departures.stream().filter(option -> option.departureId() == departureId).findFirst().orElse(null);
+            if (selected == null || selected.availableSeats() < partySize) {
+                var target = selected == null ? LocalDateTime.now(clock) : selected.departureAt();
+                alternative = departures.stream().filter(option -> option.availableSeats() >= partySize)
+                        .min(Comparator.comparing(option -> Duration.between(target, option.departureAt()).abs()))
+                        .orElse(null);
+                reply = selected == null ? "Lịch đang chọn không còn trong danh sách mở bán."
+                        : "Lịch đang chọn còn " + selected.availableSeats() + " chỗ tại thời điểm kiểm tra, chưa đủ cho "
+                        + partySize + " người.";
+                reply += alternative != null ? " Bạn có thể mở lịch gần nhất còn đủ chỗ." : " Chưa tìm thấy lịch khác đủ chỗ cho nhóm.";
+            } else {
+                reply = "Lịch đang chọn còn " + selected.availableSeats() + " chỗ tại thời điểm kiểm tra, đủ cho "
+                        + partySize + " người. Số chỗ sẽ được kiểm tra lại khi bạn đặt.";
+            }
+        }
+        var availability = new DepartureAvailability(partySize, selected, alternative);
+        var overview = new TourOverview(tourId, tour.title(), null, null, OffsetDateTime.now(clock), availability);
+        return new Draft(state.criteria(), state.pending(), state.latestPresentedTourIds(), state.page(), state.hasMore(),
+                "ANSWER", reply, List.of(), null, null, false, null, null, null, overview);
+    }
+
+    public Draft pageMeetingPoint(State state, int tourId, Integer departureId) {
+        var tour = tours.pageFacts(tourId);
+        if (tour == null) return missing(state);
+        var point = departureId == null ? null : tours.meetingPoint(tourId, departureId);
+        String reply = departureId == null ? "Chọn lịch khởi hành để xem điểm tập trung của đúng chuyến."
+                : point == null ? "Lịch đang chọn chưa công bố điểm tập trung. Bạn có thể liên hệ SGU Tour để xác nhận."
+                : "Điểm tập trung: " + point.address()
+                    + (point.landmark().isBlank() ? "" : ". Dấu hiệu nhận diện: " + point.landmark())
+                    + (point.arrivalTime().isBlank() ? "" : ". Có mặt lúc " + point.arrivalTime() + " (giờ Việt Nam).");
+        var overview = new TourOverview(tourId, tour.title(), null, new DepartureOverview(false, null), tour.checkedAt());
+        return new Draft(state.criteria(), state.pending(), state.latestPresentedTourIds(), state.page(), state.hasMore(),
+                "ANSWER", reply, List.of(), null, null, false, null, null, null, overview);
+    }
+
     public Draft policy(State state,String message) {
         if(BookingQuestions.personal(message,null))
             return draft(state,"ANSWER","Để kiểm tra booking của chính bạn, hãy đăng nhập và dùng trợ lý trên website hoặc vào Lịch sử đặt tour. Tôi cần đọc hạn đã lưu của đúng đơn, không thể tính từ một ngày giả định.",null,null,policies.info("P16"));

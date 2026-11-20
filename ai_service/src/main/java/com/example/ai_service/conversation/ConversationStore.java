@@ -80,13 +80,19 @@ public final class ConversationStore {
         return turn(token, requestId, message, null, work);
     }
     public ChatResult turn(String token, String requestId, String message, Integer selectedTourId, Function<State,Draft> work) {
+        return turn(token, requestId, message, selectedTourId, null, work);
+    }
+    public ChatResult turn(String token, String requestId, String message, Integer selectedTourId,
+                           Integer selectedDepartureId, Function<State,Draft> work) {
         validateToken(token);
         if (selectedTourId != null && selectedTourId < 1) throw ChatFailure.invalid();
+        if (selectedDepartureId != null && (selectedDepartureId < 1 || selectedTourId == null)) throw ChatFailure.invalid();
         if(requestId == null || !requestId.matches(REQUEST_ID_PATTERN)) throw ChatFailure.invalid();
         AiInputPolicy.requireMessage(message);
         String request=UUID.fromString(requestId).toString();
         String text=message.strip();
-        String digest=digest((selectedTourId == null ? "-" : selectedTourId.toString()) + ":" + text);
+        String digest=digest((selectedTourId == null ? "-" : selectedTourId.toString()) + ":"
+                + (selectedDepartureId == null ? "-" : selectedDepartureId.toString()) + ":" + text);
         Entry entry;
         State state;
         synchronized(this) {
