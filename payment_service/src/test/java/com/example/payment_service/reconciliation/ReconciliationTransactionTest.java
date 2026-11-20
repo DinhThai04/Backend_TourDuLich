@@ -110,7 +110,7 @@ class ReconciliationTransactionTest {
             List<Future<String>> results=new ArrayList<>();
             for(String reference:List.of("transaction1","transaction2"))results.add(pool.submit(()->{
                 var fields=new HashMap<>(fixture.callback(true));fields.put("vnp_TxnRef",reference);fields.put("vnp_PayDate","20261101100000");
-                return orders.settle(fields);
+                return orders.settle(fields).status();
             }));
             var statuses=new HashSet<String>();for(var result:results)statuses.add(result.get(20,TimeUnit.SECONDS));
             assertEquals(Set.of("success","reconciliation"),statuses);

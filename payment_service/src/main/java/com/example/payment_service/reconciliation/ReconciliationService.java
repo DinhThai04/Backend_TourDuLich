@@ -46,11 +46,37 @@ public class ReconciliationService {
         try{return Long.parseLong(auth.getName());}catch(NumberFormatException bad){throw new ResponseStatusException(HttpStatus.FORBIDDEN);}
     }
     public Page list(int page,String view) {
+        return list(page, view, null, 25);
+    }
+    public Page list(int page, String view, String txnRef, int size) {
+        return list(page, view, txnRef, size, null, null);
+    }
+
+    public Page list(int page, String view, String txnRef, int size, Integer bookingId, java.time.LocalDate day) {
         actor("RECONCILIATION_READ");
-        if(page<0 || page>100000 || !List.of("ACTIONABLE","HISTORY").contains(view))invalid("Bộ lọc đối soát không hợp lệ");
-        String filter="HISTORY".equals(view)
-                ? "EXISTS(SELECT 1 FROM payment_reconciliation_event e WHERE e.txn_ref=t.txn_ref)"
-                : "(r.status='OPEN' OR (t.status='PENDING' AND t.expires_at<=? AND r.txn_ref IS NULL))";
+        if(page<0 || page>100000 || size < 1 || size > 25 || !List.of("ACTIONABLE","HISTORY","ALL").contains(view) || ("ALL".equals(view) && txnRef == null))invalid("Bộ lọc đối soát không hợp lệ");
+        if (txnRef != null) ref(txnRef);
+        String filter = switch (view) {
+            case "HISTORY" -> "EXISTS(SELECT 1 FROM payment_reconciliation_event e WHERE e.txn_ref=t.txn_ref)";
+            case "ACTIONABLE" -> "(r.status='OPEN' OR (t.status='PENDING' AND t.expires_at<=? AND r.txn_ref IS NULL))";
+            default -> "1=1";
+        };
+        var scope = new StringBuilder();
+        var arguments = new ArrayList<>();
+        if ("ACTIONABLE".equals(view)) arguments.add(now());
+        if (txnRef != null) {
+            scope.append(" AND t.txn_ref=?");
+            arguments.add(txnRef);
+        }
+        if (bookingId != null) {
+            scope.append(" AND t.booking_id=?");
+            arguments.add(bookingId);
+        }
+        if (day != null) {
+            scope.append(" AND t.created_at>=? AND t.created_at<?");
+            arguments.add(day.atStartOfDay());
+            arguments.add(day.plusDays(1).atStartOfDay());
+        }
         String sql="""
             SELECT t.txn_ref,t.booking_id,t.account_id,t.amount_vnd,t.status,t.created_at,t.expires_at,
                    t.provider,v.transaction_no,m.trans_id AS provider_trans_id,
@@ -60,15 +86,19 @@ public class ReconciliationService {
             LEFT JOIN payment_reconciliation r ON r.txn_ref=t.txn_ref
             LEFT JOIN vnpay_transaction v ON t.provider='VNPAY' AND v.txn_ref=t.txn_ref
             LEFT JOIN momo_transaction m ON t.provider='MOMO' AND m.order_id=t.txn_ref
-            WHERE %s ORDER BY t.created_at DESC,t.txn_ref LIMIT 26 OFFSET ?
-            """.formatted(TRANSACTIONS,filter);
-        long offset=(long)page*25;
-        var rows="HISTORY".equals(view)?jdbc.queryForList(sql,offset):jdbc.queryForList(sql,now(),offset);
+            WHERE %s%s
+            ORDER BY CASE WHEN r.status='OPEN' THEN 0 ELSE 1 END,t.created_at DESC,t.txn_ref LIMIT ? OFFSET ?
+            """.formatted(TRANSACTIONS, filter, scope);
+        arguments.add(size + 1);
+        arguments.add((long) page * size);
+        var rows = jdbc.queryForList(sql, arguments.toArray());
         rows.forEach(row->{
+            for (String field : List.of("created_at", "expires_at", "provider_paid_at"))
+                row.computeIfPresent(field, (name, value) -> date(value).toString());
             Object transId=row.remove("provider_trans_id");
             if(row.get("transaction_no")==null && transId!=null)row.put("transaction_no",String.valueOf(transId));
         });
-        return new Page(rows.stream().limit(25).toList(),rows.size()>25);
+        return new Page(rows.stream().limit(size).toList(),rows.size()>size);
     }
     public List<Map<String,Object>> history(String txnRef) {
         actor("RECONCILIATION_HISTORY");ref(txnRef);

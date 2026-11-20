@@ -86,14 +86,14 @@ class ReconciliationTest {
         assertEquals("REFUNDED",status());assertEquals("REFUNDED",db.jdbc.queryForObject("SELECT status FROM payment_reconciliation",String.class));
         assertEquals(2,db.count("payment_reconciliation_event"));assertEquals(0,service.list(0,"ACTIONABLE").items().size());
         assertEquals(seats,db.seats());assertEquals(0,db.count("invoice"));assertEquals(0,db.count("payment"));
-        assertEquals("refunded",db.tx.execute(tx->orders.settle(callback(true))));assertEquals(2,db.count("payment_reconciliation_event"));
+        assertEquals("refunded",db.tx.execute(tx->orders.settle(callback(true)).status()));assertEquals(2,db.count("payment_reconciliation_event"));
     }
     @Test void lateVerifiedPaymentAfterManualUnpaidDecisionReopensReconciliation() {
         resolve("transaction1",decision(ReconciliationService.Action.UNPAID_CONFIRMED,"statement-1"));
-        assertEquals("reconciliation",db.tx.execute(tx->orders.settle(callback(true))));
+        assertEquals("reconciliation",db.tx.execute(tx->orders.settle(callback(true)).status()));
         assertEquals("PENDING",status());assertEquals("OPEN",db.jdbc.queryForObject("SELECT status FROM payment_reconciliation",String.class));
         assertEquals(1,service.list(0,"ACTIONABLE").items().size());
-        assertEquals("reconciliation",db.tx.execute(tx->orders.settle(callback(false))));
+        assertEquals("reconciliation",db.tx.execute(tx->orders.settle(callback(false)).status()));
         assertEquals("PENDING",status());assertEquals(0,db.count("invoice"));
     }
     @Test void sameRefundReferenceCannotCloseTwoTransactions() {
@@ -128,6 +128,19 @@ class ReconciliationTest {
         assertEquals(1,remaining.size());
         assertEquals("transaction1",remaining.getFirst().get("txn_ref"));
         assertEquals(1,service.list(0,"HISTORY").items().size());
+    }
+    @Test void worklistPagesAndExactReferencesExcludeOtherTransactions() {
+        pendingMoMo("momo1");
+        var first = service.list(0, "ACTIONABLE", null, 1);
+        assertEquals(1, first.items().size());
+        assertTrue(first.hasNext());
+        var focused = service.list(0, "ACTIONABLE", "transaction1", 5);
+        assertEquals(List.of("transaction1"), focused.items().stream().map(row -> row.get("txn_ref")).toList());
+        assertFalse(focused.hasNext());
+        assertTrue(service.list(0, "ACTIONABLE", "missing", 5).items().isEmpty());
+        login(false);
+        assertEquals(403, assertThrows(ResponseStatusException.class,
+                () -> service.list(0, "ACTIONABLE", "transaction1", 5)).getStatusCode().value());
     }
     @Test void sameReferenceInBothProviderTablesIsRejected() {
         pendingMoMo("transaction1");
