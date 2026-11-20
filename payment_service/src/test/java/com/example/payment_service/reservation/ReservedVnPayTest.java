@@ -45,6 +45,12 @@ class ReservedVnPayTest {
         return fields;
     }
     String settle(Map<String,String> fields) { return db.tx.execute(tx -> service.handlePaymentReturn(fields)).getStatus(); }
+
+    @Test void callbackReturnsTheBookingFromTheVerifiedTransaction() {
+        var fields = callback(prepare(), true);
+        var response = db.tx.execute(tx -> service.handlePaymentReturn(fields));
+        assertEquals(1, response.getBookingId());
+    }
     String holdStatus() { return db.jdbc.queryForObject("SELECT status FROM booking_reservation",String.class); }
     @Test void suspendedScheduleRejectsCheckoutAndLateSuccessRequiresReconciliation() {
         var fields=callback(prepare(),true);

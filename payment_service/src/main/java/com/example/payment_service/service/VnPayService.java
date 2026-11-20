@@ -33,6 +33,7 @@ public class VnPayService {
         return BookingQuoteResponse.builder()
             .amount(Long.toString(quote.amountVnd()))
             .unitPrices(quote.unitPrices())
+            .singleSupplementPrice(quote.singleSupplementPrice())
             .build();
     }
 
@@ -128,9 +129,11 @@ public class VnPayService {
 
     public VnPayResponse handlePaymentReturn(Map<String, String> fields) {
         verifySignature(fields);
-        String status = orders.settle(fields);
+        var settlement = orders.settle(fields);
+        String status = settlement.status();
         return VnPayResponse.builder()
             .status("duplicate".equals(status) ? "success" : status).alreadyProcessed("duplicate".equals(status)).orderId(fields.get("vnp_TxnRef"))
+            .bookingId(settlement.bookingId())
             .amount(new java.math.BigDecimal(fields.get("vnp_Amount")).movePointLeft(2).toPlainString())
             .bankCode(fields.get("vnp_BankCode"))
             .transactionNo(fields.get("vnp_TransactionNo"))

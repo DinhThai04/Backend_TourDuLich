@@ -12,6 +12,7 @@ import lombok.NoArgsConstructor;
 public class VnPayResponse {
     private String status;
     private boolean alreadyProcessed;
+    private Integer bookingId;
     private String orderId;
     private String amount;
     private String bankCode;

@@ -21,7 +21,7 @@ public class VnPayOrderService {
     private final Clock clock;
     public record Order(String txnRef, long amountVnd, LocalDateTime createdAt, LocalDateTime expiresAt) {}
 
-    public record Quote(long amountVnd, Map<String, String> unitPrices) {}
+    public record Quote(long amountVnd, Map<String, String> unitPrices, String singleSupplementPrice) {}
 
     /** Steps shared by every provider before a transaction row exists: lock, validate, price. */
     public record Checkout(int bookingId, int departureId, long amountVnd, LocalDateTime now, LocalDateTime expires) {}
@@ -75,9 +75,9 @@ public class VnPayOrderService {
             throw new IllegalArgumentException("Chuyến đi không còn đủ chỗ");
         }
         var snapshot = snapshot(bookingId);
-        if (snapshot != null) return new Quote(snapshotAmount(snapshot), unitPrices(snapshot));
+        if (snapshot != null) return new Quote(snapshotAmount(snapshot), unitPrices(snapshot), supplement(snapshot));
         var price = tourPrice(departure.get("tour_id"));
-        return new Quote(calculateAmount(customers, price), unitPrices(price));
+        return new Quote(calculateAmount(customers, price), unitPrices(price), supplement(price));
     }
 
     private Map<String, Object> departureOf(Object departureId) {
@@ -111,6 +111,11 @@ public class VnPayOrderService {
         catch (RuntimeException invalid) { throw new IllegalArgumentException("Số tiền snapshot không hợp lệ"); }
         if (amount <= 0 || amount > 9_999_999_999L) throw new IllegalArgumentException("Số tiền không hợp lệ");
         return amount;
+    }
+
+    private static String supplement(Map<String, Object> price) {
+        Object amount = price.get("single_supplement_price");
+        return amount == null ? null : amount.toString();
     }
 
     private static Map<String, String> unitPrices(Map<String, Object> price) {
@@ -293,13 +298,19 @@ public class VnPayOrderService {
         if (changed == 1) mail.expired(bookingId, now);
     }
 
-    /** Returns success/failed/duplicate. Signature verification must precede this method. */
+    public record Settlement(int bookingId, String status) {}
+
+    /** Signature verification must precede settlement. */
     @Transactional(isolation=org.springframework.transaction.annotation.Isolation.READ_COMMITTED,timeout=10)
-    public String settle(Map<String, String> fields) {
+    public Settlement settle(Map<String, String> fields) {
         String ref = fields.get("vnp_TxnRef");
         var found = jdbc.queryForList("SELECT booking_id FROM vnpay_transaction WHERE txn_ref=?", ref);
         if (found.isEmpty()) throw new VnPayRejection("01", "Không tìm thấy giao dịch");
         int bookingId = ((Number)found.getFirst().get("booking_id")).intValue();
+        return new Settlement(bookingId, settleBooking(fields, ref, bookingId));
+    }
+
+    private String settleBooking(Map<String, String> fields, String ref, int bookingId) {
         // Lock departure then booking in both prepare and settle, serializing all seat writers.
         var locked = lockForSettlement(bookingId);
         var tx = jdbc.queryForMap("SELECT * FROM vnpay_transaction WHERE txn_ref=? FOR UPDATE", ref);
