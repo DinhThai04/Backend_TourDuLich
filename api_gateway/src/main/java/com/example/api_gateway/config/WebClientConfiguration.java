@@ -47,7 +47,7 @@ public class WebClientConfiguration {
         // Internal mail dispatch is server-to-server, so the browser never needs its header.
         corsConfiguration.setAllowedHeaders(List.of("Authorization", "Content-Type", "Accept"));
         // 429 responses carry Retry-After; without this the browser hides it and clients retry at once.
-        corsConfiguration.setExposedHeaders(List.of("Retry-After"));
+        corsConfiguration.setExposedHeaders(List.of("Retry-After", "X-Request-ID"));
         corsConfiguration.setAllowedMethods(List.of("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"));
         corsConfiguration.setMaxAge(3600L);
 

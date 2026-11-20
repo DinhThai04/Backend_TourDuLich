@@ -123,5 +123,8 @@ spring:
           uri: ${SEARCH_SERVICE_URL:http://localhost:8089}
           predicates:
             - Path=${app.api-prefix}/search/**
+          metadata:
+            connect-timeout: 2000
+            response-timeout: 6000
           filters:
             - StripPrefix=2
