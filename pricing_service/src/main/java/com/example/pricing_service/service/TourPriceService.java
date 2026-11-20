@@ -21,6 +21,8 @@ public class TourPriceService {
     private static final int MAX_LIST_SIZE = 500;
 
     private final TourPriceRepository repository;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.example.pricing_service.operations.OperationAudit audit;
 
     public TourPriceResponse createPrice(TourPriceRequest request) {
         VndPricePolicy.validate(request);
@@ -41,6 +43,7 @@ public class TourPriceService {
         // The row stays locked until commit, so concurrent edits are applied one after another.
         TourPrice existing = repository.lockById(id)
                 .orElseThrow(() -> new AppException(ErrorCode.PRICE_NOT_EXISTED));
+        var previous = toResponse(existing);
 
         existing.setAdultPrice(request.getAdultPrice());
         existing.setChildPrice(request.getChildPrice());
@@ -48,7 +51,9 @@ public class TourPriceService {
         existing.setInfantPrice(request.getInfantPrice());
         existing.setSingleSupplementPrice(request.getSingleSupplementPrice());
 
-        return toResponse(repository.save(existing));
+        var updated = toResponse(repository.save(existing));
+        if (audit != null) audit.record("PRICE", id, previous.toString(), updated.toString());
+        return updated;
     }
 
     public List<TourPriceResponse> getAllPrices() {
