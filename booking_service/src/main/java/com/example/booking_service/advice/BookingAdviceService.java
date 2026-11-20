@@ -13,6 +13,7 @@ import java.util.*;
 public class BookingAdviceService {
     public static final String RULE_VERSION = "reservation-v1";
     private static final ZoneId ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
+    private static final int PAYMENT_INFLIGHT_GRACE_MINUTES = 5;
     public record Item(int bookingId, int tourId, String tourProgram, String tourTitle,
             OffsetDateTime createdAt, OffsetDateTime departureAt, String state, String reservationStatus,
             OffsetDateTime paymentDeadline, long remainingSeconds, OffsetDateTime checkedAt, String ruleVersion) {}
@@ -28,6 +29,7 @@ public class BookingAdviceService {
         int owner=access.accountId(); // No admin override and no caller-supplied account ID.
         if (bookingId!=null && bookingId<1) throw new IllegalArgumentException("Mã booking không hợp lệ");
         var now=OffsetDateTime.ofInstant(clock.instant(),ZONE);
+        var paymentCutoff = now.toLocalDateTime().minusMinutes(PAYMENT_INFLIGHT_GRACE_MINUTES);
         String sql="""
             SELECT b.id,b.created_at,b.status AS booking_status,t.id AS tour_id,t.tour_program,t.tour_title,
               d.id AS departure_id,d.departure_date,d.operational_status,
@@ -43,13 +45,17 @@ public class BookingAdviceService {
                 +(SELECT COUNT(*) FROM vnpay_transaction v WHERE v.booking_id=b.id AND v.status='PAID')
                 +(SELECT COUNT(*) FROM momo_transaction m WHERE m.booking_id=b.id AND m.status='PAID')) AS paid_evidence,
               (SELECT COUNT(*) FROM payment_reconciliation q WHERE q.booking_id=b.id AND q.status='OPEN') AS reconciliation,
+              ((SELECT COUNT(*) FROM vnpay_transaction v WHERE v.booking_id=b.id AND v.account_id=b.account_id
+                    AND v.status='PENDING' AND v.expires_at>?)
+                +(SELECT COUNT(*) FROM momo_transaction m WHERE m.booking_id=b.id AND m.account_id=b.account_id
+                    AND m.status='PENDING' AND m.expires_at>?)) AS pending_payments,
               (SELECT MAX(total_booking_tour_expense) FROM payment p WHERE p.booking_id=b.id AND p.account_id=b.account_id AND p.status='PAID') AS payment_amount,
               (SELECT MAX(total_booking_tour_expense) FROM invoice i WHERE i.booking_id=b.id AND i.account_id=b.account_id AND i.status='PAID') AS invoice_amount
             FROM booking b JOIN tour_departure d ON d.id=b.tour_departure_id JOIN tour t ON t.id=d.tour_id
             LEFT JOIN booking_reservation r ON r.booking_id=b.id WHERE b.account_id=?
             """;
-        var rows=bookingId==null ? jdbc.queryForList(sql+" ORDER BY b.id DESC LIMIT 21",owner)
-                :jdbc.queryForList(sql+" AND b.id=?",owner,bookingId);
+        var rows=bookingId==null ? jdbc.queryForList(sql+" ORDER BY b.id DESC LIMIT 21",paymentCutoff,paymentCutoff,owner)
+                :jdbc.queryForList(sql+" AND b.id=?",paymentCutoff,paymentCutoff,owner,bookingId);
         return new Page(rows.stream().limit(20).map(row->project(row,now)).toList(),rows.size()>20,now);
     }
     private Item project(Map<String,Object> r,OffsetDateTime now) {
@@ -74,6 +80,7 @@ public class BookingAdviceService {
             state=number(r,"active_shop_offer")>0 ? "SCHEDULE_CHANGE_REQUIRED" : "DEPARTURE_SUSPENDED";
         else if ("CANCELLED".equals(r.get("operational_status"))) state="DEPARTURE_CANCELLED";
         else if (confirmedPaid) state="PAID";
+        else if ("CHECKOUT".equals(hold) && number(r,"pending_payments")>0) state="PAYMENT_PENDING";
         else if (departure==null || !departure.isAfter(now)) state="DEPARTURE_PASSED";
         else if (hold==null) state="LEGACY_UNVERIFIED";
         else if (deadline==null || created==null || !deadline.isAfter(created) || deadline.isAfter(departure)) state="REVIEW_REQUIRED";

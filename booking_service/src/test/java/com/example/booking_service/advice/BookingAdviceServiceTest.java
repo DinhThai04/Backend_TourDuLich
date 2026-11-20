@@ -57,6 +57,21 @@ class BookingAdviceServiceTest {
         db.jdbc.update("UPDATE booking_reservation SET status='CHECKOUT',expires_at=? WHERE booking_id=6",LocalDateTime.of(2026,11,4,8,15));
         var b=service.mine(6).bookings().getFirst();assertEquals("CHECKOUT",b.state());assertEquals(900,b.remainingSeconds());
     }
+    @Test void activeProviderCheckoutHasASeparateReadOnlyState() {
+        var checkoutExpiry = LocalDateTime.of(2026, 11, 4, 8, 15);
+        db.jdbc.update("UPDATE booking_reservation SET status='CHECKOUT',expires_at=? WHERE booking_id=6", checkoutExpiry);
+        db.jdbc.update("""
+            INSERT INTO vnpay_transaction (txn_ref,booking_id,account_id,amount_vnd,status,created_at,expires_at)
+            VALUES ('fixture',6,7,1000000,'PENDING',?,?)
+            """, LocalDateTime.of(2026, 11, 4, 8, 0), checkoutExpiry);
+        assertEquals("PAYMENT_PENDING", service.mine(6).bookings().getFirst().state());
+        clock.set(checkoutExpiry.plusMinutes(4));
+        assertEquals("PAYMENT_PENDING", service.mine(6).bookings().getFirst().state());
+        clock.set(checkoutExpiry.plusMinutes(5));
+        assertEquals("DEADLINE_PASSED", service.mine(6).bookings().getFirst().state());
+        assertEquals(10, db.seats());
+    }
+
     @Test void partialPaymentEvidenceNeedsReviewAndCompleteRecordsStopCountdown() {
         db.jdbc.update("INSERT INTO payment (booking_id,account_id,status,total_booking_tour_expense) VALUES (6,7,'PAID',1000000)");
         assertEquals("REVIEW_REQUIRED",service.mine(6).bookings().getFirst().state());

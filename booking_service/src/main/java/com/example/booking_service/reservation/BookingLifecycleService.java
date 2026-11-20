@@ -100,6 +100,10 @@ public class BookingLifecycleService {
                         "Số chỗ đang giữ chưa thanh toán vượt mức " + MAX_HELD_SEATS + "; hãy hoàn tất hoặc hủy bớt");
             // Giá được chốt ngay khi tạo booking, không đọc lại bảng giá lúc thanh toán.
             PriceSnapshot snapshot = snapshotFor(((Number) departure.get("tour_id")).intValue(), passengers);
+            String expected = request.getExpectedAmount();
+            if (expected != null && BigDecimal.valueOf(snapshot.total()).compareTo(new BigDecimal(expected)) != 0)
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Giá chuyến đi đã thay đổi. Vui lòng xem lại tổng tiền trước khi giữ chỗ.");
             var key = new GeneratedKeyHolder();
             jdbc.update(connection -> {
                 var statement = connection.prepareStatement("INSERT INTO booking (account_id,tour_departure_id,status,created_at,client_key) VALUES (?,?,'PENDING_PAYMENT',?,?)", Statement.RETURN_GENERATED_KEYS);
@@ -257,6 +261,66 @@ public class BookingLifecycleService {
         // Reading must not expire holds; the background worker does that. toResponse()
         // still presents an already-due hold as expired without writing anything.
         return response(id);
+    }
+
+    public BookingResponse findOwnAttempt(String key) {
+        int account = access.accountId();
+        String requestKey = clientKey(key);
+        if (requestKey == null) throw new IllegalArgumentException("Thiếu mã lượt giữ chỗ");
+        var rows = jdbc.queryForList(SELECT_BOOKING + " WHERE b.account_id=? AND b.client_key=?", account, requestKey);
+        if (rows.isEmpty()) return null;
+        var row = rows.getFirst();
+        var result = toResponse(row);
+        int id = ((Number) row.get("id")).intValue();
+        Object hold = row.get("reservation_status");
+        boolean closed = List.of("EXPIRED", "CANCELLED").contains(row.get("status"))
+                && (hold == null || List.of("EXPIRED", "CANCELLED").contains(hold));
+        result.setRestartAllowed(closed && !expiry.paidEvidence(id) && !expiry.paymentInFlight(id, LocalDateTime.now(clock)));
+        return result;
+    }
+
+    public record HistoryRow(BookingResponse booking, String tourCode, String tourTitle,
+                             String departureDate, String returnDate, String invoiceStatus) {}
+    public record HistoryPage(List<HistoryRow> items, boolean hasNext) {}
+
+    public HistoryPage ownHistory(int page, Long bookingId, String status, LocalDate from, LocalDate to) {
+        int account = access.accountId();
+        if (page < 0 || page > 10000 || (bookingId != null && bookingId < 1)
+                || (from != null && to != null && from.isAfter(to)))
+            throw new IllegalArgumentException("Bộ lọc lịch sử đặt tour không hợp lệ");
+        String sql = SELECT_BOOKING.replace("SELECT b.*,", """
+                SELECT b.*,d.tour_code AS history_tour_code,d.departure_date AS history_departure,
+                d.return_date AS history_return,t.tour_title AS history_tour_title,hi.status AS history_invoice,
+                """) + """
+                LEFT JOIN tour t ON t.id=d.tour_id
+                LEFT JOIN invoice hi ON hi.booking_id=b.id AND hi.account_id=b.account_id
+                """;
+        var clauses = new StringBuilder(" WHERE b.account_id=?");
+        var args = new java.util.ArrayList<Object>();
+        args.add(account);
+        if (bookingId != null) { clauses.append(" AND b.id=?"); args.add(bookingId); }
+        if (from != null) { clauses.append(" AND b.created_at>=?"); args.add(from.atStartOfDay()); }
+        if (to != null) { clauses.append(" AND b.created_at<?"); args.add(to.plusDays(1).atStartOfDay()); }
+        if (status != null && !status.isBlank()) {
+            clauses.append(switch (status) {
+                case "PAID" -> " AND (r.status='PAID' OR hi.status='PAID')";
+                case "UNPAID" -> " AND b.status IN ('PENDING_PAYMENT','CONFIRMED') AND COALESCE(r.status,'')<>'PAID' AND COALESCE(hi.status,'')<>'PAID'";
+                case "CLOSED" -> " AND (b.status IN ('CANCELLED','EXPIRED','UNCONFIRMED') OR r.status IN ('CANCELLED','EXPIRED'))";
+                default -> throw new IllegalArgumentException("Trạng thái lịch sử không hợp lệ");
+            });
+        }
+        int limit = bookingId == null ? 8 : 1;
+        args.add(limit + 1);
+        args.add(bookingId == null ? page * limit : 0);
+        var rows = jdbc.queryForList(sql + clauses + " ORDER BY b.id DESC LIMIT ? OFFSET ?", args.toArray());
+        return new HistoryPage(rows.stream().limit(limit).map(row -> new HistoryRow(
+                toResponse(row), (String) row.get("history_tour_code"), (String) row.get("history_tour_title"),
+                historyDate(row.get("history_departure")), historyDate(row.get("history_return")),
+                (String) row.get("history_invoice"))).toList(), rows.size() > limit);
+    }
+
+    private static String historyDate(Object value) {
+        return value == null ? null : BookingMailEvents.date(value).toString();
     }
     /**
      * {@code mine} is what the profile page sends: a staff account also holds BOOKINGS_GET_ALL, and

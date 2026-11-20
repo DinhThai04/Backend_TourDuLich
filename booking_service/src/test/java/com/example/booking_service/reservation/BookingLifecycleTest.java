@@ -33,6 +33,48 @@ class BookingLifecycleTest {
     }
     int create() { return Integer.parseInt(lifecycle.create(request()).getId()); }
 
+    @Test void staleDisplayedPriceCannotCreateAHoldAndTheSameKeyCanRetry() {
+        var input = request();
+        input.setClientKey(UUID.randomUUID().toString());
+        input.setExpectedAmount("1");
+        var rejected = assertThrows(ResponseStatusException.class, () -> lifecycle.create(input));
+        assertEquals(409, rejected.getStatusCode().value());
+        assertEquals(0, db.count("booking"));
+        assertEquals(0, db.count("mail_outbox"));
+        assertEquals(10, db.seats());
+        assertNull(lifecycle.findOwnAttempt(input.getClientKey()));
+
+        input.setExpectedAmount("3350000");
+        var confirmed = lifecycle.create(input);
+        assertEquals(confirmed.getId(), lifecycle.findOwnAttempt(input.getClientKey()).getId());
+        input.setExpectedAmount("1");
+        assertEquals(confirmed.getId(), lifecycle.create(input).getId());
+        assertEquals(1, db.count("booking"));
+        when(access.accountId()).thenReturn(8);
+        assertNull(lifecycle.findOwnAttempt(input.getClientKey()));
+    }
+
+    @Test void historyFindsAnOlderOrderWithoutShowingAnotherAccountsData() {
+        db.jdbc.execute("ALTER TABLE tour_departure ADD tour_code VARCHAR(40)");
+        db.jdbc.execute("ALTER TABLE tour_departure ADD return_date DATETIME(6)");
+        db.jdbc.update("UPDATE tour_departure SET tour_code='SGU-TEST',return_date=departure_date WHERE id=1");
+        for (int i = 0; i < 11; i++) db.jdbc.update("""
+                INSERT INTO booking (account_id,tour_departure_id,status,created_at) VALUES (7,1,'CONFIRMED',?)
+                """, LocalDateTime.now(clock));
+        db.jdbc.update("INSERT INTO invoice (account_id,booking_id,status) VALUES (7,1,'PAID')");
+
+        var recent = lifecycle.ownHistory(0, null, null, null, null);
+        assertEquals(8, recent.items().size());
+        assertTrue(recent.hasNext());
+        assertEquals(3, lifecycle.ownHistory(1, null, null, null, null).items().size());
+        var exact = lifecycle.ownHistory(0, 1L, "PAID", null, null).items().getFirst();
+        assertEquals("1", exact.booking().getId());
+        assertEquals("SGU-TEST", exact.tourCode());
+        assertEquals("PAID", exact.invoiceStatus());
+        when(access.accountId()).thenReturn(8);
+        assertTrue(lifecycle.ownHistory(0, 1L, null, null, null).items().isEmpty());
+    }
+
     @Test void cancelledAttemptCanBeReplacedOnlyWithASeparateRequest() {
         var original = request();
         original.setClientKey(UUID.randomUUID().toString());
