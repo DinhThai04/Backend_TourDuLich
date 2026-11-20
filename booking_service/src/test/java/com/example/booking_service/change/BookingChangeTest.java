@@ -202,6 +202,21 @@ class BookingChangeTest {
         login(8,"PERM:CHANGES_READ");assertEquals(1,((List<?>)service.admin(null,null,null).get("requests")).size());
         assertEquals(403,assertThrows(ResponseStatusException.class,()->service.review(1,new ChangeRequests.Decision("APPROVE",0,"Tôi duyệt yêu cầu",null))).getStatusCode().value());
     }
+    @Test void worklistAndFocusedRequestKeepTheExistingReadPermissions() {
+        int firstBooking = booking(true);
+        int secondBooking = booking(true);
+        var first = service.customer(customer(firstBooking));
+        var second = service.customer(customer(secondBooking));
+        assertEquals(1, service.mine(0, 5, firstBooking).size());
+        assertEquals(403, assertThrows(ResponseStatusException.class, () -> service.pending(0)).getStatusCode().value());
+        admin();
+        assertTrue(service.mine(0, 5, firstBooking).isEmpty());
+        assertEquals(2, ((List<?>) service.pending(0).get("items")).size());
+        assertEquals(1, ((List<?>) service.admin(1, 0, 5, id(second)).get("requests")).size());
+        assertTrue(((List<?>) service.admin(2, 0, 5, id(second)).get("requests")).isEmpty());
+        service.review(id(first), decision(first, "REJECT"));
+        assertEquals(1, ((List<?>) service.pending(0).get("items")).size());
+    }
     @Test void changedPriceAfterRequestRequiresSupportWithoutChangingPaidAmount(){
         int b=booking(true);var r=service.customer(customer(b));db.jdbc.update("UPDATE prices SET adult_price=4000000");admin();
         conflict(()->service.review(id(r),decision(r,"APPROVE")));assertEquals(9,seats(1));assertEquals(10,seats(2));

@@ -73,14 +73,19 @@ public class BookingChangeService {
     }
 
     public List<Map<String, Object>> mine(Integer page, Integer size) {
+        return mine(page, size, null);
+    }
+
+    public List<Map<String, Object>> mine(Integer page, Integer size, Integer bookingId) {
         PageSlice slice = PageSlice.of(page, size);
         return jdbc.queryForList("""
                 SELECT c.*,t.tour_title,dc.response_deadline FROM booking_change c
                 JOIN tour_departure d ON d.id=c.source_departure_id
                 JOIN tour t ON t.id=d.tour_id
                 LEFT JOIN departure_change dc ON dc.id=c.shop_change_id
-                WHERE c.account_id=? ORDER BY c.id DESC LIMIT ? OFFSET ?
-                """, access.accountId(), slice.size(), slice.offset());
+                WHERE c.account_id=? AND (? IS NULL OR c.booking_id=?)
+                ORDER BY c.id DESC LIMIT ? OFFSET ?
+                """, access.accountId(), bookingId, bookingId, slice.size(), slice.offset());
     }
 
     public List<Map<String, Object>> eligible() {
@@ -167,6 +172,10 @@ public class BookingChangeService {
     }
 
     public Map<String, Object> admin(Integer tour, Integer page, Integer size) {
+        return admin(tour, page, size, null);
+    }
+
+    public Map<String, Object> admin(Integer tour, Integer page, Integer size, Long requestId) {
         checkPermission("CHANGES_READ");
         PageSlice slice = PageSlice.of(page, size);
         var requests = jdbc.queryForList("""
@@ -177,15 +186,58 @@ public class BookingChangeService {
                 JOIN users u ON u.id=c.account_id
                 JOIN tour_departure d ON d.id=c.source_departure_id
                 JOIN tour t ON t.id=d.tour_id
-                WHERE (? IS NULL OR d.tour_id=?) ORDER BY c.id DESC LIMIT ? OFFSET ?
-                """, tour, tour, slice.size(), slice.offset());
+                WHERE (? IS NULL OR d.tour_id=?) AND (? IS NULL OR c.id=?)
+                ORDER BY c.id DESC LIMIT ? OFFSET ?
+                """, tour, tour, requestId, requestId, slice.size(), slice.offset());
         attachEvents(requests);
+        if (requestId != null) return Map.of("requests", requests, "proposals", List.of());
         var proposals = jdbc.queryForList("""
                 SELECT c.* FROM departure_change c
                 JOIN tour_departure d ON d.id=c.source_departure_id
                 WHERE (? IS NULL OR d.tour_id=?) ORDER BY c.id DESC LIMIT ? OFFSET ?
                 """, tour, tour, slice.size(), slice.offset());
         return Map.of("requests", requests, "proposals", proposals);
+    }
+
+    public Map<String, Object> pending(int page) {
+        return pending(page, null, null, null);
+    }
+
+    public Map<String, Object> pending(int page, Integer bookingId, java.time.LocalDate day, Boolean customerAction) {
+        checkPermission("CHANGES_READ");
+        PageSlice slice = PageSlice.of(page, 5);
+        var filters = new StringBuilder();
+        var arguments = new ArrayList<>();
+        if (bookingId != null) {
+            filters.append(" AND c.booking_id=?");
+            arguments.add(bookingId);
+        }
+        if (day != null) {
+            filters.append(" AND c.source_departure_at>=? AND c.source_departure_at<?");
+            arguments.add(day.atStartOfDay());
+            arguments.add(day.plusDays(1).atStartOfDay());
+        }
+        if (customerAction != null) {
+            filters.append(customerAction ? " AND c.kind='SHOP' AND c.status='PENDING'"
+                    : " AND NOT (c.kind='SHOP' AND c.status='PENDING')");
+        }
+        arguments.add(slice.size() + 1);
+        arguments.add(slice.offset());
+        var requests = jdbc.queryForList("""
+                SELECT c.id,c.booking_id,c.kind,c.status,c.source_departure_at,d.tour_id,t.tour_title
+                FROM booking_change c
+                JOIN tour_departure d ON d.id=c.source_departure_id
+                JOIN tour t ON t.id=d.tour_id
+                WHERE c.active_key IS NOT NULL AND (
+                    (c.kind='CUSTOMER' AND c.status='PENDING')
+                    OR (c.kind='SHOP' AND c.status IN ('PENDING','ACCEPTED','SUPPORT_REQUIRED'))
+                )%s
+                ORDER BY CASE WHEN c.status='SUPPORT_REQUIRED' THEN 0
+                              WHEN c.kind='SHOP' AND c.status='PENDING' THEN 2 ELSE 1 END,
+                    c.source_departure_at,c.id LIMIT ? OFFSET ?
+                """.formatted(filters), arguments.toArray());
+        requests.forEach(row -> row.computeIfPresent("source_departure_at", (name, value) -> date(value).toString()));
+        return Map.of("items", requests.stream().limit(slice.size()).toList(), "hasNext", requests.size() > slice.size());
     }
 
     /** One query for every request on the page instead of one query per request. */
