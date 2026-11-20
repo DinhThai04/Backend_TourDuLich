@@ -208,6 +208,12 @@ JAR được tạo trong `target/`; lệnh này bỏ qua test. Dockerfile dùng 
 
 Frontend sử dụng Dockerfile Node.js/Nginx trong repository riêng; Compose build từ thư mục frontend cạnh backend. Cấu hình frontend cần truyền ở thời điểm build, trong khi credential backend được đọc từ cấu hình runtime. Xem [hướng dẫn Docker](docs/DOCKER.md) để vận hành dữ liệu và container.
 
+## Nâng cấp cơ sở dữ liệu hiện có
+
+Khi dùng lại schema `dbtour_v2` hoặc volume MySQL đã có dữ liệu, chạy [004_travel_operations.sql](data_seed/migrations/004_travel_operations.sql) trên schema đó trước khi khởi động phiên bản mới. Bản nâng cấp tạo bảng điểm tập trung và nhật ký vận hành, đồng thời bổ sung chỉ mục cho báo cáo nếu còn thiếu. Có thể chạy lại cùng tập lệnh trên schema đã nâng cấp.
+
+Khi tạo cơ sở dữ liệu từ đầu theo phần Khởi chạy, dữ liệu khởi tạo đã có cấu trúc này.
+
 ## Kiểm thử
 
 Backend có 10 project Maven riêng, không có lệnh `mvn test` tổng tại thư mục gốc. Các lệnh Bash dưới đây chạy từ `Backend_TourDuLich` bằng Bash trên Linux/WSL hoặc Git Bash. Cần JDK 21 và Maven trong chính môi trường terminal đó; Docker Desktop không cung cấp sẵn Maven cho terminal host. Các lệnh `mvn -f ...` cũng dùng được trong PowerShell.
