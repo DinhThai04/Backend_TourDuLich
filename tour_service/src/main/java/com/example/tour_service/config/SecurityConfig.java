@@ -50,6 +50,9 @@
                     .requestMatchers(HttpMethod.POST, "/advice/search").permitAll()
                     .requestMatchers(HttpMethod.GET, "/advice/locations").permitAll()
                     .requestMatchers(HttpMethod.GET, "/tour-departures/*/capacity").authenticated()
+                    .requestMatchers(HttpMethod.GET, "/tour-departures/*/meeting-point").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/tour-departures/upcoming")
+                    .hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOUR_DEPARTURES_GET_LIST")
                     // Admin/shop history view: past, suspended and cancelled departures.
                     .requestMatchers(HttpMethod.GET, "/tour-departures/tour/*/all")
                     .hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOUR_DEPARTURES_GET_LIST", "PERM:SHOP_CHANGE_CREATE")

@@ -16,6 +16,13 @@ import java.util.List;
 public class TourDepartureController {
     private final TourDepartureService tourDepartureService;
 
+    @GetMapping("/upcoming")
+    public ApiResponse<TourDepartureService.UpcomingPage> upcoming(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate day) {
+        return ApiResponse.<TourDepartureService.UpcomingPage>builder()
+                .result(tourDepartureService.upcoming(page, day)).build();
+    }
+
     @org.springframework.security.access.prepost.PreAuthorize("hasAnyAuthority('SGU_SUPER_ADMIN','PERM:TOUR_DEPARTURES_UPDATE','PERM:SHOP_CHANGE_CREATE')")
     @GetMapping("/{id}/capacity")
     public ApiResponse<com.example.tour_service.dto.response.DepartureCapacityResponse> capacity(@PathVariable int id) {

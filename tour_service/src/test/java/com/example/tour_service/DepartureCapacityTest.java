@@ -84,6 +84,19 @@ class DepartureCapacityTest {
     TourDepartureRequest edit(int capacity,long version) { return TourDepartureRequest.builder().capacity(capacity).expectedVersion(version).build(); }
     void conflict(Runnable action) { assertEquals(409,assertThrows(ResponseStatusException.class,action::run).getStatusCode().value()); }
     int seats(){return jdbc.queryForObject("SELECT available_seats FROM tour_departure WHERE id=?",Integer.class,id);}
+    @Test void upcomingReturnsOnlyOpenDeparturesWithinSevenDays() {
+        var now = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));
+        assertTrue(service.upcoming(0).items().isEmpty());
+        jdbc.update("UPDATE tour_departure SET departure_date=?,return_date=? WHERE id=?",
+                now.plusDays(1), now.plusDays(2), id);
+        var page = service.upcoming(0);
+        assertEquals(1, page.items().size());
+        assertEquals(id, page.items().getFirst().id());
+        assertEquals("Capacity fixture", page.items().getFirst().tourTitle());
+        assertFalse(page.hasNext());
+        jdbc.update("UPDATE tour_departure SET operational_status='SUSPENDED' WHERE id=?", id);
+        assertTrue(service.upcoming(0).items().isEmpty());
+    }
     int legacy(int people,boolean paid) {
         jdbc.update("INSERT INTO booking(account_id,tour_departure_id,status,created_at) VALUES(7,?,'CONFIRMED',?)",id,start.minusDays(20));
         int booking=jdbc.queryForObject("SELECT MAX(id) FROM booking",Integer.class);

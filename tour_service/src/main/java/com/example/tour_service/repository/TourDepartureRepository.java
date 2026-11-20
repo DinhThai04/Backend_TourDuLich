@@ -1,6 +1,9 @@
 package com.example.tour_service.repository;
 
+import com.example.tour_service.dto.response.UpcomingDepartureResponse;
 import com.example.tour_service.entity.TourDeparture;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Slice;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -17,6 +20,17 @@ public interface TourDepartureRepository extends JpaRepository<TourDeparture, In
     /** Admin view: every departure of a tour, including past/suspended/cancelled ones. */
     List<TourDeparture> findByTourId(int tourId, org.springframework.data.domain.Pageable pageable);
     boolean existsByTourIdAndDepartureDate(int tourId, LocalDateTime departureDate);
+
+    @Query("""
+            select new com.example.tour_service.dto.response.UpcomingDepartureResponse(
+                d.id, t.id, t.tourTitle, d.tourCode, d.departureDate, d.availableSeats)
+            from TourDeparture d join d.tour t
+            where d.departureDate >= :from and d.departureDate < :until
+              and d.operationalStatus = 'OPEN'
+            order by d.departureDate, d.id
+            """)
+    Slice<UpcomingDepartureResponse> findUpcoming(@Param("from") LocalDateTime from,
+                                                   @Param("until") LocalDateTime until, Pageable page);
 
     /** Storefront and catalogue only show future, open departures; let the database filter them. */
     @Query("""

@@ -344,7 +344,7 @@ public class TourService {
     private TourResponse toResponse(Tour tour) {
         // Detail pages fall back to the stored base price when pricing is unavailable.
         TourPriceResponse price = PriceBatchLoader.oneOrNull(tour.getTourPriceId(), pricingClient::getPriceById);
-        List<TourDepartureResponse> departures = tourDepartureService.getTourDepartureByTourId(tour.getId());
+        List<TourDepartureResponse> departures = tourDepartureService.calendarWithPrice(tour.getId(), price);
         return withPricing(baseResponse(tour), price, departures);
     }
 

@@ -46,7 +46,6 @@ class TourMutationTest {
         when(locations.findById(1)).thenReturn(Optional.of(location));
         when(locations.findById(2)).thenReturn(Optional.of(Location.builder().id(2).city("Destination").type(com.example.tour_service.enums.LocationType.DESTINATION).build()));when(vehicles.findById("BUS")).thenReturn(Optional.of(vehicle));
         when(prices.getPriceById(1L)).thenReturn(ApiResponse.<TourPriceResponse>builder().result(TourPriceResponse.builder().id(1L).adultPrice(new BigDecimal("6000000")).build()).build());
-        when(departures.getTourDepartureByTourId(1)).thenReturn(List.of());
         request=UpdateTourRequest.builder().tourProgram("UPDATED").departureLocationId(1).destinationLocationId(2).vehicleId("BUS").tourPriceId(1L).basePrice(BigDecimal.ONE).build();
     }
     @Test void responseAndCompatibilitySnapshotUseAdultFareAndPreserveExistingGallery() {

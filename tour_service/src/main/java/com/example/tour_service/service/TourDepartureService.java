@@ -4,6 +4,7 @@ import com.example.tour_service.repository.httpClient.PricingClient;
 import com.example.tour_service.dto.request.TourDepartureRequest;
 import com.example.tour_service.dto.response.TourDepartureResponse;
 import com.example.tour_service.dto.response.TourPriceResponse;
+import com.example.tour_service.dto.response.UpcomingDepartureResponse;
 import com.example.tour_service.entity.Tour;
 import com.example.tour_service.entity.TourDeparture;
 import com.example.tour_service.exception.AppException;
@@ -31,6 +32,32 @@ public class TourDepartureService {
     private final PricingClient pricingClient;
     private final DepartureCapacityReader capacityReader;
     private final org.springframework.context.ApplicationEventPublisher events;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.example.tour_service.operations.OperationAudit audit;
+
+    public record UpcomingPage(List<UpcomingDepartureResponse> items, boolean hasNext) {}
+
+    public UpcomingPage upcoming(int page) {
+        return upcoming(page, null);
+    }
+
+    public UpcomingPage upcoming(int page, java.time.LocalDate day) {
+        if (page < 0 || page > 10000) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    org.springframework.http.HttpStatus.BAD_REQUEST, "Trang lịch khởi hành không hợp lệ");
+        }
+        var from = now();
+        var through = from.plusDays(7);
+        if (day != null) {
+            var start = day.atStartOfDay();
+            var end = day.plusDays(1).atStartOfDay();
+            if (start.isAfter(from)) from = start;
+            if (end.isBefore(through)) through = end;
+        }
+        if (!from.isBefore(through)) return new UpcomingPage(java.util.List.of(), false);
+        var upcoming = tourDepartureRepository.findUpcoming(from, through, PageRequest.of(page, 5));
+        return new UpcomingPage(upcoming.getContent(), upcoming.hasNext());
+    }
 
     @org.springframework.transaction.annotation.Transactional(readOnly = true)
     public com.example.tour_service.dto.response.DepartureCapacityResponse capacity(int id) {
@@ -142,6 +169,15 @@ public class TourDepartureService {
         }).collect(Collectors.toList());
     }
 
+    List<TourDepartureResponse> calendarWithPrice(int tourId, TourPriceResponse price) {
+        return tourDepartureRepository.findOpenFutureByTourIds(List.of(tourId), now()).stream()
+                .map(departure -> {
+                    var response = toResponse(departure);
+                    response.setTourPrice(price);
+                    return response;
+                }).toList();
+    }
+
     /** Admin screens need the full history, not just the storefront's open future departures. */
     public List<TourDepartureResponse> getTourDepartureHistory(int id) {
         List<TourDeparture> departures = tourDepartureRepository.findByTourId(id,
@@ -244,9 +280,12 @@ public class TourDepartureService {
         if(!"OPEN".equals(departure.getOperationalStatus())) conflict("Lịch đang có sự cố; xử lý tại mục dời lịch");
         validateDates(nextDate,nextReturn);
         if(total<state.occupied()) conflict("Tổng sức chứa không thể nhỏ hơn "+state.occupied()+" chỗ đã thanh toán/đang giữ");
+        String previous = departure.getCapacity() + " tổng chỗ / " + departure.getAvailableSeats() + " chỗ còn";
         departure.setDepartureDate(nextDate);departure.setReturnDate(nextReturn);
         departure.setCapacity(total);departure.setAvailableSeats((short)(total-state.occupied()));
         TourDeparture saved = tourDepartureRepository.saveAndFlush(departure);
+        if (audit != null) audit.record("CAPACITY", id, previous,
+                saved.getCapacity() + " tổng chỗ / " + saved.getAvailableSeats() + " chỗ còn");
         // Capacity or seat edits change the widget's "next departure" block.
         AfterCommit.run(() -> events.publishEvent(new TourDeparturesChangedEvent()),
                 "Cannot evict the random tour cache after updating departure " + saved.getId());

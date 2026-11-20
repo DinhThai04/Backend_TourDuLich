@@ -204,6 +204,8 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
                 || (HttpMethod.GET.equals(request.getMethod())
                 && (apiPrefix + "/tour/advice/locations").equals(path))) return true;
         String relative = path.startsWith(apiPrefix) ? path.substring(apiPrefix.length()) : path;
+        if (HttpMethod.GET.equals(request.getMethod()) && relative.matches("/tour/tour-departures/[0-9]+/meeting-point"))
+            return request.getQueryParams().containsKey("tourId");
         // Management summary lives below the public departure catalog, but must still introspect credentials.
         if(relative.matches("/tour/tour-departures/[^/]+/capacity/?")) return false;
         if (HttpMethod.POST.equals(request.getMethod())) return PUBLIC_POST.contains(relative);
