@@ -19,12 +19,15 @@ public class OperationsInsights {
     private final JdbcTemplate jdbc;
     private final BookingAccess access;
     private final Clock clock;
+    private final ReportingOperationsClient reportingClient;
     private volatile Review lastReview;
 
-    public OperationsInsights(JdbcTemplate jdbc, BookingAccess access, Clock clock) {
+    public OperationsInsights(JdbcTemplate jdbc, BookingAccess access, Clock clock,
+                              ReportingOperationsClient reportingClient) {
         this.jdbc = jdbc;
         this.access = access;
         this.clock = clock;
+        this.reportingClient = reportingClient;
     }
 
     @Transactional(readOnly = true, timeout = 5)
@@ -32,7 +35,9 @@ public class OperationsInsights {
         require("BOOKINGS_GET_ALL");
         require("INVOICES_GET_ALL");
         if (from == null || through == null || through.isBefore(from) || through.isAfter(from.plusDays(30)))
-            throw new IllegalArgumentException("Chọn khoảng báo cáo tối đa 31 ngày");
+            throw new IllegalArgumentException("Ch��?n kho���ng bA�o cA�o t��`i �`a 31 ngA�y");
+        var reported = reportingClient.report(from, through);
+        if (reported.isPresent()) return reported.get();
         var start = from.atStartOfDay();
         var until = through.plusDays(1).atStartOfDay();
         return jdbc.queryForMap("""

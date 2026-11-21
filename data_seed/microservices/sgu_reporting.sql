@@ -14,6 +14,7 @@ SET FOREIGN_KEY_CHECKS = 0;
 DROP TABLE IF EXISTS reporting_inbox;
 DROP TABLE IF EXISTS reporting_outbox;
 DROP TABLE IF EXISTS operation_audit;
+DROP TABLE IF EXISTS ops_refund;
 DROP TABLE IF EXISTS ops_booking;
 DROP TABLE IF EXISTS ops_payment;
 DROP TABLE IF EXISTS ops_invoice;
@@ -58,6 +59,8 @@ CREATE TABLE `ops_booking` (
   `confirmed_at` DATETIME(6),
   `cancelled_at` DATETIME(6),
   `last_updated` DATETIME(6) NOT NULL,
+  `refund_amount` BIGINT,
+  `refunded_at` DATETIME(6),
   PRIMARY KEY (`booking_id`),
   KEY `idx_ops_book_account` (`account_id`),
   KEY `idx_ops_book_departure` (`departure_id`),
@@ -76,11 +79,27 @@ CREATE TABLE `ops_payment` (
   `txn_ref` VARCHAR(80),
   `paid_at` DATETIME(6),
   `created_at` DATETIME(6) NOT NULL,
+  `refund_amount` BIGINT,
+  `refunded_at` DATETIME(6),
   PRIMARY KEY (`payment_id`),
   KEY `idx_ops_pay_booking` (`booking_id`),
   KEY `idx_ops_pay_account` (`account_id`),
   KEY `idx_ops_pay_status` (`status`),
   KEY `idx_ops_pay_time` (`paid_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ops_refund: refund projection from schedule changes and reconciliation
+CREATE TABLE `ops_refund` (
+  `refund_id` VARCHAR(36) NOT NULL,
+  `booking_id` INT NOT NULL,
+  `source` VARCHAR(20) NOT NULL,
+  `amount` BIGINT NOT NULL,
+  `status` VARCHAR(20) NOT NULL,
+  `refunded_at` DATETIME(6) NOT NULL,
+  `created_at` DATETIME(6) NOT NULL,
+  PRIMARY KEY (`refund_id`),
+  KEY `idx_ops_refund_booking` (`booking_id`),
+  KEY `idx_ops_refund_source` (`source`, `status`, `refunded_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ops_invoice

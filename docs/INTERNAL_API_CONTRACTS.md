@@ -360,7 +360,66 @@
 
 ---
 
-## 7. Error Response Format (RFC 7807)
+## 7. Reporting Service Internal API
+
+**Auth**: `X-Internal-Reporting-Key` (minimum 32 characters), configured by
+`REPORTING_INTERNAL_KEY` in reporting_service and booking_service.
+
+### 7.1 POST `/internal/reports/audit`
+
+Ghi một audit record vào timeline của reporting read model.
+
+```json
+{
+  "actorId": "7",
+  "action": "BOOKING_CONFIRMED",
+  "entityType": "booking",
+  "entityId": "123",
+  "detail": { "status": "CONFIRMED" },
+  "correlationId": "request-uuid",
+  "causationId": "command-uuid",
+  "occurredAt": "2026-11-20T10:00:00+07:00"
+}
+```
+
+**Response 201**: `{ "id": 1 }`
+
+### 7.2 GET `/internal/reports/audit?page=0`
+
+Trả audit timeline, 20 record/trang, mới nhất trước.
+
+### 7.3 GET `/internal/reports/operations?from=2026-11-01&through=2026-11-30`
+
+Khoảng tối đa 31 ngày. Chỉ đọc `ops_*` trong `sgu_reporting`, không query DB nguồn.
+
+```json
+{
+  "bookings": 120,
+  "expired": 4,
+  "collected": 350000000,
+  "schedule_refunds": 5000000,
+  "reconciliation_refunds": 1200000,
+  "confirmed_passengers": 240
+}
+```
+
+### 7.4 Projection ingestion
+
+Các endpoint idempotent upsert vào read model, dùng cho event consumer Phase 4 hoặc
+internal caller trong giai đoạn chuyển đổi:
+
+- `POST /internal/reports/projections/bookings`
+- `POST /internal/reports/projections/payments`
+- `POST /internal/reports/projections/invoices`
+- `POST /internal/reports/projections/tours`
+- `POST /internal/reports/projections/users`
+- `POST /internal/reports/projections/refunds`
+
+**Response 204**: No content.
+
+---
+
+## 8. Error Response Format (RFC 7807)
 
 ```json
 {
@@ -387,7 +446,7 @@
 
 ---
 
-## 8. Contract Test Requirement
+## 9. Contract Test Requirement
 
 Mỗi internal endpoint **bắt buộc** có contract test (Spring Cloud Contract hoặc Pact):
 
@@ -409,7 +468,7 @@ void holdSeats_success() {
 
 ---
 
-## 9. Versioning & Deprecation
+## 10. Versioning & Deprecation
 
 - **v1**: URL không có version (current)
 - **Breaking change**: Tạo endpoint mới `/internal/tour/v2/...`

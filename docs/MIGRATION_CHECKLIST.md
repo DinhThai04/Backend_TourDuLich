@@ -30,7 +30,7 @@
 ### Phase 2 — Vertical Slices (Shared DB)
 | Slice | Service | Blocker chính | Internal API cần | Test | Done |
 |---|---|---|---|---|---|
-| 1 | Reporting | `OperationsInsights` join 6 bảng | — | Unit + Integration | ☐ |
+| 1 | Reporting | `OperationsInsights` join 6 bảng | `/internal/reports/*` | Unit + Integration | Partial: read model/API/tests + booking proxy; producers chờ Phase 4 |
 | 2 | Notification | `mail_outbox` rải rác | — | Unit + Integration | ☐ |
 | 3 | File | SQL `file_mgmt` trong auth/tour/booking | `/internal/file/*` | Unit + Integration | ☐ |
 | 4 | Pricing | Join `prices` từ booking/payment | `/internal/pricing/*` | Unit + Contract | ☐ |
@@ -40,6 +40,12 @@
 | 8 | Payment | Settlement đọc chéo | `/internal/payment/*` | Unit + Contract | ☐ |
 | 9 | Invoice | Chỉ consume payment event | — | Unit + Contract | ☐ |
 | 10 | Search/AI | Đã API-only | — | Contract test | ☐ |
+
+**Ghi chú slice 1 Reporting**: `reporting_service` đã có `operation_audit`, `ops_*`, `ops_refund`,
+internal API có key, test H2/MockMvc. `booking_service` gọi reporting khi
+`REPORTING_ENABLED=true` và `REPORTING_INTERNAL_KEY` hợp lệ, fallback legacy khi lỗi. Các producer
+projection (booking/payment/invoice/tour) được nối ở Phase 4 qua outbox/inbox; trước đó read model
+chỉ có dữ liệu khi gọi endpoint projection.
 
 **Mỗi slice phải**:
 - [ ] Có internal API/event rõ ràng (theo `INTERNAL_API_CONTRACTS.md`)

@@ -63,6 +63,10 @@ jwt:
 
 # Phase B: sending is OFF until explicitly enabled after migration/configuration.
 app:
+  operations:
+    reporting-enabled: ${REPORTING_ENABLED:false}
+    reporting-base-url: ${REPORTING_BASE_URL:http://localhost:8092/reporting}
+    reporting-internal-key: ${REPORTING_INTERNAL_KEY:}
   mail:
     enabled: ${MAIL_ENABLED:false}
     internal-api-key: ${MAIL_INTERNAL_API_KEY:}
