@@ -419,7 +419,43 @@ internal caller trong giai đoạn chuyển đổi:
 
 ---
 
-## 8. Error Response Format (RFC 7807)
+## 8. Notification Service Internal API
+
+**Auth**: `X-Internal-Notification-Key` (minimum 32 characters), configured by
+`NOTIFICATION_INTERNAL_KEY`.
+
+### 8.1 POST `/internal/notifications/mail`
+
+Enqueue mail idempotent theo `eventKey`; producer không ghi trực tiếp `mail_outbox`.
+
+```json
+{
+  "eventKey": "booking:123:created",
+  "eventType": "BOOKING_CREATED",
+  "sourceService": "booking-service",
+  "bookingId": 123,
+  "accountId": 7,
+  "recipient": "user@example.com",
+  "subject": "SGU Tour - Booking created",
+  "html": "<p>...</p>",
+  "text": "...",
+  "scheduledAt": "2026-11-20T10:00:00+07:00"
+}
+```
+
+**Response 202**: `{ "created": true }`; duplicate eventKey trả `{ "created": false }`.
+
+### 8.2 GET `/internal/notifications/mail/bookings/{bookingId}`
+
+Trả tối đa 30 delivery gần nhất của booking.
+
+### 8.3 POST `/internal/notifications/mail/bookings/{bookingId}/{id}/retry`
+
+Chỉ retry mail `FAILED` và chưa gửi. **Response 204**.
+
+---
+
+## 9. Error Response Format (RFC 7807)
 
 ```json
 {
@@ -446,7 +482,7 @@ internal caller trong giai đoạn chuyển đổi:
 
 ---
 
-## 9. Contract Test Requirement
+## 10. Contract Test Requirement
 
 Mỗi internal endpoint **bắt buộc** có contract test (Spring Cloud Contract hoặc Pact):
 
@@ -468,7 +504,7 @@ void holdSeats_success() {
 
 ---
 
-## 10. Versioning & Deprecation
+## 11. Versioning & Deprecation
 
 - **v1**: URL không có version (current)
 - **Breaking change**: Tạo endpoint mới `/internal/tour/v2/...`

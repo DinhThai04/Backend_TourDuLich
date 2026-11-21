@@ -31,7 +31,7 @@
 | Slice | Service | Blocker chính | Internal API cần | Test | Done |
 |---|---|---|---|---|---|
 | 1 | Reporting | `OperationsInsights` join 6 bảng | `/internal/reports/*` | Unit + Integration | Partial: read model/API/tests + booking proxy; producers chờ Phase 4 |
-| 2 | Notification | `mail_outbox` rải rác | — | Unit + Integration | ☐ |
+| 2 | Notification | `mail_outbox` rải rác | `/internal/notifications/mail/*` | Unit + Integration | Partial: service/outbox/worker/API/tests; producer cũ chưa chuyển |
 | 3 | File | SQL `file_mgmt` trong auth/tour/booking | `/internal/file/*` | Unit + Integration | ☐ |
 | 4 | Pricing | Join `prices` từ booking/payment | `/internal/pricing/*` | Unit + Contract | ☐ |
 | 5 | Tour | Capacity/hold API | `/internal/tour/*` | Unit + Contract | ☐ |
@@ -46,6 +46,10 @@ internal API có key, test H2/MockMvc. `booking_service` gọi reporting khi
 `REPORTING_ENABLED=true` và `REPORTING_INTERNAL_KEY` hợp lệ, fallback legacy khi lỗi. Các producer
 projection (booking/payment/invoice/tour) được nối ở Phase 4 qua outbox/inbox; trước đó read model
 chỉ có dữ liệu khi gọi endpoint projection.
+
+**Ghi chú slice 2 Notification**: `notification_service` đã sở hữu `mail_outbox` schema riêng,
+có API enqueue idempotent, list/retry, worker lease + retry + test mode, test H2. Booking/payment
+vẫn dùng mail outbox cũ cho đến khi producer được chuyển sang internal API.
 
 **Mỗi slice phải**:
 - [ ] Có internal API/event rõ ràng (theo `INTERNAL_API_CONTRACTS.md`)
