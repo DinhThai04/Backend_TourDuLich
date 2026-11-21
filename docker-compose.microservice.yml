@@ -1,0 +1,364 @@
+# Phase 1 — Microservice Docker Compose
+
+services:
+  # ============================================================
+  # MESSAGE BROKER
+  # ============================================================
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: sgu_rabbitmq
+    hostname: sgu-rabbitmq
+    ports:
+      - "5672:5672"    # AMQP
+      - "15672:15672"  # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: sgu_user
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-sgu_rabbitmq_pass}
+      RABBITMQ_DEFAULT_VHOST: sgu_vhost
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+
+  # ============================================================
+  # 9 DATABASES VẬT LÝ ĐỘC LẬP
+  # Mỗi DB: container riêng, volume riêng, user/grant riêng
+  # ============================================================
+
+  # 1. sgu_auth
+  mysql-auth:
+    image: mysql:8.4
+    container_name: sgu_mysql_auth
+    command:
+      - "--max-connections=80"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
+      MYSQL_DATABASE: sgu_auth
+      MYSQL_USER: sgu_auth
+      MYSQL_PASSWORD: ${MYSQL_AUTH_PASSWORD:-auth_pass}
+    volumes:
+      - mysql_auth_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_auth.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    ports:
+      - "3310:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "sgu_auth", "-p${MYSQL_AUTH_PASSWORD:-auth_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  # 2. sgu_tour
+  mysql-tour:
+    image: mysql:8.4
+    container_name: sgu_mysql_tour
+    command:
+      - "--max-connections=80"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
+      MYSQL_DATABASE: sgu_tour
+      MYSQL_USER: sgu_tour
+      MYSQL_PASSWORD: ${MYSQL_TOUR_PASSWORD:-tour_pass}
+    volumes:
+      - mysql_tour_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_tour.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    ports:
+      - "3311:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "sgu_tour", "-p${MYSQL_TOUR_PASSWORD:-tour_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  # 3. sgu_pricing
+  mysql-pricing:
+    image: mysql:8.4
+    container_name: sgu_mysql_pricing
+    command:
+      - "--max-connections=50"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
+      MYSQL_DATABASE: sgu_pricing
+      MYSQL_USER: sgu_pricing
+      MYSQL_PASSWORD: ${MYSQL_PRICING_PASSWORD:-pricing_pass}
+    volumes:
+      - mysql_pricing_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_pricing.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    ports:
+      - "3312:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "sgu_pricing", "-p${MYSQL_PRICING_PASSWORD:-pricing_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 288M
+
+  # 4. sgu_booking
+  mysql-booking:
+    image: mysql:8.4
+    container_name: sgu_mysql_booking
+    command:
+      - "--max-connections=80"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
+      MYSQL_DATABASE: sgu_booking
+      MYSQL_USER: sgu_booking
+      MYSQL_PASSWORD: ${MYSQL_BOOKING_PASSWORD:-booking_pass}
+    volumes:
+      - mysql_booking_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_booking.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    ports:
+      - "3313:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "sgu_booking", "-p${MYSQL_BOOKING_PASSWORD:-booking_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  # 5. sgu_payment
+  mysql-payment:
+    image: mysql:8.4
+    container_name: sgu_mysql_payment
+    command:
+      - "--max-connections=50"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
+      MYSQL_DATABASE: sgu_payment
+      MYSQL_USER: sgu_payment
+      MYSQL_PASSWORD: ${MYSQL_PAYMENT_PASSWORD:-payment_pass}
+    volumes:
+      - mysql_payment_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_payment.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    ports:
+      - "3314:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "sgu_payment", "-p${MYSQL_PAYMENT_PASSWORD:-payment_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 384M
+
+  # 6. sgu_invoice
+  mysql-invoice:
+    image: mysql:8.4
+    container_name: sgu_mysql_invoice
+    command:
+      - "--max-connections=50"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
+      MYSQL_DATABASE: sgu_invoice
+      MYSQL_USER: sgu_invoice
+      MYSQL_PASSWORD: ${MYSQL_INVOICE_PASSWORD:-invoice_pass}
+    volumes:
+      - mysql_invoice_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_invoice.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    ports:
+      - "3315:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "sgu_invoice", "-p${MYSQL_INVOICE_PASSWORD:-invoice_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 288M
+
+  # 7. sgu_file
+  mysql-file:
+    image: mysql:8.4
+    container_name: sgu_mysql_file
+    command:
+      - "--max-connections=50"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
+      MYSQL_DATABASE: sgu_file
+      MYSQL_USER: sgu_file
+      MYSQL_PASSWORD: ${MYSQL_FILE_PASSWORD:-file_pass}
+    volumes:
+      - mysql_file_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_file.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    ports:
+      - "3316:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "sgu_file", "-p${MYSQL_FILE_PASSWORD:-file_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 288M
+
+  # 8. sgu_notification
+  mysql-notification:
+    image: mysql:8.4
+    container_name: sgu_mysql_notification
+    command:
+      - "--max-connections=50"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
+      MYSQL_DATABASE: sgu_notification
+      MYSQL_USER: sgu_notification
+      MYSQL_PASSWORD: ${MYSQL_NOTIFICATION_PASSWORD:-notification_pass}
+    volumes:
+      - mysql_notification_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_notification.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    ports:
+      - "3317:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "sgu_notification", "-p${MYSQL_NOTIFICATION_PASSWORD:-notification_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 288M
+
+  # 9. sgu_reporting
+  mysql-reporting:
+    image: mysql:8.4
+    container_name: sgu_mysql_reporting
+    command:
+      - "--max-connections=50"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
+      MYSQL_DATABASE: sgu_reporting
+      MYSQL_USER: sgu_reporting
+      MYSQL_PASSWORD: ${MYSQL_REPORTING_PASSWORD:-reporting_pass}
+    volumes:
+      - mysql_reporting_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_reporting.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    ports:
+      - "3318:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "sgu_reporting", "-p${MYSQL_REPORTING_PASSWORD:-reporting_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 288M
+
+  # ============================================================
+  # SEARCH INFRASTRUCTURE (giữ nguyên từ compose gốc)
+  # ============================================================
+  # elasticsearch: DISABLED for 8GB machine - enable when more memory available
+  # elasticsearch:
+  #   image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+  #   container_name: sgu_elasticsearch
+  #   environment:
+  #     - discovery.type=single-node
+  #     - xpack.security.enabled=false
+  #     - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+  #   volumes:
+  #     - elasticsearch_data:/usr/share/elasticsearch/data
+  #   ports:
+  #     - "9200:9200"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 10
+  #   networks:
+  #     - sgu-network
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 1G
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: sgu_redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 288M
+
+# ============================================================
+# VOLUMES
+# ============================================================
+volumes:
+  rabbitmq_data:
+  mysql_auth_data:
+  mysql_tour_data:
+  mysql_pricing_data:
+  mysql_booking_data:
+  mysql_payment_data:
+  mysql_invoice_data:
+  mysql_file_data:
+  mysql_notification_data:
+  mysql_reporting_data:
+  # elasticsearch_data:
+  redis_data:
+
+# ============================================================
+# NETWORK
+# ============================================================
+networks:
+  sgu-network:
+    driver: bridge
+    name: sgu-network
