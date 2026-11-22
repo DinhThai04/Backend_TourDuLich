@@ -69,6 +69,7 @@ CREATE TABLE `booking_price_snapshot` (
   PRIMARY KEY (`booking_id`),
   KEY `ix_snapshot_price` (`price_id`),
   CONSTRAINT `fk_snapshot_booking` FOREIGN KEY (`booking_id`) REFERENCES `booking` (`id`) ON DELETE CASCADE
+);
 
 CREATE TABLE `booking_change` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
