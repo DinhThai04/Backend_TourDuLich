@@ -1,7 +1,7 @@
 # Chạy toàn bộ hệ thống, tại thư mục Backend_TourDuLich (frontend là repo anh em
 # ../Frontend_TourDuLich nên cần checkout cả hai cạnh nhau):
 #   docker compose up -d --build
-# Kèm tìm kiếm (Elasticsearch + Redis + search_service):
+# Kèm tìm kiếm (Elasticsearch + Redis + search-service):
 #   export CATALOG_INTERNAL_KEY=<chuỗi ≥32 ký tự>   # cùng key cho tour/auth/search
 #   docker compose --profile search up -d --build
 # Kèm trợ lý AI:
@@ -48,6 +48,7 @@ x-java-env: &java-env
   # (khoảng 3,2 GB cho cả stack, vừa máy dev 8 GB). Để trống giữ mặc định;
   # máy nhiều RAM đặt JAVA_XMX=512m hoặc 1g nhưng phải chừa RAM cho OS/MySQL.
   JAVA_XMX: ${JAVA_XMX:-}
+  JWT_SIGNER_KEY: ${JWT_SIGNER_KEY:-sgu-tour-local-dev-signing-key-2026}
 
 # Only datasource services inherit this dependency. Gateway has its own health dependencies.
 x-database-client: &database-client
@@ -82,19 +83,19 @@ services:
       start_period: 90s
     stop_grace_period: 30s
 
-  auth_service:
+  auth-service:
     <<: [*backend, *database-client]
     build: ./auth_service
     image: sgu-tour/auth-service
     environment:
       <<: [*db-env, *java-env]
-      APP_SERVICES_FILE_BASE_URL: http://file_service:8087
-      APP_SERVICES_TOUR_BASE_URL: http://tour_service:8086/tour
-      APP_SERVICES_BOOKING_BASE_URL: http://booking_service:8081/booking
+      APP_SERVICES_FILE_BASE_URL: http://file-service:8087
+      APP_SERVICES_TOUR_BASE_URL: http://tour-service:8086/tour
+      APP_SERVICES_BOOKING_BASE_URL: http://booking-service:8081/booking
       AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:-}
       BOOKING_INTERNAL_KEY: ${BOOKING_INTERNAL_KEY:-}
       FILE_INTERNAL_KEY: ${FILE_INTERNAL_KEY:-}
-      # Bulk catalogue feed is internal; must equal tour_service CATALOG_INTERNAL_KEY.
+      # Bulk catalogue feed is internal; must equal tour-service CATALOG_INTERNAL_KEY.
       CATALOG_INTERNAL_KEY: ${CATALOG_INTERNAL_KEY:-}
       # Phải trùng client id mà frontend dùng lúc build, nếu không Google trả token
       # cho audience khác và bước verify sẽ từ chối.
@@ -102,24 +103,24 @@ services:
     volumes:
       - ./.local:/app/.local:ro
     ports:
-      # Socket.IO dùng chung cổng với auth_service; nginx proxy nội bộ khi chạy Docker.
+      # Socket.IO dùng chung cổng với auth-service; nginx proxy nội bộ khi chạy Docker.
       # Chỉ bind loopback vì 8099 là cổng phụ bỏ qua gateway; mở ra LAN sẽ né được
-      # rate-limit/CORS của gateway. Trong compose nginx vẫn gọi auth_service:8099.
+      # rate-limit/CORS của gateway. Trong compose nginx vẫn gọi auth-service:8099.
       - "127.0.0.1:8099:8099"
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8080"]
       <<: *health
 
-  booking_service:
+  booking-service:
     <<: [*backend, *database-client]
     build: ./booking_service
     image: sgu-tour/booking-service
     environment:
       <<: [*db-env, *java-env]
-      APP_SERVICES_PAYMENT_BASE_URL: http://payment_service:8083/payment
+      APP_SERVICES_PAYMENT_BASE_URL: http://payment-service:8083/payment
       APP_SERVICES_NOTIFICATION_BASE_URL: http://notification_service:8093/notification
-      APP_SERVICES_PRICING_BASE_URL: http://pricing_service:8084/pricing
-      APP_SERVICES_TOUR_BASE_URL: http://tour_service:8086/tour
+      APP_SERVICES_PRICING_BASE_URL: http://pricing-service:8084/pricing
+      APP_SERVICES_TOUR_BASE_URL: http://tour-service:8086/tour
       BOOKING_INTERNAL_KEY: ${BOOKING_INTERNAL_KEY:-}
       PAYMENT_INTERNAL_KEY: ${PAYMENT_INTERNAL_KEY:-}
       NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY:-}
@@ -150,20 +151,20 @@ services:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8081"]
       <<: *health
 
-  payment_service:
+  payment-service:
     <<: [*backend, *database-client]
     build: ./payment_service
     image: sgu-tour/payment-service
     environment:
       <<: [*db-env, *java-env]
       APP_SERVICES_NOTIFICATION_BASE_URL: http://notification_service:8093/notification
-      APP_SERVICES_PRICING_BASE_URL: http://pricing_service:8084/pricing
-      APP_SERVICES_TOUR_BASE_URL: http://tour_service:8086/tour
+      APP_SERVICES_PRICING_BASE_URL: http://pricing-service:8084/pricing
+      APP_SERVICES_TOUR_BASE_URL: http://tour-service:8086/tour
       PAYMENT_INTERNAL_KEY: ${PAYMENT_INTERNAL_KEY:-}
       NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY:-}
       PRICING_INTERNAL_KEY: ${PRICING_INTERNAL_KEY:-}
       TOUR_INTERNAL_KEY: ${TOUR_INTERNAL_KEY:-}
-      # VNPAY_HASH_SECRET và VNPAY_TMN_CODE đọc từ .local/payment_service.properties (mount bên dưới).
+      # VNPAY_HASH_SECRET và VNPAY_TMN_CODE đọc từ .local/payment-service.properties (mount bên dưới).
       # Không truyền qua environment: biến rỗng sẽ đè file .local và payment từ chối khởi động,
       # kéo theo gateway (depends_on payment healthy) không lên.
       # Nginx (cổng 80) phục vụ frontend và proxy /api; đặt PUBLIC_BASE_URL khi chạy trên tên miền thật.
@@ -171,7 +172,9 @@ services:
       MOMO_RETURN_URL: ${PUBLIC_BASE_URL:-http://localhost}/payment/momo/callback
       # MoMo gọi IPN từ internet, phải là URL công khai qua gateway (đã StripPrefix /api/v1).
       MOMO_IPN_URL: ${PUBLIC_BASE_URL:-http://localhost}/api/v1/payment/momo/ipn
-      # Credential MoMo cũng đọc từ .local/payment_service.properties. Không khai báo ở đây:
+      VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET:-sgu-tour-local-vnpay-hash-secret-dummy}
+      VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-sgu-tour-local-vnpay-tmn-code-dummy}
+      # Credential MoMo cũng đọc từ .local/payment-service.properties. Không khai báo ở đây:
       # một biến rỗng trong environment sẽ đè file .local và làm MoMo báo "chưa cấu hình".
     volumes:
       - ./.local:/app/.local:ro
@@ -179,7 +182,7 @@ services:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8083"]
       <<: *health
 
-  pricing_service:
+  pricing-service:
     <<: [*backend, *database-client]
     build: ./pricing_service
     image: sgu-tour/pricing-service
@@ -191,15 +194,15 @@ services:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8084"]
       <<: *health
 
-  tour_service:
+  tour-service:
     <<: [*backend, *database-client]
     build: ./tour_service
     image: sgu-tour/tour-service
     environment:
       <<: [*db-env, *java-env]
-      APP_SERVICES_FILE_BASE_URL: http://file_service:8087
-      APP_SERVICES_PRICING_BASE_URL: http://pricing_service:8084/pricing
-      APP_ADVICE_MEDIA_URL: http://file_service:8087/file
+      APP_SERVICES_FILE_BASE_URL: http://file-service:8087
+      APP_SERVICES_PRICING_BASE_URL: http://pricing-service:8084/pricing
+      APP_ADVICE_MEDIA_URL: http://file-service:8087/file
       APP_ADVICE_PRICING_URL: http://api_gateway:8888/api/v1/pricing
       TOUR_IMAGE_SNAPSHOT_FILE: /app/data/tour-images.json
       TOUR_IMAGE_REFRESH_INTERVAL_MS: ${TOUR_IMAGE_REFRESH_INTERVAL_MS:-300000}
@@ -213,32 +216,35 @@ services:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8086"]
       <<: *health
 
-  file_service:
+  file-service:
     <<: [*backend, *database-client]
     build: ./file_service
     image: sgu-tour/file-service
     environment:
       <<: [*db-env, *java-env]
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-sgu-tour-local-cloud}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-dummy-key}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-dummy-secret}
     volumes:
       - ./.local:/app/.local:ro
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8087"]
       <<: *health
 
-  invoice_service:
+  invoice-service:
     <<: [*backend, *database-client]
     build: ./invoice_service
     image: sgu-tour/invoice-service
     environment:
       <<: [*db-env, *java-env]
-      TOUR_SERVICE_URL: http://tour_service:8086/tour
+      tour-service_URL: http://tour-service:8086/tour
     volumes:
       - ./.local:/app/.local:ro
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8090"]
       <<: *health
 
-  search_service:
+  search-service:
     <<: *backend
     profiles: ["search"]
     build: ./search_service
@@ -247,9 +253,9 @@ services:
       <<: *java-env
       SPRING_ELASTICSEARCH_URIS: http://elasticsearch:9200
       SPRING_DATA_REDIS_HOST: redis
-      APP_SEARCH_SOURCE_URL: http://tour_service:8086/tour/tours/search-snapshot
+      APP_SEARCH_SOURCE_URL: http://tour-service:8086/tour/tours/search-snapshot
       SEARCH_SOURCE_KEY: ${CATALOG_INTERNAL_KEY:-}
-      AUTH_INTROSPECT_URL: http://auth_service:8080/auth/users/introspect
+      AUTH_INTROSPECT_URL: http://auth-service:8080/auth/users/introspect
       SEARCH_SYNC_DELAY_MS: ${SEARCH_SYNC_DELAY_MS:-60000}
     volumes:
       - ./.local:/app/.local:ro
@@ -262,7 +268,7 @@ services:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8089"]
       <<: *health
 
-  ai_service:
+  ai-service:
     <<: *backend
     profiles: ["ai"]
     build: ./ai_service
@@ -272,9 +278,9 @@ services:
       # Service mặc định chỉ nghe 127.0.0.1 (an toàn khi chạy máy cá nhân).
       SERVER_ADDRESS: 0.0.0.0
       AI_ENABLED: ${AI_ENABLED:-false}
-      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_API_KEY: ${GROQ_API_KEY:-sgu-tour-local-groq-dummy-key}
       AI_CATALOG_BASE_URL: http://api_gateway:8888/api/v1/tour
-      AI_BOOKING_BASE_URL: http://booking_service:8081/booking
+      AI_BOOKING_BASE_URL: http://booking-service:8081/booking
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8091"]
       <<: *health
@@ -285,35 +291,35 @@ services:
     image: sgu-tour/api-gateway
     environment:
       <<: *java-env
-      AUTH_BASE_URL: http://auth_service:8080
-      BOOKING_SERVICE_URL: http://booking_service:8081
-      PAYMENT_SERVICE_URL: http://payment_service:8083
-      PRICING_SERVICE_URL: http://pricing_service:8084
-      TOUR_SERVICE_URL: http://tour_service:8086
-      FILE_SERVICE_URL: http://file_service:8087
-      INVOICE_SERVICE_URL: http://invoice_service:8090
-      SEARCH_SERVICE_URL: http://search_service:8089
-      APP_AI_BASE_URL: http://ai_service:8091
+      AUTH_BASE_URL: http://auth-service:8080
+      BOOKING_BASE_URL: http://booking-service:8081
+      PAYMENT_BASE_URL: http://payment-service:8083
+      PRICING_BASE_URL: http://pricing-service:8084
+      TOUR_BASE_URL: http://tour-service:8086
+      FILE_BASE_URL: http://file-service:8087
+      INVOICE_BASE_URL: http://invoice-service:8090
+      SEARCH_BASE_URL: http://search-service:8089
+      AI_BASE_URL: http://ai-service:8091
       MAIL_INTERNAL_API_KEY: ${MAIL_INTERNAL_API_KEY:-}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-http://localhost,http://localhost:5173,http://127.0.0.1:5173}
     ports:
       # Chỉ mở trên localhost: mọi traffic công khai phải đi qua nginx (frontend),
       # nhờ vậy rate-limit của gateway nhận được IP thật và không bị giả header.
-      - "127.0.0.1:8888:8888"
+      - "0.0.0.0:8888:8888"
     depends_on:
-      auth_service:
+      auth-service:
         condition: service_healthy
-      booking_service:
+      booking-service:
         condition: service_healthy
-      payment_service:
+      payment-service:
         condition: service_healthy
-      pricing_service:
+      pricing-service:
         condition: service_healthy
-      tour_service:
+      tour-service:
         condition: service_healthy
-      file_service:
+      file-service:
         condition: service_healthy
-      invoice_service:
+      invoice-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8888"]
@@ -324,19 +330,19 @@ services:
       context: ../Frontend_TourDuLich
       args:
         # .env không vào build context; Vite chỉ thấy biến công khai này qua build arg.
-        # Dùng chung GOOGLE_CLIENT_ID với auth_service để token Google luôn đúng audience.
+        # Dùng chung GOOGLE_CLIENT_ID với auth-service để token Google luôn đúng audience.
         VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-1079158114391-reid5167l6roke0h5grjelgqaivohlcq.apps.googleusercontent.com}
     image: sgu-tour/frontend
     restart: unless-stopped
     logging: *logging
     ports:
       # Local-only, like the gateway: LAN exposure must be a deliberate deployment decision.
-      - "127.0.0.1:80:80"
+      - "0.0.0.0:80:80"
     depends_on:
       api_gateway:
         condition: service_healthy
-      # nginx resolves auth_service at startup for the Socket.IO proxy_pass.
-      auth_service:
+      # nginx resolves auth-service at startup for the Socket.IO proxy_pass.
+      auth-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 80"]
@@ -379,8 +385,8 @@ services:
       start_period: 10s
 
   # n8n chỉ bật khi cần workflow mail. Nó dùng chung mạng mặc định của compose
-  # (sgu-tour_default) với backend nên gọi thẳng api_gateway:8888, booking_service:8081,
-  # auth_service:8099 thay vì localhost/host.docker.internal.
+  # (sgu-tour_default) với backend nên gọi thẳng api_gateway:8888, booking-service:8081,
+  # auth-service:8099 thay vì localhost/host.docker.internal.
   n8n:
     profiles: ["mail"]
     image: n8nio/n8n:1.123.97
@@ -399,8 +405,8 @@ services:
       N8N_DIAGNOSTICS_ENABLED: "false"
       # URL nội bộ theo tên service; workflow mẫu dùng đúng các giá trị này.
       N8N_SGU_GATEWAY_URL: http://api_gateway:8888
-      N8N_SGU_BOOKING_URL: http://booking_service:8081
-      N8N_SGU_AUTH_URL: http://auth_service:8099
+      N8N_SGU_BOOKING_URL: http://booking-service:8081
+      N8N_SGU_AUTH_URL: http://auth-service:8099
     ports:
       # Editor và webhook chỉ mở trên loopback, không lộ ra LAN.
       - "127.0.0.1:5678:5678"
@@ -416,3 +422,6 @@ volumes:
   es_data:
   tour_images:
   n8n_data:
+
+
+

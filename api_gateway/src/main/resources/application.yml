@@ -3,7 +3,7 @@ server:
   forward-headers-strategy: none
 app:
   auth:
-    base-url: ${AUTH_BASE_URL:http://localhost:8080}
+    base-url: ${AUTH_BASE_URL:http://auth-service:8080}
     connect-timeout-ms: ${AUTH_CONNECT_TIMEOUT_MS:2000}
     response-timeout-ms: ${AUTH_RESPONSE_TIMEOUT_MS:3000}
     login-attempts-per-minute: ${AUTH_LOGIN_LIMIT:20}
@@ -45,7 +45,7 @@ spring:
         response-timeout: 90s
       routes:
         - id: ai_policies
-          uri: ${app.ai.base-url:http://127.0.0.1:8091}
+          uri: ${AI_BASE_URL:http://ai-service:8091}
           predicates:
             - Path=${app.api-prefix}/ai/policies
             - Method=GET
@@ -54,7 +54,7 @@ spring:
             - RemoveRequestHeader=Authorization
             - RemoveRequestHeader=Cookie
         - id: ai_booking_help
-          uri: ${app.ai.base-url:http://127.0.0.1:8091}
+          uri: ${AI_BASE_URL:http://ai-service:8091}
           predicates:
             - Path=${app.api-prefix}/ai/booking-help
             - Method=POST
@@ -64,8 +64,8 @@ spring:
           metadata:
             connect-timeout: 2000
             response-timeout: 10000
-        - id: ai_service
-          uri: ${app.ai.base-url:http://127.0.0.1:8091}
+        - id: ai-service
+          uri: ${AI_BASE_URL:http://ai-service:8091}
           predicates:
             - Path=${app.api-prefix}/ai/conversations,${app.api-prefix}/ai/chat,${app.api-prefix}/ai/conversations/reset
             - Method=POST
@@ -76,51 +76,50 @@ spring:
           metadata:
             connect-timeout: 2000
             response-timeout: 45000
-        - id: auth_service
-          # One variable drives routing and introspection, so overriding only one cannot split them.
-          uri: ${app.auth.base-url}
+        - id: auth-service
+          uri: ${AUTH_BASE_URL:http://auth-service:8080}
           predicates:
             - Path=${app.api-prefix}/auth/**
           filters:
             - StripPrefix=2
-        - id: booking_service
-          uri: ${BOOKING_SERVICE_URL:http://localhost:8081}
+        - id: booking-service
+          uri: ${BOOKING_BASE_URL:http://booking-service:8081}
           predicates:
             - Path=${app.api-prefix}/booking/**
           filters:
             - StripPrefix=2
-        - id: payment_service
-          uri: ${PAYMENT_SERVICE_URL:http://localhost:8083}
+        - id: payment-service
+          uri: ${PAYMENT_BASE_URL:http://payment-service:8083}
           predicates:
             - Path=${app.api-prefix}/payment/**
           filters:
             - StripPrefix=2
-        - id: pricing_service
-          uri: ${PRICING_SERVICE_URL:http://localhost:8084}
+        - id: pricing-service
+          uri: ${PRICING_BASE_URL:http://pricing-service:8084}
           predicates:
             - Path=${app.api-prefix}/pricing/**
           filters:
             - StripPrefix=2
-        - id: tour_service
-          uri: ${TOUR_SERVICE_URL:http://localhost:8086}
+        - id: tour-service
+          uri: ${TOUR_BASE_URL:http://tour-service:8086}
           predicates:
             - Path=${app.api-prefix}/tour/**
           filters:
             - StripPrefix=2
         - id: file-service
-          uri: ${FILE_SERVICE_URL:http://localhost:8087}
+          uri: ${FILE_BASE_URL:http://file-service:8087}
           predicates:
             - Path=${app.api-prefix}/file/**
           filters:
             - StripPrefix=2
-        - id: invoice_service
-          uri: ${INVOICE_SERVICE_URL:http://localhost:8090}
+        - id: invoice-service
+          uri: ${INVOICE_BASE_URL:http://invoice-service:8090}
           predicates:
             - Path=${app.api-prefix}/invoice/**
           filters:
             - StripPrefix=2
         - id: search-service
-          uri: ${SEARCH_SERVICE_URL:http://localhost:8089}
+          uri: ${SEARCH_BASE_URL:http://search-service:8089}
           predicates:
             - Path=${app.api-prefix}/search/**
           metadata:
