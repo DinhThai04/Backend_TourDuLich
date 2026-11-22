@@ -65,7 +65,7 @@ jwt:
 app:
   booking:
     internal:
-      internal-key: ${BOOKING_INTERNAL_KEY:}
+      internal-key: ${BOOKING_INTERNAL_KEY}
   services:
     payment-base-url: ${APP_SERVICES_PAYMENT_BASE_URL:http://payment-service:8083/payment}
     notification-base-url: ${APP_SERVICES_NOTIFICATION_BASE_URL:http://notification-service:8093/notification}
@@ -74,10 +74,10 @@ app:
   operations:
     reporting-enabled: ${REPORTING_ENABLED:false}
     reporting-base-url: ${REPORTING_BASE_URL:http://reporting-service:8092/reporting}
-    reporting-internal-key: ${REPORTING_INTERNAL_KEY:}
+    reporting-internal-key: ${REPORTING_INTERNAL_KEY}
   mail:
     enabled: ${MAIL_ENABLED:false}
-    internal-api-key: ${MAIL_INTERNAL_API_KEY:}
+    internal-api-key: ${MAIL_INTERNAL_API_KEY}
     test-mode: ${MAIL_TEST_MODE:true}
     test-recipient: ${MAIL_TEST_RECIPIENT:no-reply@sgu-tour.example}
     from: ${MAIL_FROM:no-reply@sgu-tour.example}

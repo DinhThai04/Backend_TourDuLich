@@ -1,6 +1,7 @@
 package com.example.auth_service.config;
 
 import feign.RequestInterceptor;
+import feign.RequestTemplate;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -8,13 +9,19 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class PaymentFeignConfiguration {
 
-    @Bean
-    public RequestInterceptor paymentInternalRequestInterceptor(
-            @Value("${PAYMENT_INTERNAL_KEY:}") String internalKey) {
-        return template -> {
-            if (internalKey != null && !internalKey.isBlank()) {
-                template.header("X-Internal-Payment-Key", internalKey);
-            }
-        };
-    }
+	@Value("${PAYMENT_INTERNAL_KEY}")
+	private String paymentInternalKey;
+
+	@Bean
+	public RequestInterceptor paymentInternalRequestInterceptor() {
+		if (paymentInternalKey == null || paymentInternalKey.isBlank()) {
+			throw new IllegalStateException("PAYMENT_INTERNAL_KEY is required but not configured");
+		}
+		return new RequestInterceptor() {
+			@Override
+			public void apply(RequestTemplate template) {
+				template.header("X-Internal-Payment-Key", paymentInternalKey);
+			}
+		};
+	}
 }

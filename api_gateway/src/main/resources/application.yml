@@ -31,7 +31,7 @@ app:
       # Booking-help is a short guided Q&A, so it gets a larger per-caller minute budget.
       booking-help-per-minute: ${AI_BOOKING_HELP_LIMIT:10}
   mail:
-    internal-api-key: ${MAIL_INTERNAL_API_KEY:}
+    internal-api-key: ${MAIL_INTERNAL_API_KEY}
   api-prefix: /api/v1
 
 spring:

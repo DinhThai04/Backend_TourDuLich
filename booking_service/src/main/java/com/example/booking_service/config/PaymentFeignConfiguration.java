@@ -9,16 +9,19 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class PaymentFeignConfiguration {
 
-    @Value("${PAYMENT_INTERNAL_KEY:}")
-    private String paymentInternalKey;
+	@Value("${PAYMENT_INTERNAL_KEY}")
+	private String paymentInternalKey;
 
-    @Bean
-    public RequestInterceptor paymentInternalAuthInterceptor() {
-        return new RequestInterceptor() {
-            @Override
-            public void apply(RequestTemplate template) {
-                template.header("X-Internal-Payment-Key", paymentInternalKey);
-            }
-        };
-    }
+	@Bean
+	public RequestInterceptor paymentInternalAuthInterceptor() {
+		if (paymentInternalKey == null || paymentInternalKey.isBlank()) {
+			throw new IllegalStateException("PAYMENT_INTERNAL_KEY is required but not configured");
+		}
+		return new RequestInterceptor() {
+			@Override
+			public void apply(RequestTemplate template) {
+				template.header("X-Internal-Payment-Key", paymentInternalKey);
+			}
+		};
+	}
 }

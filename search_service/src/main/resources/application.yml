@@ -31,5 +31,5 @@ app:
     sync-initial-delay-ms: ${SEARCH_SYNC_INITIAL_DELAY_MS:2000}
     sync-delay-ms: ${SEARCH_SYNC_DELAY_MS:60000}
     # Must match tour_service app.catalog.internal-key when the snapshot is not loopback.
-    source-key: ${SEARCH_SOURCE_KEY:}
+    source-key: ${SEARCH_SOURCE_KEY}
     source-url: ${APP_SEARCH_SOURCE_URL:http://tour-service:8086/tour/tours/search-snapshot}

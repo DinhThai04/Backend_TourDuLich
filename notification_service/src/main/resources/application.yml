@@ -34,7 +34,7 @@ spring:
 
 app:
   notification:
-    internal-key: ${NOTIFICATION_INTERNAL_KEY:}
+    internal-key: ${NOTIFICATION_INTERNAL_KEY}
   mail:
     enabled: ${MAIL_ENABLED:false}
     test-mode: ${MAIL_TEST_MODE:true}

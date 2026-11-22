@@ -32,7 +32,7 @@ spring:
 app:
   pricing:
     internal:
-      internal-key: ${PRICING_INTERNAL_KEY:}
+      internal-key: ${PRICING_INTERNAL_KEY}
 
 jwt:
   signerKey: ${JWT_SIGNER_KEY}

@@ -9,16 +9,19 @@ import org.springframework.context.annotation.Configuration;
 @Configuration
 public class InvoiceFeignConfiguration {
 
-    @Value("${INVOICE_INTERNAL_KEY:}")
-    private String invoiceInternalKey;
+	@Value("${INVOICE_INTERNAL_KEY}")
+	private String invoiceInternalKey;
 
-    @Bean
-    public RequestInterceptor invoiceInternalAuthInterceptor() {
-        return new RequestInterceptor() {
-            @Override
-            public void apply(RequestTemplate template) {
-                template.header("X-Internal-Invoice-Key", invoiceInternalKey);
-            }
-        };
-    }
+	@Bean
+	public RequestInterceptor invoiceInternalAuthInterceptor() {
+		if (invoiceInternalKey == null || invoiceInternalKey.isBlank()) {
+			throw new IllegalStateException("INVOICE_INTERNAL_KEY is required but not configured");
+		}
+		return new RequestInterceptor() {
+			@Override
+			public void apply(RequestTemplate template) {
+				template.header("X-Internal-Invoice-Key", invoiceInternalKey);
+			}
+		};
+	}
 }

@@ -34,4 +34,4 @@ spring:
 
 app:
   reporting:
-    internal-key: ${REPORTING_INTERNAL_KEY:}
+    internal-key: ${REPORTING_INTERNAL_KEY}
