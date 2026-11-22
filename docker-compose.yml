@@ -97,7 +97,13 @@ services:
     build: ./auth_service
     image: sgu-tour/auth-service
     environment:
-      <<: [*db-env, *java-env]
+      <<: *java-env
+      DB_URL: jdbc:mysql://mysql:3306/sgu_auth?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
+      SPRING_DATASOURCE_USERNAME: sgu_tour
+      DB_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      DB_POOL_MIN: ${DB_POOL_MIN:-2}
+      DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
       APP_SERVICES_FILE_BASE_URL: http://file-service:8087
       APP_SERVICES_TOUR_BASE_URL: http://tour-service:8086/tour
       APP_SERVICES_BOOKING_BASE_URL: http://booking-service:8081/booking
@@ -125,7 +131,13 @@ services:
     build: ./booking_service
     image: sgu-tour/booking-service
     environment:
-      <<: [*db-env, *java-env]
+      <<: *java-env
+      DB_URL: jdbc:mysql://mysql:3306/sgu_booking?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
+      SPRING_DATASOURCE_USERNAME: sgu_tour
+      DB_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      DB_POOL_MIN: ${DB_POOL_MIN:-2}
+      DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
       APP_SERVICES_PAYMENT_BASE_URL: http://payment-service:8083/payment
       APP_SERVICES_NOTIFICATION_BASE_URL: http://notification_service:8093/notification
       APP_SERVICES_PRICING_BASE_URL: http://pricing-service:8084/pricing
@@ -165,7 +177,13 @@ services:
     build: ./payment_service
     image: sgu-tour/payment-service
     environment:
-      <<: [*db-env, *java-env]
+      <<: *java-env
+      DB_URL: jdbc:mysql://mysql:3306/sgu_payment?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
+      SPRING_DATASOURCE_USERNAME: sgu_tour
+      DB_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      DB_POOL_MIN: ${DB_POOL_MIN:-2}
+      DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
       APP_SERVICES_NOTIFICATION_BASE_URL: http://notification_service:8093/notification
       APP_SERVICES_PRICING_BASE_URL: http://pricing-service:8084/pricing
       APP_SERVICES_TOUR_BASE_URL: http://tour-service:8086/tour
@@ -196,7 +214,13 @@ services:
     build: ./pricing_service
     image: sgu-tour/pricing-service
     environment:
-      <<: [*db-env, *java-env]
+      <<: *java-env
+      DB_URL: jdbc:mysql://mysql:3306/sgu_pricing?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
+      SPRING_DATASOURCE_USERNAME: sgu_tour
+      DB_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      DB_POOL_MIN: ${DB_POOL_MIN:-2}
+      DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
     volumes:
       - ./.local:/app/.local:ro
     healthcheck:
@@ -208,7 +232,13 @@ services:
     build: ./tour_service
     image: sgu-tour/tour-service
     environment:
-      <<: [*db-env, *java-env]
+      <<: *java-env
+      DB_URL: jdbc:mysql://mysql:3306/sgu_tour?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
+      SPRING_DATASOURCE_USERNAME: sgu_tour
+      DB_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      DB_POOL_MIN: ${DB_POOL_MIN:-2}
+      DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
       APP_SERVICES_FILE_BASE_URL: http://file-service:8087
       APP_SERVICES_PRICING_BASE_URL: http://pricing-service:8084/pricing
       APP_ADVICE_MEDIA_URL: http://file-service:8087/file
@@ -230,7 +260,13 @@ services:
     build: ./file_service
     image: sgu-tour/file-service
     environment:
-      <<: [*db-env, *java-env]
+      <<: *java-env
+      DB_URL: jdbc:mysql://mysql:3306/sgu_file?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
+      SPRING_DATASOURCE_USERNAME: sgu_tour
+      DB_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      DB_POOL_MIN: ${DB_POOL_MIN:-2}
+      DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-sgu-tour-local-cloud}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-dummy-key}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-dummy-secret}
@@ -245,7 +281,13 @@ services:
     build: ./invoice_service
     image: sgu-tour/invoice-service
     environment:
-      <<: [*db-env, *java-env]
+      <<: *java-env
+      DB_URL: jdbc:mysql://mysql:3306/sgu_invoice?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
+      SPRING_DATASOURCE_USERNAME: sgu_tour
+      DB_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      DB_POOL_MIN: ${DB_POOL_MIN:-2}
+      DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
       TOUR_BASE_URL: http://tour-service:8086/tour
     volumes:
       - ./.local:/app/.local:ro
@@ -258,9 +300,13 @@ services:
     build: ./notification_service
     image: sgu-tour/notification-service
     environment:
-      <<: [*db-env, *java-env]
+      <<: *java-env
       DB_URL: jdbc:mysql://mysql:3306/sgu_notification?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
       SPRING_DATASOURCE_USERNAME: sgu_tour
+      DB_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}
+      DB_POOL_MAX: ${DB_POOL_MAX:-5}
+      DB_POOL_MIN: ${DB_POOL_MIN:-1}
+      DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
     volumes:
       - ./.local:/app/.local:ro
     healthcheck:
@@ -272,9 +318,13 @@ services:
     build: ./reporting_service
     image: sgu-tour/reporting-service
     environment:
-      <<: [*db-env, *java-env]
+      <<: *java-env
       DB_URL: jdbc:mysql://mysql:3306/sgu_reporting?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
       SPRING_DATASOURCE_USERNAME: sgu_tour
+      DB_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}
+      DB_POOL_MAX: ${DB_POOL_MAX:-5}
+      DB_POOL_MIN: ${DB_POOL_MIN:-1}
+      DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
     volumes:
       - ./.local:/app/.local:ro
     healthcheck:
