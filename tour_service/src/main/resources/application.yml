@@ -57,8 +57,12 @@ spring:
 jwt:
   signerKey: ${JWT_SIGNER_KEY}
 app:
+  tour:
+    internal:
+      internal-key: ${TOUR_INTERNAL_KEY:}
   services:
     pricing-base-url: ${APP_SERVICES_PRICING_BASE_URL:http://localhost:8084/pricing}
+    file-base-url: ${APP_SERVICES_FILE_BASE_URL:http://localhost:8087}
   catalog:
     # Bulk catalogue feed for auth/search; blank accepts loopback callers only.
     internal-key: ${CATALOG_INTERNAL_KEY:}

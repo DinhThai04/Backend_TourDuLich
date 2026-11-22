@@ -53,6 +53,9 @@ jwt:
   valid-duration: 3600 # in seconds; the frontend renews through /users/refresh on 401
   refreshable-duration: 72000 # in seconds
 app:
+  auth:
+    internal:
+      internal-key: ${AUTH_INTERNAL_KEY:}
   catalog:
     # Must match tour_service app.catalog.internal-key when the snapshot is not loopback.
     internal-key: ${CATALOG_INTERNAL_KEY:}

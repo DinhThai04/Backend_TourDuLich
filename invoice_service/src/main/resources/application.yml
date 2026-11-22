@@ -42,7 +42,11 @@ spring:
       enabled: true
 
 app:
+  invoice:
+    internal:
+      internal-key: ${INVOICE_INTERNAL_KEY:}
   services:
+    booking-base-url: ${APP_SERVICES_BOOKING_BASE_URL:http://localhost:8081/booking}
     tour-base-url: ${TOUR_SERVICE_URL:http://localhost:8086/tour}
 
 jwt:

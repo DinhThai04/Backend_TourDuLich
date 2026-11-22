@@ -63,6 +63,14 @@ jwt:
 
 # Phase B: sending is OFF until explicitly enabled after migration/configuration.
 app:
+  booking:
+    internal:
+      internal-key: ${BOOKING_INTERNAL_KEY:}
+  services:
+    payment-base-url: ${APP_SERVICES_PAYMENT_BASE_URL:http://localhost:8083/payment}
+    notification-base-url: ${APP_SERVICES_NOTIFICATION_BASE_URL:http://localhost:8093/notification}
+    pricing-base-url: ${APP_SERVICES_PRICING_BASE_URL:http://localhost:8084/pricing}
+    tour-base-url: ${APP_SERVICES_TOUR_BASE_URL:http://localhost:8086/tour}
   operations:
     reporting-enabled: ${REPORTING_ENABLED:false}
     reporting-base-url: ${REPORTING_BASE_URL:http://localhost:8092/reporting}

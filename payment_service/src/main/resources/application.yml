@@ -33,6 +33,15 @@ spring:
 jwt:
   signerKey: ${JWT_SIGNER_KEY}
 
+app:
+  payment:
+    internal:
+      internal-key: ${PAYMENT_INTERNAL_KEY:}
+  services:
+    notification-base-url: ${APP_SERVICES_NOTIFICATION_BASE_URL:http://localhost:8093/notification}
+    pricing-base-url: ${APP_SERVICES_PRICING_BASE_URL:http://localhost:8084/pricing}
+    tour-base-url: ${APP_SERVICES_TOUR_BASE_URL:http://localhost:8086/tour}
+
 vnpay:
   secret-key: ${VNPAY_HASH_SECRET}
   tmn-code: ${VNPAY_TMN_CODE:}

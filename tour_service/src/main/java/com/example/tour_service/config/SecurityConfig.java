@@ -12,6 +12,7 @@
     import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
     import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
     import org.springframework.security.web.SecurityFilterChain;
+    import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
     @Configuration
     @EnableWebSecurity
@@ -40,13 +41,18 @@
         };
 
         private final CustomJwtDecoder customJwtDecoder;
-        public SecurityConfig(CustomJwtDecoder customJwtDecoder) {
+        private final InternalTourAuthenticationFilter internalTourAuthenticationFilter;
+
+        public SecurityConfig(CustomJwtDecoder customJwtDecoder,
+                InternalTourAuthenticationFilter internalTourAuthenticationFilter) {
             this.customJwtDecoder = customJwtDecoder;
+            this.internalTourAuthenticationFilter = internalTourAuthenticationFilter;
         }
 
         @Bean
         public SecurityFilterChain filterChain(HttpSecurity httpSecurity) throws Exception {
             httpSecurity.authorizeHttpRequests(request -> request
+                    .requestMatchers("/internal/**").permitAll()
                     .requestMatchers(HttpMethod.POST, "/advice/search").permitAll()
                     .requestMatchers(HttpMethod.GET, "/advice/locations").permitAll()
                     .requestMatchers(HttpMethod.GET, "/tour-departures/*/capacity").authenticated()
@@ -73,6 +79,7 @@
                     .requestMatchers(HttpMethod.PUT, "/vehicles", "/vehicles/**").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:VEHICLES_UPDATE")
                     .anyRequest()
                     .authenticated());
+            httpSecurity.addFilterBefore(internalTourAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
             httpSecurity.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwtConfigurer -> jwtConfigurer
                     .decoder(customJwtDecoder)

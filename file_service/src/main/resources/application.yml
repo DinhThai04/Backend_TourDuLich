@@ -34,6 +34,8 @@ spring:
       max-request-size: 26MB
 app:
   file:
+    internal:
+      internal-key: ${FILE_INTERNAL_KEY:}
     # Public /media/download/** calls allowed per client IP per minute; 0 disables it (e.g. CDN in front).
     downloads-per-minute: ${FILE_DOWNLOADS_PER_MINUTE:60}
 cloudinary:

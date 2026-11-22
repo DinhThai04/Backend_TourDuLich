@@ -324,6 +324,7 @@ Lệnh đầu chỉ kiểm tra index; index rỗng không chứng minh working t
 - [Cấu hình cục bộ](.local/README.md)
 - [Kiến trúc và cấu hình hệ thống](docs/PROJECT.md)
 - [Docker và dữ liệu](docs/DOCKER.md)
+- [Microservice — kiến trúc và lộ trình](docs/MICROSERVICES.md)
 - [Schema và dữ liệu mẫu](data_seed/README.md)
 - [Email/n8n](docs/mail/README.md)
 - [AI service](ai_service/README.md)
