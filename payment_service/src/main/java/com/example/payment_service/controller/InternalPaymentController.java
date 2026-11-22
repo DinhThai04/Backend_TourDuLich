@@ -84,6 +84,16 @@ public class InternalPaymentController {
         }
     }
 
+    @GetMapping("/reconciliation/open-count/{accountId}")
+    public ResponseEntity<Map<String, Object>> getOpenReconciliationCount(@PathVariable Long accountId) {
+        Integer count = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM payment_reconciliation pr
+            JOIN booking b ON b.id = pr.booking_id
+            WHERE b.account_id = ? AND pr.status = 'OPEN'
+            """, Integer.class, accountId);
+        return ResponseEntity.ok(Map.of("count", count != null ? count : 0));
+    }
+
     private InternalPaymentResponse toInternalResponse(Payment payment) {
         return InternalPaymentResponse.builder()
                 .id(payment.getId())
