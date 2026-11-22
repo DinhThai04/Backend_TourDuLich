@@ -62,7 +62,7 @@ services:
     restart: unless-stopped
     logging: *logging
     environment:
-      MYSQL_DATABASE: dbtour_v2
+      MYSQL_DATABASE: sgu_auth
       MYSQL_USER: sgu_tour
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-sgu-tour-root-local-only}
@@ -73,10 +73,19 @@ services:
       - "127.0.0.1:${MYSQL_PORT:-3307}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./data_seed/database_all.sql:/docker-entrypoint-initdb.d/10-database.sql:ro
+      - ./data_seed/init-multi-db.sql:/docker-entrypoint-initdb.d/01-init-multi-db.sql:ro
+      - ./data_seed/microservices/sgu_auth.sql:/docker-entrypoint-initdb.d/sgu_auth.sql:ro
+      - ./data_seed/microservices/sgu_booking.sql:/docker-entrypoint-initdb.d/sgu_booking.sql:ro
+      - ./data_seed/microservices/sgu_payment.sql:/docker-entrypoint-initdb.d/sgu_payment.sql:ro
+      - ./data_seed/microservices/sgu_pricing.sql:/docker-entrypoint-initdb.d/sgu_pricing.sql:ro
+      - ./data_seed/microservices/sgu_tour.sql:/docker-entrypoint-initdb.d/sgu_tour.sql:ro
+      - ./data_seed/microservices/sgu_file.sql:/docker-entrypoint-initdb.d/sgu_file.sql:ro
+      - ./data_seed/microservices/sgu_invoice.sql:/docker-entrypoint-initdb.d/sgu_invoice.sql:ro
+      - ./data_seed/microservices/sgu_notification.sql:/docker-entrypoint-initdb.d/sgu_notification.sql:ro
+      - ./data_seed/microservices/sgu_reporting.sql:/docker-entrypoint-initdb.d/sgu_reporting.sql:ro
     healthcheck:
       # A real TCP query runs only after initdb, and verifies the seed completed.
-      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=TCP -h 127.0.0.1 -u sgu_tour -D dbtour_v2 --skip-column-names -e 'SELECT COUNT(*) FROM booking_price_snapshot' >/dev/null"]
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=TCP -h 127.0.0.1 -u sgu_tour -D sgu_auth --skip-column-names -e 'SELECT COUNT(*) FROM users' >/dev/null"]
       interval: 10s
       timeout: 5s
       retries: 30
@@ -237,11 +246,39 @@ services:
     image: sgu-tour/invoice-service
     environment:
       <<: [*db-env, *java-env]
-      tour-service_URL: http://tour-service:8086/tour
+      TOUR_BASE_URL: http://tour-service:8086/tour
     volumes:
       - ./.local:/app/.local:ro
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8090"]
+      <<: *health
+
+  notification-service:
+    <<: [*backend, *database-client]
+    build: ./notification_service
+    image: sgu-tour/notification-service
+    environment:
+      <<: [*db-env, *java-env]
+      DB_URL: jdbc:mysql://mysql:3306/sgu_notification?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
+      SPRING_DATASOURCE_USERNAME: sgu_tour
+    volumes:
+      - ./.local:/app/.local:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8093"]
+      <<: *health
+
+  reporting-service:
+    <<: [*backend, *database-client]
+    build: ./reporting_service
+    image: sgu-tour/reporting-service
+    environment:
+      <<: [*db-env, *java-env]
+      DB_URL: jdbc:mysql://mysql:3306/sgu_reporting?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
+      SPRING_DATASOURCE_USERNAME: sgu_tour
+    volumes:
+      - ./.local:/app/.local:ro
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 8092"]
       <<: *health
 
   search-service:
@@ -320,6 +357,10 @@ services:
       file-service:
         condition: service_healthy
       invoice-service:
+        condition: service_healthy
+      notification-service:
+        condition: service_healthy
+      reporting-service:
         condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "nc -z 127.0.0.1 8888"]

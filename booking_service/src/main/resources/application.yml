@@ -67,13 +67,13 @@ app:
     internal:
       internal-key: ${BOOKING_INTERNAL_KEY:}
   services:
-    payment-base-url: ${APP_SERVICES_PAYMENT_BASE_URL:http://localhost:8083/payment}
-    notification-base-url: ${APP_SERVICES_NOTIFICATION_BASE_URL:http://localhost:8093/notification}
-    pricing-base-url: ${APP_SERVICES_PRICING_BASE_URL:http://localhost:8084/pricing}
-    tour-base-url: ${APP_SERVICES_TOUR_BASE_URL:http://localhost:8086/tour}
+    payment-base-url: ${APP_SERVICES_PAYMENT_BASE_URL:http://payment-service:8083/payment}
+    notification-base-url: ${APP_SERVICES_NOTIFICATION_BASE_URL:http://notification-service:8093/notification}
+    pricing-base-url: ${APP_SERVICES_PRICING_BASE_URL:http://pricing-service:8084/pricing}
+    tour-base-url: ${APP_SERVICES_TOUR_BASE_URL:http://tour-service:8086/tour}
   operations:
     reporting-enabled: ${REPORTING_ENABLED:false}
-    reporting-base-url: ${REPORTING_BASE_URL:http://localhost:8092/reporting}
+    reporting-base-url: ${REPORTING_BASE_URL:http://reporting-service:8092/reporting}
     reporting-internal-key: ${REPORTING_INTERNAL_KEY:}
   mail:
     enabled: ${MAIL_ENABLED:false}

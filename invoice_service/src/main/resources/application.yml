@@ -46,8 +46,8 @@ app:
     internal:
       internal-key: ${INVOICE_INTERNAL_KEY:}
   services:
-    booking-base-url: ${APP_SERVICES_BOOKING_BASE_URL:http://localhost:8081/booking}
-    tour-base-url: ${TOUR_SERVICE_URL:http://localhost:8086/tour}
+    booking-base-url: ${APP_SERVICES_BOOKING_BASE_URL:http://booking-service:8081/booking}
+    tour-base-url: ${TOUR_BASE_URL:http://tour-service:8086/tour}
 
 jwt:
   signerKey: ${JWT_SIGNER_KEY}
