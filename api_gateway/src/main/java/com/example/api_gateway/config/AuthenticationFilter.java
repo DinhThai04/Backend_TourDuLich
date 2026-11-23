@@ -91,6 +91,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        System.out.println("GATEWAY_FILTER: path=" + exchange.getRequest().getURI().getPath() + " method=" + exchange.getRequest().getMethod());
         if ((apiPrefix + "/booking/internal/mail/reminders/dispatch").equals(exchange.getRequest().getURI().getPath())) {
             String supplied=exchange.getRequest().getHeaders().getFirst("X-Internal-Mail-Key");
             if(internalMailKey==null || internalMailKey.length()<32) {
@@ -210,8 +211,10 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
         // Management summary lives below the public departure catalog, but must still introspect credentials.
         if(relative.matches("/tour/tour-departures/[^/]+/capacity/?")) return false;
         if (HttpMethod.POST.equals(request.getMethod())) return PUBLIC_POST.contains(relative);
-        return HttpMethod.GET.equals(request.getMethod())
+        boolean isGetPublic = HttpMethod.GET.equals(request.getMethod())
                 && PUBLIC_GET.stream().anyMatch(relative::matches);
+        log.info("GATEWAY_DEBUG: path={} relative={} isPublic={} publicGet={}", path, relative, isGetPublic, PUBLIC_GET);
+        return isGetPublic;
     }
 
     Mono<Void> unauthenticated(ServerHttpResponse response) {
