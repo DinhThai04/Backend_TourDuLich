@@ -1,8 +1,7 @@
 package com.example.booking_service.change;
 
+import com.example.booking_service.config.BookingMailOutboxPublisher;
 import com.example.booking_service.notification.MailEventType;
-import com.example.booking_service.notification.MailOutboxService;
-import com.example.booking_service.notification.MailPayload;
 import com.example.booking_service.repository.httpclient.AuthInternalClient;
 import com.example.booking_service.repository.httpclient.TourInternalClient;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -11,6 +10,7 @@ import org.springframework.stereotype.Component;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 import static com.example.booking_service.change.ChangeLedger.date;
@@ -24,14 +24,15 @@ public class ChangeMailEvents {
 	private static final DateTimeFormatter DEADLINE_FORMAT = DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
 
 	private final JdbcTemplate jdbc;
-	private final MailOutboxService outbox;
+	private final BookingMailOutboxPublisher publisher;
 	private final Clock clock;
 	private final AuthInternalClient authClient;
 	private final TourInternalClient tourClient;
 
-	public ChangeMailEvents(JdbcTemplate jdbc, MailOutboxService outbox, Clock clock, AuthInternalClient authClient, TourInternalClient tourClient) {
+	public ChangeMailEvents(JdbcTemplate jdbc, BookingMailOutboxPublisher publisher, Clock clock,
+                            AuthInternalClient authClient, TourInternalClient tourClient) {
 		this.jdbc = jdbc;
-		this.outbox = outbox;
+		this.publisher = publisher;
 		this.clock = clock;
 		this.authClient = authClient;
 		this.tourClient = tourClient;
@@ -39,12 +40,12 @@ public class ChangeMailEvents {
 
 	public void enqueue(Map<String, Object> change) {
 		int booking = n(change, "booking_id");
-		
+
 		// Get booking basic info
 		var bookingRow = jdbc.queryForMap("SELECT account_id, tour_departure_id FROM booking WHERE id=?", booking);
 		int accountId = n(bookingRow, "account_id");
 		int departureId = n(bookingRow, "tour_departure_id");
-		
+
 		// Get user info via Auth internal API
 		String email, username;
 		try {
@@ -54,7 +55,7 @@ public class ChangeMailEvents {
 		} catch (Exception e) {
 			throw new IllegalStateException("Cannot fetch user info for booking " + booking, e);
 		}
-		
+
 		// Get tour info via Tour internal API
 		String tourTitle;
 		try {
@@ -68,40 +69,51 @@ public class ChangeMailEvents {
 		if (change.get("shop_change_id") != null) {
 			var shopChange = jdbc.queryForMap(
 					"SELECT response_deadline FROM departure_change WHERE id=?", change.get("shop_change_id"));
-			explanation += " Hạn phản hồi trực tuyến: "
+			explanation += " Hạn phản hồi trả trước tuyến: "
 					+ date(shopChange.get("response_deadline")).format(DEADLINE_FORMAT)
-					+ " (giờ Việt Nam). Quá hạn vui lòng liên hệ shop để được hỗ trợ.";
+					+ " (giờ Việt Nam). Quý hẹn vui lòng liên hệ shop để được hỗ trợ.";
 		}
 
-		var payload = new MailPayload(
-				1,
-				username,
-				tourTitle,
-				n(change, "target_departure_id"),
-				date(change.get("target_departure_at")),
-				jdbc.queryForObject("SELECT COUNT(*) FROM customer WHERE booking_id=?", Integer.class, booking),
-				null,
-				null,
-				null,
-				null,
-				null,
-				null,
-				((Number) change.get("id")).longValue(),
-				date(change.get("source_departure_at")),
-				explanation,
-				String.valueOf(change.get("status")),
-				(String) change.get("refund_reference"));
-
-		String idempotencyKey = "booking:" + booking + ":change:" + change.get("id") + ":"
+		String eventKey = "booking:" + booking + ":change:" + change.get("id") + ":"
 				+ change.get("status") + ":" + v(change);
-		outbox.enqueue(
-				idempotencyKey,
-				MailEventType.BOOKING_CHANGE_UPDATED,
-				EVENT_SOURCE,
-				booking,
-				n(change, "account_id"),
-				email,
-				payload,
-				LocalDateTime.now(clock));
+		String subject = "SGU Tour - Đơn hàng #" + booking + " đã thay đổi";
+		String html = "<p>Xin chào <b>" + escapeHtml(username) + "</b>,</p>"
+				+ "<p>Đơn hàng <b>#" + booking + "</b> (" + escapeHtml(tourTitle) + ") đã có thay đổi.</p>"
+			 + "<p>" + escapeHtml(explanation) + "</p>";
+		String text = "Xin chào " + username + ",\nĐơn hàng #" + booking + " (" + tourTitle + ") đã có thay đổi.\n"
+				+ explanation + "\n";
+
+		var payload = new LinkedHashMap<String, Object>();
+		payload.put("eventKey", eventKey);
+		payload.put("eventType", MailEventType.BOOKING_CHANGE_UPDATED.name());
+		payload.put("sourceService", EVENT_SOURCE);
+		payload.put("bookingId", booking);
+		payload.put("accountId", accountId);
+		payload.put("recipient", email);
+		payload.put("subject", subject);
+		payload.put("html", html);
+		payload.put("text", text);
+		payload.put("scheduledAt", LocalDateTime.now(clock).format(DateTimeFormatter.ISO_DATE_TIME));
+		payload.put("changeId", ((Number) change.get("id")).longValue());
+		payload.put("sourceDepartureAt", date(change.get("source_departure_at")) != null
+				? date(change.get("source_departure_at")).format(DateTimeFormatter.ISO_DATE_TIME) : null);
+		payload.put("targetDepartureAt", date(change.get("target_departure_at")) != null
+				? date(change.get("target_departure_at")).format(DateTimeFormatter.ISO_DATE_TIME) : null);
+		payload.put("changeExplanation", explanation);
+		payload.put("changeStatus", String.valueOf(change.get("status")));
+		payload.put("refundReference", change.get("refund_reference"));
+
+        String payloadJson;
+        try {
+            payloadJson = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(payload);
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
+            throw new IllegalStateException("Cannot serialize mail payload for booking " + booking, e);
+        }
+        publisher.sendNow(payloadJson);
+	}
+
+	private static String escapeHtml(String value) {
+		if (value == null) return "";
+		return value.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
 	}
 }

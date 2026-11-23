@@ -21,7 +21,7 @@
 
 ### 1.1 POST `/internal/tour/departures/{id}/holds`
 
-**Mô tả**: Giữ ghế cho booking
+**Mục đích**: Giữ ghế cho booking
 
 **Request**:
 ```json
@@ -53,7 +53,7 @@
 
 ### 1.2 DELETE `/internal/tour/departures/{id}/holds/{holdId}`
 
-**Mô tả**: Trả ghế
+**Mục đích**: Trả ghế
 
 **Response 204**: No content
 
@@ -65,7 +65,7 @@
 
 ### 1.3 GET `/internal/tour/departures/{id}`
 
-**Mô tả**: Lấy thông tin lịch đầy đủ
+**Mục đích**: Lấy thông tin lịch departure
 
 **Response 200**:
 ```json
@@ -86,7 +86,7 @@
 
 ### 1.4 GET `/internal/tour/departures/{id}/capacity`
 
-**Mô tả**: Lấy capacity snapshot cho booking hold
+**Mục đích**: Lấy capacity snapshot cho booking hold
 
 **Response 200**:
 ```json
@@ -105,7 +105,7 @@
 
 ### 1.5 GET `/internal/tour/tours/{id}/price`
 
-**Mô tả**: Lấy giá tour theo nhóm tuổi
+**Mục đích**: Lấy giá tour theo nhóm tuổi
 
 **Response 200**:
 ```json
@@ -124,7 +124,7 @@
 
 ### 1.6 POST `/internal/tour/tours/{id}/price/quote`
 
-**Mô tả**: Tính tiền cho danh sách khách
+**Mục đích**: Tính tiền cho danh sách khách
 
 **Request**:
 ```json
@@ -153,7 +153,7 @@
 
 ### 1.7 POST `/internal/tour/departures/bulk`
 
-**Mô tả**: Lấy nhiều lịch một lần (cho search/admin)
+**Mục đích**: Lấy nhiều lịch một lần (cho search/admin)
 
 **Request**:
 ```json
@@ -178,13 +178,13 @@
 
 ### 2.1 GET `/internal/pricing/tours/{id}/price`
 
-**Response 200**: Giống Tour `/price` nhưng là nguồn sự thật pricing
+**Response 200**: Giá Tour `/price` nhưng nguồn sự từ pricing
 
 ---
 
 ### 2.2 POST `/internal/pricing/tours/{id}/price/quote`
 
-**Response 200**: Giống Tour `/price/quote` nhưng pricing service là authority
+**Response 200**: Giá Tour `/price/quote` nhưng pricing service là authority
 
 ---
 
@@ -326,9 +326,37 @@
 
 ### 5.3 DELETE `/internal/file/files/cleanup-refs/{ownerId}`
 
-**Mô tả**: Dọn tham chiếu khi xóa avatar/tour
+**Mục đích**: Dọn tham chiếu khi xóa avatar/tour
 
 **Response 204**: No content
+
+### 5.4 DELETE `/internal/file/files/detach-tour-gallery/{tourId}`
+
+**Caller**: Tour outbox publisher, authenticated with `X-Internal-File-Key` and an `X-Event-Id` UUID. The event is `tour.gallery.detach.requested.v1`; the caller retries delivery until File returns success or the event reaches the outbox dead-letter state.
+
+**Behavior**: File inserts the event into `file_inbox` and, in the same local transaction, uses the File-owned `tour_media_lock` to mark the tour deleted, detach its gallery rows, and remove only `TOUR` references for that tour. Gallery writes take the same lock and reject a deleted-tour tombstone, so a delayed request cannot recreate the gallery after detach. Duplicate event delivery is a no-op, physical assets are retained for cleanup, and the endpoint returns success after a previously processed event.
+
+**Schema upgrade**: Apply `data_seed/migrations/V002__file_tour_media_tombstone.sql` to an existing File database before deploying this behavior. Fresh installs already include `tour_media_lock.deleted_at` in `data_seed/microservices/sgu_file.sql`.
+
+**Response 204**: No content
+
+**Dead-letter replay**: After confirming File availability and the event payload/aggregate ID, an operator may requeue a specific row in the Tour database with `UPDATE tour_outbox SET status='PENDING', attempts=0, available_at=NOW(6), last_error=NULL WHERE id=? AND event_type='tour.gallery.detach.requested.v1' AND status='DEAD_LETTER';`. Record the operator, event ID and reason in the incident log before replay. The consumer remains idempotent if the original delivery actually completed but its acknowledgement was lost.
+
+### 5.5 DELETE `/internal/file/files/detach-account-media/{ownerId}`
+
+**Caller**: Auth outbox publisher, authenticated with `X-Internal-File-Key` and `X-Event-Id` UUID. Auth creates `auth.account.deleted.v1` in the same transaction that physically deletes an unused account, then retries delivery until File acknowledges or the event reaches `DEAD_LETTER`.
+
+**Behavior**: File deduplicates the event in `file_inbox`, locks the File-owned `avatar_media_lock`, tombstones the owner, detaches only avatar/generic account media, removes `AVATAR` references, and marks the inbox row processed in one File transaction. Tour and location media are preserved. A repeated event or a separate replay safely returns 204. A tombstoned account cannot create a new avatar link.
+
+**Schema upgrade**: Apply `data_seed/migrations/V003__file_avatar_media_tombstone.sql` to an existing File database before deploying account detach. Fresh installs include `avatar_media_lock.deleted_at` in `data_seed/microservices/sgu_file.sql`.
+
+**Dead-letter replay**: Verify account ID and event ID, then requeue the specific Auth outbox row with `UPDATE auth_outbox SET status='PENDING', attempts=0, available_at=NOW(6), last_error=NULL WHERE id=? AND event_type='auth.account.deleted.v1' AND status='DEAD_LETTER';`. Record operator, event ID, and reason. File inbox deduplication makes replay safe after an uncertain acknowledgement.
+
+### 5.6 Avatar upload revision
+
+File returns `avatarVersion` with the avatar upload URL. It increments this File-owned revision while holding `avatar_media_lock`, in the same transaction that replaces the current avatar. Auth stores `users.avatar` only when the returned revision exceeds `users.avatar_version`; delayed upload responses cannot overwrite a newer profile image. Equal revision with a different URL is a conflict, and older revisions return the current Auth URL.
+
+Apply `data_seed/migrations/V005__file_avatar_revision.sql` before deploying File upload code and `data_seed/migrations/V004__auth_user_avatar_revision.sql` before deploying Auth profile code. Deploy File first so its response contains a revision before Auth requires one. Existing accounts start at revision 0 and advance on their next successful avatar upload; there is no URL backfill or external write during migration.
 
 ---
 
@@ -353,10 +381,22 @@
 ```json
 {
   "userId": 7,
-  "status": "ACTIVE", -- ACTIVE, LOCKED, ARCHIVED
+  "status": "ACTIVE",
   "role": "KHACH_HANG"
 }
 ```
+
+---
+
+### 6.3 POST `/internal/auth/sessions/validate`
+
+**Mục đích**: Service khác kiểm tra session mà không đọc `users`, `user_account_event` hoặc `invalidated_token` của Auth.
+
+**Request**: Không có body. Bắt buộc `X-Internal-Auth-Key` và `Authorization: Bearer <access-token>`.
+
+**Response**: `204 No Content` nếu access token còn hợp lệ. Auth resource-server decoder xác minh chữ ký, expiry, loại token, tài khoản ACTIVE, credential version, session epoch và token bị revoke. Trả `401` nếu token không hợp lệ; lỗi Auth/DB trả `5xx`.
+
+**Client behavior**: File forward token đã verify chữ ký các bước, dùng timeout connect/read cấu hình được và fail closed khi Auth lỗi hoặc không cấu hình internal key. Không retry và không cache kết quả để logout/revoke có hiệu lực ngay request tiếp theo.
 
 ---
 
@@ -390,7 +430,7 @@ Trả audit timeline, 20 record/trang, mới nhất trước.
 
 ### 7.3 GET `/internal/reports/operations?from=2026-11-01&through=2026-11-30`
 
-Khoảng tối đa 31 ngày. Chỉ đọc `ops_*` trong `sgu_reporting`, không query DB nguồn.
+Khoảng thời gian tối đa 31 ngày. Chỉ đọc `ops_*` trong `sgu_reporting`, không query DB nguồn.
 
 ```json
 {
@@ -405,8 +445,7 @@ Khoảng tối đa 31 ngày. Chỉ đọc `ops_*` trong `sgu_reporting`, không 
 
 ### 7.4 Projection ingestion
 
-Các endpoint idempotent upsert vào read model, dùng cho event consumer Phase 4 hoặc
-internal caller trong giai đoạn chuyển đổi:
+Các endpoint idempotent upsert vào read model, dùng cho event consumer Phase 4 hoặc internal caller trong giai đoạn chuyển đổi:
 
 - `POST /internal/reports/projections/bookings`
 - `POST /internal/reports/projections/payments`
@@ -443,7 +482,7 @@ Enqueue mail idempotent theo `eventKey`; producer không ghi trực tiếp `mail
 }
 ```
 
-**Response 202**: `{ "created": true }`; duplicate eventKey trả `{ "created": false }`.
+**Response 202**: `{ "created": true }`; duplicate `eventKey` trả `{ "created": false }`.
 
 ### 8.2 GET `/internal/notifications/mail/bookings/{bookingId}`
 
@@ -471,7 +510,7 @@ Chỉ retry mail `FAILED` và chưa gửi. **Response 204**.
 ```
 
 **Mã lỗi chuẩn**:
-| Code | HTTP | Mô tả |
+| Code | HTTP | Mục đích |
 |---|---|---|
 | `RESOURCE_NOT_FOUND` | 404 | Entity không tồn tại |
 | `CONFLICT` | 409 | Xung đột trạng thái (hết ghế, version mismatch) |
@@ -484,7 +523,7 @@ Chỉ retry mail `FAILED` và chưa gửi. **Response 204**.
 
 ## 10. Contract Test Requirement
 
-Mỗi internal endpoint **bắt buộc** có contract test (Spring Cloud Contract hoặc Pact):
+Mọi internal endpoint **bắt buộc** có contract test (Spring Cloud Contract hoặc Pact):
 
 ```java
 // Ví dụ: TourDepartureHoldContractTest
@@ -506,7 +545,35 @@ void holdSeats_success() {
 
 ## 11. Versioning & Deprecation
 
-- **v1**: URL không có version (current)
+- **v1**: URL không version (current)
 - **Breaking change**: Tạo endpoint mới `/internal/tour/v2/...`
 - **Deprecation**: Header `Deprecation: true` + `Sunset: <date>` + `Link: <new-url>; rel="successor-version"`
 - **Support window**: Tối thiểu 2 sprint sau khi deprecate
+
+## 12. Event Contracts
+
+Event gửi qua outbox của các service, được thiết kế idempotent và correlation/causation ID.
+
+### 12.1 `booking.mail.requested.v1` (Booking → Notification)
+
+**Mục đích**: Yêu cầu gửi email liên quan booking; Booking ghi vào `booking_outbox` trong cùng transaction và publisher retry đến DLQ.
+
+**Payload**:
+```json
+{
+  "eventKey": "booking:123:mail:created",
+  "eventType": "BOOKING_MAIL_REQUESTED",
+  "sourceService": "booking-service",
+  "bookingId": 123,
+  "accountId": 7,
+  "recipient": "user@example.com",
+  "subject": "SGU Tour - Booking created",
+  "html": "<p>...</p>",
+  "text": "...",
+  "scheduledAt": "2026-11-20T10:00:00+07:00"
+}
+```
+
+**Consumers**: Notification `POST /internal/notifications/mail` (xem § 8.1), idempotent theo `eventKey`.
+
+**Response**: Notification trả `202` nếu đã gửi mail mới; `202 {created:false}` nếu duplicate `eventKey`.
