@@ -18,8 +18,8 @@ public class CustomJwtDecoder implements JwtDecoder {
     private final TokenRevocationChecker revocation;
     @org.springframework.beans.factory.annotation.Autowired
     public CustomJwtDecoder(@Value("${jwt.signerKey}") String key, TokenRevocationChecker revocation) {
-        delegate = NimbusJwtDecoder.withSecretKey(new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA512"))
-                .macAlgorithm(MacAlgorithm.HS512).build();
+        delegate = NimbusJwtDecoder.withSecretKey(new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), "HmacSHA256"))
+                .macAlgorithm(MacAlgorithm.HS256).build();
         this.revocation = revocation;
     }
     CustomJwtDecoder(String key) { this(key, null); }

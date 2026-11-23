@@ -220,7 +220,7 @@ public class AuthService {
         }
 
         JWSObject jwsObject = new JWSObject(
-                new JWSHeader(JWSAlgorithm.HS512), new Payload(claims.build().toJSONObject()));
+                new JWSHeader(JWSAlgorithm.HS256), new Payload(claims.build().toJSONObject()));
         try {
             jwsObject.sign(new MACSigner(SIGNER_KEY.getBytes(StandardCharsets.UTF_8)));
             return jwsObject.serialize();
@@ -289,7 +289,7 @@ public class AuthService {
         }
         try {
             JWSVerifier signatureVerifier = new MACVerifier(SIGNER_KEY.getBytes(StandardCharsets.UTF_8));
-            if (!JWSAlgorithm.HS512.equals(signedJWT.getHeader().getAlgorithm())
+            if (!JWSAlgorithm.HS256.equals(signedJWT.getHeader().getAlgorithm())
                     || !TOKEN_ISSUER.equals(claims.getIssuer())
                     || claims.getIssueTime() == null
                     || claims.getExpirationTime() == null
@@ -413,7 +413,7 @@ public class AuthService {
         try {
             SignedJWT signedJWT = SignedJWT.parse(token);
             var claims = signedJWT.getJWTClaimsSet();
-            if (!JWSAlgorithm.HS512.equals(signedJWT.getHeader().getAlgorithm())
+            if (!JWSAlgorithm.HS256.equals(signedJWT.getHeader().getAlgorithm())
                     || !TOKEN_ISSUER.equals(claims.getIssuer())
                     || !TokenType.REFRESH.claimValue().equals(claims.getStringClaim("tokenType"))
                     || claims.getJWTID() == null

@@ -61,6 +61,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
              "/tour/tours/list",
              "/tour/tours/random-3",
              "/tour/tours/search",
+             "/tour/tours/search-snapshot",
              "/tour/locations/all",
              "/tour/locations/departures",
              "/tour/locations/destinations",
