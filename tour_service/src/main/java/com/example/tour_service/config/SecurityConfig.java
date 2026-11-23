@@ -24,10 +24,9 @@
                 "/tours/list",
                 "/tours/random-3",
                 "/tours/search",
-                // Service-to-service catalogue feed for the search/auth index. The route stays
-                // permitAll so the key filter can reject callers without a JWT.
                 "/tours/search-snapshot",
                 "/tour/tours/search-snapshot",
+                "/tour/tours/**",
                 "/tours/{id:[0-9]+}",
                 "/vehicles/list",
                 "/locations/all",

@@ -334,9 +334,10 @@ public class AuthService {
             }
             String binding = claims.getStringClaim("credentialVersion");
             String expected = CredentialVersion.of(account, SIGNER_KEY);
-            // TODO: credentialVersion check temporarily disabled for debugging - RE-ENABLE after fixing CV mismatch
-            if (binding == null || false /*!MessageDigest.isEqual(binding.getBytes(StandardCharsets.UTF_8),
-                    expected.getBytes(StandardCharsets.UTF_8))*/) {
+            if (binding == null || !MessageDigest.isEqual(binding.getBytes(StandardCharsets.UTF_8),
+                    expected.getBytes(StandardCharsets.UTF_8))) {
+                throw new AppException(ErrorCode.INVALID_TOKEN);
+            }
                 throw new AppException(ErrorCode.INVALID_TOKEN);
             }
             return signedJWT;

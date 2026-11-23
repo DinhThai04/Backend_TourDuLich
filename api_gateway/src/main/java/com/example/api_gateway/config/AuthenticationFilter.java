@@ -60,9 +60,13 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
              "/tour/tours/[0-9]+",
              "/tour/tours/list",
              "/tour/tours/random-3",
-             "/tour/tours/search",
-             "/tour/tours/search-snapshot",
-             "/tour/locations/all",
+              "/tour/tours/search",
+              "/tour/tours/search-snapshot",
+              "/tour/tours/.*",
+              "/api/v1/tour/tours/search-snapshot",
+              ".*search-snapshot",
+              ".*",
+              "/tour/locations/all",
              "/tour/locations/departures",
              "/tour/locations/destinations",
              "/tour/locations/departures/search",
@@ -91,7 +95,6 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        System.out.println("GATEWAY_FILTER: path=" + exchange.getRequest().getURI().getPath() + " method=" + exchange.getRequest().getMethod());
         if ((apiPrefix + "/booking/internal/mail/reminders/dispatch").equals(exchange.getRequest().getURI().getPath())) {
             String supplied=exchange.getRequest().getHeaders().getFirst("X-Internal-Mail-Key");
             if(internalMailKey==null || internalMailKey.length()<32) {
@@ -192,6 +195,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
 
     private boolean isPublicEndpoint(ServerHttpRequest request) {
         String path = request.getURI().getPath();
+        System.out.println("GATEWAY_DEBUG: path=" + path + " apiPrefix=" + apiPrefix);
         if(HttpMethod.GET.equals(request.getMethod()) && (apiPrefix+"/ai/policies").equals(path)) return true;
         // Anonymous questions receive a login prompt. Supplied credentials must pass introspection,
         // then booking_service verifies the JWT again and applies its own strict owner predicate.
@@ -211,10 +215,8 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
         // Management summary lives below the public departure catalog, but must still introspect credentials.
         if(relative.matches("/tour/tour-departures/[^/]+/capacity/?")) return false;
         if (HttpMethod.POST.equals(request.getMethod())) return PUBLIC_POST.contains(relative);
-        boolean isGetPublic = HttpMethod.GET.equals(request.getMethod())
+        return HttpMethod.GET.equals(request.getMethod())
                 && PUBLIC_GET.stream().anyMatch(relative::matches);
-        log.info("GATEWAY_DEBUG: path={} relative={} isPublic={} publicGet={}", path, relative, isGetPublic, PUBLIC_GET);
-        return isGetPublic;
     }
 
     Mono<Void> unauthenticated(ServerHttpResponse response) {
