@@ -338,8 +338,6 @@ public class AuthService {
                     expected.getBytes(StandardCharsets.UTF_8))) {
                 throw new AppException(ErrorCode.INVALID_TOKEN);
             }
-                throw new AppException(ErrorCode.INVALID_TOKEN);
-            }
             return signedJWT;
         } catch (ParseException | JOSEException malformed) {
             // A client-supplied token is input, not a server failure: answer with INVALID_TOKEN, never 500.

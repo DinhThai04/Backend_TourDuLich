@@ -94,6 +94,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
+        log.info("AUTH_FILTER: filter called, path={}, method={}", exchange.getRequest().getURI().getPath(), exchange.getRequest().getMethod());
         if ((apiPrefix + "/booking/internal/mail/reminders/dispatch").equals(exchange.getRequest().getURI().getPath())) {
             String supplied=exchange.getRequest().getHeaders().getFirst("X-Internal-Mail-Key");
             if(internalMailKey==null || internalMailKey.length()<32) {
