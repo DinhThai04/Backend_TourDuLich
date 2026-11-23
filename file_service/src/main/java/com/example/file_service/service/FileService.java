@@ -5,20 +5,27 @@ import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 import com.example.file_service.dto.FileInfo;
 import com.example.file_service.dto.reponse.FileData;
 import com.example.file_service.dto.reponse.FileResponse;
 import com.example.file_service.dto.reponse.TourFileResponse;
 import com.example.file_service.entity.FileMgmt;
+import com.example.file_service.entity.FileReference;
 import com.example.file_service.mapper.FileMgmtMapper;
 import com.example.file_service.repository.FileMgmtRepository;
+import com.example.file_service.repository.FileReferenceRepository;
 import com.example.file_service.repository.FileRepository;
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -43,9 +50,10 @@ public class FileService {
     private static final long MAX_DETACHED_IMAGES = 500;
     FileRepository fileRepository;
     FileMgmtRepository fileMgmtRepository;
+    FileReferenceRepository fileReferenceRepository;
 
     FileMgmtMapper fileMgmtMapper;
-    org.springframework.jdbc.core.JdbcTemplate jdbc;
+    JdbcTemplate jdbc;
     TransactionTemplate transactions;
     AvatarWritePolicy avatarAccess;
 
@@ -71,7 +79,8 @@ public class FileService {
                     @Override public void afterCompletion(int code) { completion.set(code); }
                 });
                 detachPreviousLocationImages(locationId);
-                fileMgmtRepository.saveAndFlush(fileMgmt);
+                var storedFile = fileMgmtRepository.saveAndFlush(fileMgmt);
+                if (locationId != null) addReference(storedFile, "LOCATION", Integer.toString(locationId));
             });
             linked = true;
         } catch (org.springframework.dao.DataIntegrityViolationException concurrentEdit) {
@@ -93,7 +102,10 @@ public class FileService {
     private void detachPreviousLocationImages(Integer locationId) {
         if (locationId == null) return;
         var previous = fileMgmtRepository.findByLocationId(locationId);
-        for (var image : previous) image.setLocationId(null);
+        for (var image : previous) {
+            image.setLocationId(null);
+            removeReference(image, "LOCATION", Integer.toString(locationId));
+        }
         if (!previous.isEmpty()) {
             fileMgmtRepository.saveAll(previous);
             // Hibernate flushes inserts before updates, so the released key must land first.
@@ -162,27 +174,39 @@ public class FileService {
 
         // A failed commit must not leave the new upload without metadata.
         var completion = new AtomicReference<Integer>();
+        var avatarVersion = new AtomicReference<Long>();
         boolean stored = false;
         try {
             transactions.executeWithoutResult(status->{
                 TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization(){
                     @Override public void afterCompletion(int code){ completion.set(code); }
                 });
-                lockAvatar(ownerId);
+                lockWritableAvatar(ownerId);
                 // Recheck under the target lock: archive/delete during a slow upload must not win.
                 avatarAccess.requireWritable(ownerId, true);
+                jdbc.update("UPDATE avatar_media_lock SET avatar_version=avatar_version+1 WHERE owner_id=?", ownerId);
+                avatarVersion.set(jdbc.queryForObject(
+                        "SELECT avatar_version FROM avatar_media_lock WHERE owner_id=?", Long.class, ownerId));
                 var previous=fileMgmtRepository.findByAvatarOwnerId(ownerId);
-                previous.ifPresent(old->{old.setAvatarOwnerId(null);old.setOwnerId(UNASSIGNED_OWNER);old.setTourId(DETACHED_TOUR_ID);fileMgmtRepository.save(old);});
+                previous.ifPresent(old->{
+                    old.setAvatarOwnerId(null);
+                    old.setOwnerId(UNASSIGNED_OWNER);
+                    old.setTourId(DETACHED_TOUR_ID);
+                    fileMgmtRepository.save(old);
+                    removeReference(old, "AVATAR", ownerId);
+                });
                 // Release the unique avatar key before inserting its replacement.
                 fileMgmtRepository.flush();
-                fileMgmtRepository.saveAndFlush(fileMgmt);
+                var storedFile = fileMgmtRepository.saveAndFlush(fileMgmt);
+                addReference(storedFile, "AVATAR", ownerId);
             });
             stored = true;
         } finally {
             if (!stored && completion.get() == null) completion.set(TransactionSynchronization.STATUS_ROLLED_BACK);
             cleanupUncommitted(completion.get(), List.of(fileMgmt), List.of(), "Avatar");
         }
-        return FileResponse.builder().originalFileName(file.getOriginalFilename()).url(fileInfo.getUrl()).build();
+        return FileResponse.builder().originalFileName(file.getOriginalFilename()).url(fileInfo.getUrl())
+                .avatarVersion(avatarVersion.get()).build();
     }
 
     private FileMgmt avatarRecord(String ownerId, FileInfo fileInfo) {
@@ -197,6 +221,89 @@ public class FileService {
     private void lockAvatar(String ownerId) {
         jdbc.update("INSERT INTO avatar_media_lock(owner_id) VALUES (?) ON DUPLICATE KEY UPDATE owner_id=owner_id",ownerId);
         jdbc.queryForObject("SELECT owner_id FROM avatar_media_lock WHERE owner_id=? FOR UPDATE",String.class,ownerId);
+    }
+
+    private void lockWritableAvatar(String ownerId) {
+        lockAvatar(ownerId);
+        LocalDateTime deletedAt = jdbc.queryForObject(
+                "SELECT deleted_at FROM avatar_media_lock WHERE owner_id=? FOR UPDATE",
+                LocalDateTime.class, ownerId);
+        if (deletedAt != null)
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy tài khoản");
+    }
+
+    @Transactional
+    public com.example.file_service.dto.internal.LockAvatarResponse lockAvatar(String ownerId, String fileId) {
+        requireValidOwnerId(ownerId);
+        UUID parsedFileId;
+        try { parsedFileId = UUID.fromString(fileId); }
+        catch (RuntimeException invalid) { throw new IllegalArgumentException("ID file không hợp lệ"); }
+        lockWritableAvatar(ownerId);
+        var existing = fileMgmtRepository.findByAvatarOwnerId(ownerId);
+        if (existing.isPresent())
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Avatar đã được gán cho tài khoản");
+        var file = fileMgmtRepository.lockById(parsedFileId.toString())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy file"));
+        if (file.getAvatarOwnerId() != null || file.getLocationId() != null
+                || !DETACHED_TOUR_ID.equals(file.getTourId()) || !UNASSIGNED_OWNER.equals(file.getOwnerId()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "File không còn ở trạng thái chờ gán");
+        jdbc.update("UPDATE avatar_media_lock SET avatar_version=avatar_version+1 WHERE owner_id=?", ownerId);
+        Long avatarVersion = jdbc.queryForObject(
+                "SELECT avatar_version FROM avatar_media_lock WHERE owner_id=?", Long.class, ownerId);
+        file.setAvatarOwnerId(ownerId);
+        file.setOwnerId(ownerId);
+        var saved = fileMgmtRepository.saveAndFlush(file);
+        addReference(saved, "AVATAR", ownerId);
+        return com.example.file_service.dto.internal.LockAvatarResponse.builder()
+                .fileId(parsedFileId).avatarOwnerId(ownerId).url(saved.getUrl())
+                .avatarVersion(avatarVersion).locked(true).build();
+    }
+
+    @Transactional
+    public void cleanupReferences(String ownerId) {
+        requireValidOwnerId(ownerId);
+        lockAvatar(ownerId);
+        markAccountMediaDeleted(ownerId);
+    }
+
+    /** Applies account deletion inside File's database and deduplicates Auth's at-least-once event. */
+    @Transactional
+    public void detachAccountMedia(String ownerId, String eventId) {
+        requireValidOwnerId(ownerId);
+        UUID eventUuid;
+        try { eventUuid = UUID.fromString(eventId); }
+        catch (RuntimeException invalid) { throw new IllegalArgumentException("ID sự kiện không hợp lệ"); }
+        int accepted = jdbc.update("""
+                INSERT IGNORE INTO file_inbox(consumer,event_id,event_type,received_at)
+                VALUES ('file.account.media.detach.v1',?,'auth.account.deleted.v1',CURRENT_TIMESTAMP(6))
+                """, eventUuid.toString());
+        if (accepted == 0) return;
+
+        lockAvatar(ownerId);
+        markAccountMediaDeleted(ownerId);
+        jdbc.update("""
+                UPDATE file_inbox SET processed_at=CURRENT_TIMESTAMP(6)
+                WHERE consumer='file.account.media.detach.v1' AND event_id=?
+                """, eventUuid.toString());
+    }
+
+    private void markAccountMediaDeleted(String ownerId) {
+        jdbc.update("UPDATE avatar_media_lock SET deleted_at=COALESCE(deleted_at,CURRENT_TIMESTAMP(6)) WHERE owner_id=?", ownerId);
+        jdbc.update("""
+                UPDATE file_mgmt
+                SET avatar_owner_id=NULL, owner_id='', tour_id='null'
+                WHERE avatar_owner_id=? OR (owner_id=? AND (tour_id IS NULL OR tour_id='null') AND location_id IS NULL)
+                """, ownerId, ownerId);
+        jdbc.update("DELETE FROM file_reference WHERE owner_type='AVATAR' AND owner_id=?", ownerId);
+    }
+
+    private static void requireValidOwnerId(String ownerId) {
+        try {
+            if (ownerId == null || !ownerId.matches("[1-9][0-9]{0,18}") || Long.parseLong(ownerId) < 1)
+                throw new IllegalArgumentException();
+        } catch (RuntimeException invalid) {
+            throw new IllegalArgumentException("ID tài khoản không hợp lệ");
+        }
     }
 
     /**
@@ -225,7 +332,7 @@ public class FileService {
         if (remove.size() > 50 || remove.stream().anyMatch(url -> url == null || url.isBlank() || url.length() > 2048))
             throw new IllegalArgumentException("Danh sách ảnh không hợp lệ");
         ImageUploadPolicy.validate(files);
-        requireTour(tourId, false);
+        requireWritableTourMedia(tourId);
 
         var unique = new HashSet<>(remove);
         var previous = unique.isEmpty() ? List.<FileMgmt>of() : fileMgmtRepository.findByTourIdAndUrlIn(tourId, List.copyOf(unique));
@@ -284,7 +391,7 @@ public class FileService {
     private List<TourFileResponse> linkTourImages(String tourId, Set<String> removedUrls,
             List<FileMgmt> previous, List<FileMgmt> current, List<FileMgmt> uploaded, List<FileMgmt> superseded) {
         // Tour deletion uses the same row lock and detaches the gallery before committing.
-        requireTour(tourId, true);
+        lockWritableTourMedia(tourId);
         var locked = fileMgmtRepository.findByTourId(tourId);
         if (locked.size() != current.size() || !urls(locked).equals(urls(current)))
             throw new IllegalArgumentException("Ảnh đã thay đổi, vui lòng tải lại");
@@ -300,19 +407,56 @@ public class FileService {
                 iterator.remove();
             }
         }
-        fileMgmtRepository.saveAll(uploaded);
+        var storedUploads = fileMgmtRepository.saveAll(uploaded);
+        previous.forEach(image -> removeReference(image, "TOUR", tourId));
         // Keep detached metadata so an admin can clean up Cloudinary explicitly later.
         for (var old : previous) { old.setTourId(DETACHED_TOUR_ID); old.setOwnerId(UNASSIGNED_OWNER); }
         fileMgmtRepository.saveAll(previous);
         fileMgmtRepository.flush();
+        var retained = new ArrayList<FileMgmt>();
+        locked.stream().filter(image -> !removedUrls.contains(image.getUrl())).forEach(retained::add);
+        retained.addAll(storedUploads);
+        retained.forEach(image -> addReference(image, "TOUR", tourId));
         return getTourMedia(List.of(tourId));
     }
 
-    private void requireTour(String tourId, boolean lock) {
-        if (jdbc.queryForList("SELECT id FROM tour WHERE id=?" + (lock ? " FOR UPDATE" : ""),
-                Integer.parseInt(tourId)).isEmpty())
-            throw new org.springframework.web.server.ResponseStatusException(
-                    org.springframework.http.HttpStatus.NOT_FOUND, "Không tìm thấy tour");
+    private void addReference(FileMgmt file, String ownerType, String ownerId) {
+        if (file.getId() == null || fileReferenceRepository.existsByFileIdAndOwnerTypeAndOwnerId(
+                file.getId(), ownerType, ownerId)) return;
+        fileReferenceRepository.save(FileReference.builder()
+                .fileId(file.getId())
+                .ownerType(ownerType)
+                .ownerId(ownerId)
+                .createdAt(LocalDateTime.now())
+                .build());
+    }
+
+    private void removeReference(FileMgmt file, String ownerType, String ownerId) {
+        if (file.getId() != null)
+            fileReferenceRepository.deleteByFileIdAndOwnerTypeAndOwnerId(file.getId(), ownerType, ownerId);
+    }
+
+    private void requireWritableTourMedia(String tourId) {
+        var deletionTimes = jdbc.query("SELECT deleted_at FROM tour_media_lock WHERE tour_id=?",
+                (result, row) -> result.getTimestamp("deleted_at"), tourId);
+        if (!deletionTimes.isEmpty() && deletionTimes.getFirst() != null)
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy tour");
+    }
+
+    private void lockWritableTourMedia(String tourId) {
+        lockOrCreateTourMedia(tourId);
+        LocalDateTime deletedAt = jdbc.queryForObject(
+                "SELECT deleted_at FROM tour_media_lock WHERE tour_id=? FOR UPDATE",
+                LocalDateTime.class, tourId);
+        if (deletedAt != null)
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy tour");
+    }
+
+    private void lockOrCreateTourMedia(String tourId) {
+        jdbc.update("INSERT INTO tour_media_lock(tour_id) VALUES (?) ON DUPLICATE KEY UPDATE tour_id=tour_id",
+                tourId);
+        jdbc.queryForObject("SELECT tour_id FROM tour_media_lock WHERE tour_id=? FOR UPDATE",
+                String.class, tourId);
     }
 
     private static String fingerprint(MultipartFile upload) {
@@ -343,6 +487,50 @@ public class FileService {
         return fileMgmtRepository.findByTourIdAndOwnerIdAndLocationIdIsNullAndAvatarOwnerIdIsNull(DETACHED_TOUR_ID, UNASSIGNED_OWNER, org.springframework.data.domain.PageRequest.of(page, 15, org.springframework.data.domain.Sort.by("id")))
                 .map(image -> new DetachedImage(image.getId(), image.getUrl(), image.getPath(), fileRepository.canDelete(image)));
     }
+
+    /**
+     * Detaches a deleted tour's gallery from File-owned metadata. Repeated delivery is safe:
+     * detached rows no longer match the tour ID and reference deletion is idempotent.
+     */
+    @Transactional
+    public void detachTourGallery(String tourId) {
+        if (!isTourId(tourId)) throw new IllegalArgumentException("Invalid tour ID");
+
+        detachTourGalleryData(tourId);
+    }
+
+    /** Consumes Tour's outbox event once, in the same local transaction as the gallery detach. */
+    @Transactional
+    public void detachTourGallery(String tourId, String eventId) {
+        if (!isTourId(tourId)) throw new IllegalArgumentException("Invalid tour ID");
+        UUID eventUuid;
+        try { eventUuid = UUID.fromString(eventId); }
+        catch (RuntimeException invalid) { throw new IllegalArgumentException("Invalid event ID"); }
+        int accepted = jdbc.update("""
+                INSERT IGNORE INTO file_inbox(consumer,event_id,event_type,received_at)
+                VALUES ('file.tour.gallery.detach.v1',?,'tour.gallery.detach.requested.v1',CURRENT_TIMESTAMP(6))
+                """, eventUuid.toString());
+        if (accepted == 0) return;
+        detachTourGalleryData(tourId);
+        jdbc.update("""
+                UPDATE file_inbox SET processed_at=CURRENT_TIMESTAMP(6)
+                WHERE consumer='file.tour.gallery.detach.v1' AND event_id=?
+                """, eventUuid.toString());
+    }
+
+    private void detachTourGalleryData(String tourId) {
+
+        lockOrCreateTourMedia(tourId);
+        jdbc.update("UPDATE tour_media_lock SET deleted_at=COALESCE(deleted_at,CURRENT_TIMESTAMP(6)) WHERE tour_id=?",
+                tourId);
+        var gallery = fileMgmtRepository.findByTourId(tourId);
+        for (var image : gallery) {
+            image.setTourId(DETACHED_TOUR_ID);
+            image.setOwnerId(UNASSIGNED_OWNER);
+        }
+        fileMgmtRepository.saveAllAndFlush(gallery);
+        jdbc.update("DELETE FROM file_reference WHERE owner_type = 'TOUR' AND owner_id = ?", tourId);
+    }
     public record DetachedImage(String id, String url, String publicId, boolean verified) {}
 
     public void permanentlyDeleteDetachedImage(String id) {
@@ -354,7 +542,7 @@ public class FileService {
                 throw new IllegalArgumentException("Ảnh cũ chưa xác minh được public_id; hãy kiểm tra trực tiếp trên Cloudinary");
             var references = fileMgmtRepository.lockAssetReferences(locked.getPath(), locked.getUrl());
             if (references.stream().anyMatch(reference -> !DETACHED_TOUR_ID.equals(reference.getTourId()) || !UNASSIGNED_OWNER.equals(reference.getOwnerId()) || reference.getLocationId() != null || reference.getAvatarOwnerId()!=null)
-                    || fileMgmtRepository.countDeliveryUrlReferences(locked.getUrl()) > 0)
+                    || fileReferenceRepository.countReferencesForAssetUrl(locked.getUrl()) > 0)
                 throw new IllegalArgumentException("Ảnh còn được tham chiếu ở nơi khác; chưa thể xóa Cloudinary");
             // Cleanup is an explicit admin action. Keep reference locks until the provider confirms
             // deletion, so a failed/uncertain remote call retains discoverable metadata for retry.
