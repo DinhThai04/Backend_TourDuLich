@@ -23,6 +23,8 @@ DROP TABLE IF EXISTS file_mgmt;
 -- ============================================================
 CREATE TABLE `avatar_media_lock` (
   `owner_id` varchar(19) NOT NULL,
+  `deleted_at` DATETIME(6) NULL,
+  `avatar_version` BIGINT NOT NULL DEFAULT 0,
   PRIMARY KEY (`owner_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -45,6 +47,7 @@ CREATE TABLE `file_mgmt` (
 
 CREATE TABLE `tour_media_lock` (
   `tour_id` varchar(9) NOT NULL,
+  `deleted_at` DATETIME(6) NULL,
   PRIMARY KEY (`tour_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 

@@ -55,6 +55,7 @@ CREATE TABLE `users` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `address` varchar(255) DEFAULT NULL,
   `avatar` varchar(255) DEFAULT NULL,
+  `avatar_version` bigint(20) NOT NULL DEFAULT 0,
   `email` varchar(255) NOT NULL,
   `google_id` varchar(255) DEFAULT NULL,
   `password` varchar(255) NOT NULL,

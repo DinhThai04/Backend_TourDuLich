@@ -24,6 +24,8 @@ SET @sgu_previous_fk=@@SESSION.foreign_key_checks;
 SET FOREIGN_KEY_CHECKS=0;
 CREATE TABLE `avatar_media_lock` (
   `owner_id` varchar(19) NOT NULL,
+  `deleted_at` DATETIME(6) NULL,
+  `avatar_version` bigint(20) NOT NULL DEFAULT 0,
   PRIMARY KEY (`owner_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -270,6 +272,7 @@ CREATE TABLE `roles` (
 
 CREATE TABLE `tour_media_lock` (
   `tour_id` varchar(9) NOT NULL,
+  `deleted_at` DATETIME(6) NULL,
   PRIMARY KEY (`tour_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -368,6 +371,7 @@ CREATE TABLE `users` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `address` varchar(255) DEFAULT NULL,
   `avatar` varchar(255) DEFAULT NULL,
+  `avatar_version` bigint(20) NOT NULL DEFAULT 0,
   `email` varchar(255) NOT NULL,
   `google_id` varchar(255) DEFAULT NULL,
   `password` varchar(255) NOT NULL,

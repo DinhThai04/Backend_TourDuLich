@@ -16,7 +16,6 @@ DROP TABLE IF EXISTS tour_inbox;
 DROP TABLE IF EXISTS tour_outbox;
 DROP TABLE IF EXISTS departure_hold;
 DROP TABLE IF EXISTS tour_image_ids;
-DROP TABLE IF EXISTS tour_media_lock;
 DROP TABLE IF EXISTS tour_departure;
 DROP TABLE IF EXISTS itinerary;
 DROP TABLE IF EXISTS tour;
@@ -97,10 +96,6 @@ CREATE TABLE `tour_image_ids` (
   CONSTRAINT `FK7awfdmfgljuwomrdbb2vejtnb` FOREIGN KEY (`tour_id`) REFERENCES `tour` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE `tour_media_lock` (
-  `tour_id` varchar(9) NOT NULL,
-  PRIMARY KEY (`tour_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ============================================================
 -- INFRASTRUCTURE TABLES
