@@ -47,7 +47,7 @@ public class BookingMailEvents {
         LocalDateTime departureDate;
         try {
             Map<String, Object> departure = tourClient.getDeparture(departureId);
-            tourTitle = (String) departure.get("tour_id") != null ? "Tour #" + departure.get("tour_id") : "Tour";
+            tourTitle = tourIdLabel(departure.get("tour_id"));
             Object depDate = departure.get("departure_date");
             departureDate = depDate instanceof LocalDateTime ? (LocalDateTime) depDate : ((java.sql.Timestamp) depDate).toLocalDateTime();
         } catch (Exception e) {
@@ -93,6 +93,12 @@ public class BookingMailEvents {
     }
 
     static LocalDateTime date(Object value) {
+        if (value == null) return null;
         return value instanceof LocalDateTime date ? date : ((java.sql.Timestamp) value).toLocalDateTime();
+    }
+
+    static String tourIdLabel(Object value) {
+        if (value == null) return "Tour";
+        return "Tour #" + value;
     }
 }

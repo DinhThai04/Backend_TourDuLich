@@ -157,11 +157,7 @@ public class RescheduleRefundSaga {
 			paymentClient.refund(bookingId, refundAmount, refundReference);
 			jdbc.update("UPDATE booking_saga SET status = 'PAYMENT_REFUND_INITIATED', current_step = 'PAYMENT_REFUND_INITIATED', updated_at = ? WHERE id = ?", LocalDateTime.now(), sagaId);
 			
-			// Step 2: Wait for refund completion (handled by callback/event)
-			// For now, mark as initiated and let the callback complete it
-			
-			// Step 3: Update invoice to refunded
-			jdbc.update("UPDATE invoice SET status = 'REFUNDED' WHERE booking_id = ?", bookingId);
+			// Step 2: Payment service handles refund event propagation to invoice_service asynchronously.
 			jdbc.update("UPDATE booking_saga SET status = 'INVOICE_UPDATED', current_step = 'INVOICE_UPDATED', updated_at = ? WHERE id = ?", LocalDateTime.now(), sagaId);
 			
 			// Step 4: Update change record
@@ -229,7 +225,7 @@ public class RescheduleRefundSaga {
 			tourClient.releaseHold(departureId, seats);
 		} catch (Exception e) {
 			log.warn("Failed to release hold via Tour internal API for departure {}: {}", departureId, e.getMessage());
-			jdbc.update("UPDATE tour_departure SET available_seats = LEAST(COALESCE(capacity, 32767), available_seats + ?), version = version + 1 WHERE id = ?", seats, departureId);
+			throw new RuntimeException("Failed to release hold via Tour internal API", e);
 		}
 	}
 

@@ -82,9 +82,12 @@ public class BookingLifecycleService {
             } catch (Exception e) {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy lịch khởi hành");
             }
-            if (departure == null || departure.isEmpty()) {
+if (departure == null || departure.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy lịch khởi hành");
             }
+            // Concurrency for seat consumption is owned by Tour: holdSeats() below locks the
+            // departure row on the Tour side and decrements available_seats atomically, so
+            // Booking must not SELECT ... FOR UPDATE tour_departure itself.
             // Lock and validate the account via Auth internal API (replaces direct users query)
             Map<String, Object> userStatus;
             try {
@@ -106,7 +109,7 @@ public class BookingLifecycleService {
                         "Đã sang ngày mới theo giờ Việt Nam. Vui lòng kiểm tra lại giá trước khi đặt.");
             if (!"OPEN".equals(departure.getOrDefault("operational_status","OPEN")))
                 throw new ResponseStatusException(HttpStatus.CONFLICT,"Chuyến đang dừng hoặc dành riêng cho khách bị dời lịch; không nhận đặt mới");
-            var plan = policy.plan(now, BookingMailEvents.date((java.time.LocalDateTime) departure.get("departure_date")));
+            var plan = policy.plan(now, BookingMailEvents.date(departure.get("departure_date")));
             int seats = passengers.size();
             Integer availableSeats = (Integer) departure.get("available_seats");
             if (availableSeats == null || seats > availableSeats)
@@ -123,7 +126,7 @@ public class BookingLifecycleService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "Số chỗ đang giữ chưa thanh toán vượt mức " + MAX_HELD_SEATS + "; hãy hoàn tất hoặc hủy bớt");
             // Giá được chốt ngay khi tạo booking, không đọc lại bảng giá lúc thanh toán.
-            PriceSnapshot snapshot = snapshotFor(((Number) departure.get("tour_id")).intValue(), passengers);
+            PriceSnapshot snapshot = snapshotFor(tourIdOf(departure.get("tour_id")), passengers);
             String expected = request.getExpectedAmount();
             if (expected != null && BigDecimal.valueOf(snapshot.total()).compareTo(new BigDecimal(expected)) != 0)
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -140,12 +143,13 @@ public class BookingLifecycleService {
                         bookingId, passenger.fullName(), passenger.birthdate(), passenger.male(), passenger.address(), passenger.type());
             }
             persistSnapshot(bookingId, snapshot, now);
-            // Update available_seats via Tour internal API (replaces direct tour_departure update)
+            // Seat consumption is owned by Tour: holdSeats locks the departure row on the Tour side
+            // and decrements available_seats atomically, so Booking must not write tour_departure.
+            LocalDateTime expiresAt = plan.immediate() ? now.plusMinutes(15) : plan.deadline();
             try {
-                tourClient.releaseHold(departureId, -seats); // Negative seats to increment
+                tourClient.holdSeats(departureId, new TourInternalClient.HoldSeatsRequest(seats, String.valueOf(bookingId), expiresAt));
             } catch (Exception e) {
-                // Fallback: direct update if internal API fails
-                jdbc.update("UPDATE tour_departure SET available_seats=available_seats-?,version=version+1 WHERE id=?", seats, departureId);
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể giữ chỗ tại tour-service");
             }
             jdbc.update("""
                 INSERT INTO booking_reservation (booking_id,departure_id,departure_at,seats,status,expires_at,
@@ -269,8 +273,7 @@ public class BookingLifecycleService {
                     try {
                         tourClient.releaseHold(departureId, seats);
                     } catch (Exception e) {
-                        // Fallback: direct update if internal API fails
-                        jdbc.update("UPDATE tour_departure SET available_seats=LEAST(COALESCE(capacity,32767),available_seats+?),version=version+1 WHERE id=?", hold.get("seats"), departureId);
+                        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể giải phóng chỗ tại tour-service");
                     }
                     jdbc.update("UPDATE booking_reservation SET status='CANCELLED',cancel_reason='USER_CANCELLED',updated_at=? WHERE booking_id=?", LocalDateTime.now(clock), id);
                 } else throw new ResponseStatusException(HttpStatus.CONFLICT, "Trạng thái giữ chỗ cần kiểm tra");
@@ -278,7 +281,7 @@ public class BookingLifecycleService {
                 try {
                     tourClient.incrementVersion(departureId);
                 } catch (Exception e) {
-                    jdbc.update("UPDATE tour_departure SET version=version+1 WHERE id=?",departureId);
+                    throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể cập nhật phiên bản lịch khởi hành tại tour-service");
                 }
             }
             int cancelled = jdbc.update("UPDATE booking SET status='CANCELLED' WHERE id=? AND status IN ('PENDING_PAYMENT','CONFIRMED')", id);
@@ -334,9 +337,7 @@ public class BookingLifecycleService {
                 || (from != null && to != null && from.isAfter(to)))
             throw new IllegalArgumentException("Bộ lọc lịch sử đặt tour không hợp lệ");
         // Base query without cross-DB JOINs
-        String sql = SELECT_BOOKING + """
-                LEFT JOIN invoice hi ON hi.booking_id=b.id AND hi.account_id=b.account_id
-                """;
+        String sql = SELECT_BOOKING;
         var clauses = new StringBuilder(" WHERE b.account_id=?");
         var args = new java.util.ArrayList<Object>();
         args.add(account);
@@ -345,8 +346,8 @@ public class BookingLifecycleService {
         if (to != null) { clauses.append(" AND b.created_at<?"); args.add(to.plusDays(1).atStartOfDay()); }
         if (status != null && !status.isBlank()) {
             clauses.append(switch (status) {
-                case "PAID" -> " AND (r.status='PAID' OR hi.status='PAID')";
-                case "UNPAID" -> " AND b.status IN ('PENDING_PAYMENT','CONFIRMED') AND COALESCE(r.status,'')<>'PAID' AND COALESCE(hi.status,'')<>'PAID'";
+                case "PAID" -> " AND r.status='PAID'";
+                case "UNPAID" -> " AND b.status IN ('PENDING_PAYMENT','CONFIRMED') AND COALESCE(r.status,'')<>'PAID'";
                 case "CLOSED" -> " AND (b.status IN ('CANCELLED','EXPIRED','UNCONFIRMED') OR r.status IN ('CANCELLED','EXPIRED'))";
                 default -> throw new IllegalArgumentException("Trạng thái lịch sử không hợp lệ");
             });
@@ -506,6 +507,15 @@ public class BookingLifecycleService {
 
     private record PriceSnapshot(long priceId, BigDecimal adult, BigDecimal child, BigDecimal toddler,
             BigDecimal infant, BigDecimal supplement, long total) {}
+
+    private int tourIdOf(Object value) {
+        if (value instanceof Number number) return number.intValue();
+        if (value instanceof String text) {
+            try { return Integer.parseInt(text.trim()); }
+            catch (RuntimeException invalid) { throw new IllegalArgumentException("Tour ID không hợp lệ"); }
+        }
+        throw new IllegalArgumentException("Tour ID không hợp lệ");
+    }
 
     private PriceSnapshot snapshotFor(int tourId, List<Passenger> passengers) {
         // Get price info via Pricing internal API (replaces direct prices+tour JOIN)

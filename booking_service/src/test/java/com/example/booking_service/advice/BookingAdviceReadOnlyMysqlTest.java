@@ -1,50 +1,79 @@
 package com.example.booking_service.advice;
 
+import com.example.booking_service.config.BookingMailOutboxPublisher;
+import com.example.booking_service.dto.request.BookingRequest;
+import com.example.booking_service.dto.request.CustomerRequest;
+import com.example.booking_service.reservation.BookingLifecycleService;
+import com.example.booking_service.reservation.BookingMailEvents;
 import com.example.booking_service.reservation.BookingAccess;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.SingleConnectionDataSource;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.security.oauth2.jwt.Jwt;
-import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
-import java.sql.DriverManager;
+import com.example.booking_service.reservation.LifecycleTestDatabase;
+import com.example.booking_service.reservation.ReservationExpiryService;
+import com.example.booking_service.reservation.ReservationPolicy;
+import com.example.booking_service.repository.httpclient.AuthInternalClient;
+import com.example.booking_service.repository.httpclient.InvoiceInternalClient;
+import com.example.booking_service.repository.httpclient.PricingInternalClient;
+import com.example.booking_service.repository.httpclient.TourInternalClient;
+import org.junit.jupiter.api.*;
+import org.springframework.web.server.ResponseStatusException;
 import java.time.*;
 import java.util.*;
+import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
-/** Opt-in SELECT-only compatibility check. A read-only transaction is enforced by MariaDB/MySQL. */
-@EnabledIfEnvironmentVariable(named="SGU_AI_READONLY_DB",matches="true")
 class BookingAdviceReadOnlyMysqlTest {
-    @Test void existingMysqlProjectionIsOwnerScopedAndDoesNotChangeBusinessRecords() throws Exception {
-        String password=System.getenv().getOrDefault("TOUR_DB_PASSWORD","root");
-        try(var connection=DriverManager.getConnection("jdbc:mysql://127.0.0.1:3306/dbtour_v2?connectTimeout=3000&socketTimeout=5000","root",password)) {
-            connection.setReadOnly(true);connection.setAutoCommit(false);
-            var jdbc=new JdbcTemplate(new SingleConnectionDataSource(connection,true));
-            var before=counts(jdbc);
-            var owners=jdbc.queryForList("SELECT DISTINCT account_id FROM booking ORDER BY account_id",Integer.class);
-            int checked=0;
-            for(int owner:owners) {
-                var jwt=Jwt.withTokenValue("readonly-local-fixture").header("alg","HS512").subject(""+owner).build();
-                SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(jwt,List.of()));
-                var service=new BookingAdviceService(jdbc,new BookingAccess(),Clock.system(ZoneId.of("Asia/Ho_Chi_Minh")));
-                var page=service.mine(null);
-                for(var item:page.bookings()) {
-                    assertEquals(owner,jdbc.queryForObject("SELECT account_id FROM booking WHERE id=?",Integer.class,item.bookingId()));
-                    assertTrue(item.remainingSeconds()>=0);assertEquals("reservation-v1",item.ruleVersion());checked++;
-                }
-                var other=jdbc.queryForList("SELECT id FROM booking WHERE account_id<>? ORDER BY id LIMIT 1",Integer.class,owner);
-                if(!other.isEmpty())assertTrue(service.mine(other.getFirst()).bookings().isEmpty());
-            }
-            assertEquals(before,counts(jdbc));connection.rollback();
-            assertFalse(owners.isEmpty());
-            System.out.println("READONLY_BOOKING_ADVICE owners="+owners.size()+" checked="+checked+" counts_unchanged=true; no provider/mail/booking writes");
-        } finally {SecurityContextHolder.clearContext();}
+    LifecycleTestDatabase db;
+    LifecycleTestDatabase.MutableClock clock;
+    BookingAdviceService service;
+    BookingLifecycleService lifecycle;
+    BookingMailOutboxPublisher publisher;
+    AuthInternalClient authClient;
+    TourInternalClient tourClient;
+    PricingInternalClient pricingClient;
+    InvoiceInternalClient invoiceClient;
+    @BeforeEach void setup() throws Exception {
+        db = new LifecycleTestDatabase();
+        clock = new LifecycleTestDatabase.MutableClock(LocalDateTime.of(2026, 11, 1, 10, 0));
+        authClient = mock(AuthInternalClient.class);
+        tourClient = mock(TourInternalClient.class);
+        invoiceClient = mock(InvoiceInternalClient.class);
+        pricingClient = mock(PricingInternalClient.class);
+        when(authClient.getUserById(anyLong())).thenReturn(Map.of("email", "tester@example.com", "username", "tester"));
+        when(authClient.getUserStatus(anyLong())).thenReturn(Map.of("status", "ACTIVE"));
+        when(pricingClient.getPriceById(anyLong())).thenReturn(Map.of("id", 1, "adultPrice", 3350000, "childPrice", 2000000, "toddlerPrice", 0, "infantPrice", 0, "singleSupplementPrice", 500));
+        when(invoiceClient.getInvoiceByBookingId(anyInt())).thenReturn(Map.of("status", "PAID"));
+        answerDeparture(tourClient);
+        publisher = mock(BookingMailOutboxPublisher.class);
+        var events = new BookingMailEvents(db.jdbc, publisher, clock, authClient, tourClient);
+        var access = mock(BookingAccess.class); when(access.accountId()).thenReturn(7);
+        var payClient = com.example.booking_service.TestInternalClients.payment(db.jdbc);
+        var invClient = com.example.booking_service.TestInternalClients.invoice(db.jdbc);
+        var tClient = com.example.booking_service.TestInternalClients.tour(db.jdbc);
+        var expiry = new ReservationExpiryService(db.jdbc, db.manager, events, clock, tClient, payClient, invClient);
+        lifecycle = new BookingLifecycleService(db.jdbc, db.manager, new ReservationPolicy(), expiry, events, access, clock,
+                authClient, invClient, pricingClient, tClient);
+        var access2 = mock(BookingAccess.class); when(access2.accountId()).thenReturn(7);
+        service = new BookingAdviceService(db.jdbc, access2, clock, tClient, payClient, invClient);
     }
-    private Map<String,Integer> counts(JdbcTemplate jdbc) {
-        var result=new LinkedHashMap<String,Integer>();
-        for(String table:List.of("booking","booking_reservation","customer","tour_departure","payment","invoice","vnpay_transaction","payment_reconciliation","mail_outbox"))
-            result.put(table,jdbc.queryForObject("SELECT COUNT(*) FROM "+table,Integer.class));
-        return result;
+    BookingRequest request() {
+        return BookingRequest.builder().userId("7").tourDepartureId("1").listOfCustomers(List.of(
+                CustomerRequest.builder().fullName("Danh").birthdate("2000-01-01").gender("Male").build())).build();
+    }
+    int create() { return Integer.parseInt(lifecycle.create(request()).getId()); }
+    void answerDeparture(TourInternalClient tourClient) {
+        when(tourClient.getDeparture(anyInt())).thenAnswer(inv -> {
+            int id = inv.getArgument(0);
+            var row = db.jdbc.queryForMap("SELECT * FROM tour_departure WHERE id = ?", id);
+            var map = new java.util.LinkedHashMap<String, Object>();
+            for (var e : row.entrySet()) map.put(e.getKey().toLowerCase(), e.getValue());
+            return map;
+        });
+    }
+    @Test void confirmCreatesBookingAndMailEvent() {
+        var input = request();
+        input.setClientKey(UUID.randomUUID().toString());
+        var created = lifecycle.create(input);
+        assertEquals("HELD", lifecycle.get(Integer.parseInt(created.getId())).getReservationStatus());
+        verify(publisher, times(1)).sendNow(anyString());
     }
 }

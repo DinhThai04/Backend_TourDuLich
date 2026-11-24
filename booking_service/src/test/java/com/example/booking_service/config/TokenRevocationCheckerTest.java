@@ -1,82 +1,97 @@
 package com.example.booking_service.config;
 
+import com.sun.net.httpserver.HttpServer;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.jdbc.core.JdbcTemplate;
-import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtException;
 
-import javax.crypto.Mac;
-import javax.crypto.spec.SecretKeySpec;
-import java.nio.charset.StandardCharsets;
+import java.io.IOException;
+import java.net.InetSocketAddress;
+import java.time.Duration;
 import java.time.Instant;
-import java.util.Base64;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class TokenRevocationCheckerTest {
-    private static final String KEY = "test-only-key-that-is-long-enough-for-hs512-012345678901234567890123456789";
-    private JdbcTemplate jdbc;
+    private static final String INTERNAL_KEY = "internal-auth-test-key";
+
+    private HttpServer server;
+    private AtomicInteger responseStatus;
+    private AtomicReference<String> receivedAuthHeader;
+    private AtomicReference<String> receivedInternalKey;
+    private String baseUrl;
     private TokenRevocationChecker checker;
 
     @BeforeEach
-    void setUp() {
-        var dataSource = new DriverManagerDataSource(
-                "jdbc:h2:mem:revocation-" + System.nanoTime() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", "sa", "");
-        jdbc = new JdbcTemplate(dataSource);
-        jdbc.execute("CREATE TABLE users (id BIGINT PRIMARY KEY, status VARCHAR(20), password VARCHAR(255))");
-        jdbc.execute("CREATE TABLE user_account_event (id BIGINT AUTO_INCREMENT PRIMARY KEY, target_user_id BIGINT)");
-        jdbc.execute("CREATE TABLE invalidated_token (id VARCHAR(255) PRIMARY KEY)");
-        jdbc.update("INSERT INTO users VALUES (7,'ACTIVE','hash-1')");
-        checker = new TokenRevocationChecker(jdbc, KEY);
+    void setUp() throws IOException {
+        responseStatus = new AtomicInteger(204);
+        receivedAuthHeader = new AtomicReference<>();
+        receivedInternalKey = new AtomicReference<>();
+
+        server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        server.createContext("/auth/internal/auth/sessions/validate", exchange -> {
+            receivedAuthHeader.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            receivedInternalKey.set(exchange.getRequestHeaders().getFirst("X-Internal-Auth-Key"));
+            exchange.sendResponseHeaders(responseStatus.get(), -1);
+            exchange.close();
+        });
+        server.start();
+        baseUrl = "http://127.0.0.1:" + server.getAddress().getPort() + "/auth";
+        checker = new TokenRevocationChecker(
+                new BookingAuthSessionClient(baseUrl, INTERNAL_KEY, Duration.ofSeconds(2), Duration.ofSeconds(2)));
+    }
+
+    @AfterEach
+    void tearDown() {
+        if (server != null) {
+            server.stop(0);
+        }
     }
 
     @Test
-    void acceptsActiveSessionWithCurrentBinding() {
-        assertDoesNotThrow(() -> checker.verify(token("hash-1", 0L, "jti-1")));
+    void acceptsActiveSessionValidatedByAuth() {
+        responseStatus.set(204);
+        assertDoesNotThrow(() -> checker.verify(token("raw-jwt-1")));
+        assertEquals("Bearer raw-jwt-1", receivedAuthHeader.get());
+        assertEquals(INTERNAL_KEY, receivedInternalKey.get());
     }
 
     @Test
-    void rejectsLockedAccountPasswordChangeOrBlacklistedToken() {
-        jdbc.update("UPDATE users SET status='LOCKED' WHERE id=7");
-        assertThrows(JwtException.class, () -> checker.verify(token("hash-1", 0L, "jti-1")));
-        jdbc.update("UPDATE users SET status='ACTIVE', password='hash-2' WHERE id=7");
-        assertThrows(JwtException.class, () -> checker.verify(token("hash-1", 0L, "jti-1")));
-        jdbc.update("UPDATE users SET password='hash-1' WHERE id=7");
-        jdbc.update("INSERT INTO invalidated_token VALUES ('jti-1')");
-        assertThrows(JwtException.class, () -> checker.verify(token("hash-1", 0L, "jti-1")));
+    void rejectsRevokedOrLockedSessionOn4xx() {
+        responseStatus.set(401);
+        assertThrows(BadJwtException.class, () -> checker.verify(token("raw-jwt-2")));
     }
 
     @Test
-    void rejectsTokenIssuedBeforeTheLatestAccountEvent() {
-        jdbc.update("INSERT INTO user_account_event (target_user_id) VALUES (7)");
-        assertThrows(JwtException.class, () -> checker.verify(token("hash-1", 0L, "jti-2")));
-        // A newer token (issued after the event) stays valid.
-        assertDoesNotThrow(() -> checker.verify(token("hash-1", 1L, "jti-3")));
+    void failsClosedWhenAuthIsUnavailableOrReturns5xx() {
+        responseStatus.set(503);
+        assertThrows(JwtException.class, () -> checker.verify(token("raw-jwt-3")));
+
+        server.stop(0);
+        assertThrows(JwtException.class, () -> checker.verify(token("raw-jwt-4")));
     }
 
-    private Jwt token(String password, long epoch, String jti) {
-        return Jwt.withTokenValue("token")
-                .header("alg", "HS512")
+    @Test
+    void failsClosedWhenInternalKeyIsMissing() {
+        var unconfigured = new TokenRevocationChecker(
+                new BookingAuthSessionClient(baseUrl, "", Duration.ofSeconds(2), Duration.ofSeconds(2)));
+        assertThrows(JwtException.class, () -> unconfigured.verify(token("raw-jwt-5")));
+    }
+
+    private Jwt token(String value) {
+        return Jwt.withTokenValue(value)
+                .header("alg", "HS256")
                 .subject("7")
-                .claim("sessionEpoch", epoch)
-                .claim("credentialVersion", binding(password))
                 .issuedAt(Instant.now().minusSeconds(60))
                 .expiresAt(Instant.now().plusSeconds(600))
-                .claim("jti", jti)
+                .claim("jti", "jti-1")
                 .build();
-    }
-
-    private String binding(String password) {
-        try {
-            Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(KEY.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
-            return Base64.getUrlEncoder().withoutPadding()
-                    .encodeToString(mac.doFinal(("7:" + password).getBytes(StandardCharsets.UTF_8)));
-        } catch (Exception impossible) {
-            throw new IllegalStateException(impossible);
-        }
     }
 }

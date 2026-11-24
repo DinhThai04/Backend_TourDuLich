@@ -60,7 +60,7 @@ public class ChangeMailEvents {
 		String tourTitle;
 		try {
 			Map<String, Object> departure = tourClient.getDeparture(departureId);
-			tourTitle = (String) departure.get("tour_id") != null ? "Tour #" + departure.get("tour_id") : "Tour";
+			tourTitle = departure.get("tour_id") != null ? "Tour #" + departure.get("tour_id") : "Tour";
 		} catch (Exception e) {
 			throw new IllegalStateException("Cannot fetch tour info for booking " + booking, e);
 		}

@@ -1,15 +1,20 @@
 package com.example.booking_service.reservation;
 
 import com.example.booking_service.dto.request.*;
-import com.example.booking_service.dto.response.BookingResponse;
-import com.example.booking_service.notification.*;
+import com.example.booking_service.config.BookingMailOutboxPublisher;
+import com.example.booking_service.config.NotificationMailClient;
+import com.example.booking_service.notification.MailEventType;
+import com.example.booking_service.repository.httpclient.AuthInternalClient;
+import com.example.booking_service.repository.httpclient.InvoiceInternalClient;
+import com.example.booking_service.repository.httpclient.PricingInternalClient;
+import com.example.booking_service.repository.httpclient.TourInternalClient;
 import com.fasterxml.jackson.databind.json.JsonMapper;
-import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.*;
 import org.springframework.web.server.ResponseStatusException;
 import java.time.*;
 import java.util.*;
 import java.util.concurrent.*;
+import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -19,19 +24,56 @@ class BookingLifecycleTest {
     BookingLifecycleService lifecycle;
     ReservationExpiryService expiry;
     BookingAccess access;
+    BookingMailOutboxPublisher publisher;
+    AuthInternalClient authClient;
     @BeforeEach void setup() throws Exception {
-        db = new LifecycleTestDatabase(); clock = new LifecycleTestDatabase.MutableClock(LocalDateTime.of(2026,11,1,10,0));
-        var outbox = new MailOutboxService(new MailOutboxRepository(db.jdbc, db.manager), JsonMapper.builder().findAndAddModules().build(), clock);
-        var events = new BookingMailEvents(db.jdbc, outbox, clock);
-        expiry = new ReservationExpiryService(db.jdbc, db.manager, events, clock);
-        access = mock(BookingAccess.class); when(access.accountId()).thenReturn(7);
-        lifecycle = new BookingLifecycleService(db.jdbc, db.manager, new ReservationPolicy(), expiry, events, access, clock);
+        db = new LifecycleTestDatabase(); 
+        clock = new LifecycleTestDatabase.MutableClock(LocalDateTime.of(2026,11,1,10,0));
+        var authClient = mock(AuthInternalClient.class);
+        this.authClient = authClient;
+        var tourClient = mock(TourInternalClient.class);
+        var invoiceClient = mock(InvoiceInternalClient.class);
+        var pricingClient = mock(PricingInternalClient.class);
+        when(authClient.getUserById(anyLong())).thenReturn(Map.of("email", "tester@example.com", "username", "tester"));
+        when(authClient.getUserStatus(anyLong())).thenReturn(Map.of("status", "ACTIVE"));
+        when(pricingClient.getPriceById(anyLong())).thenReturn(Map.of("id", 1, "adultPrice", 3350000, "childPrice", 2000000, "toddlerPrice", 0, "infantPrice", 0, "singleSupplementPrice", 500));
+        when(invoiceClient.getInvoiceByBookingId(anyInt())).thenReturn(Map.of("status", "PAID"));
+        answerDeparture(tourClient);
+        doThrow(new RuntimeException("Tour service unavailable")).when(tourClient).releaseHold(anyInt(), anyInt());
+        var publisher = mock(BookingMailOutboxPublisher.class);
+        this.publisher = publisher;
+        var payClient = com.example.booking_service.TestInternalClients.payment(db.jdbc, clock);
+        var invClient = com.example.booking_service.TestInternalClients.invoice(db.jdbc);
+        var tClient = com.example.booking_service.TestInternalClients.tour(db.jdbc);
+        var events = new BookingMailEvents(db.jdbc, publisher, clock, authClient, tClient);
+        expiry = new ReservationExpiryService(db.jdbc, db.manager, events, clock, tClient, payClient, invClient);
+        access = mock(BookingAccess.class); 
+        when(access.accountId()).thenReturn(7);
+        lifecycle = new BookingLifecycleService(db.jdbc, db.manager, new ReservationPolicy(), expiry,
+            events, access, clock,
+            authClient, invClient, pricingClient, tClient);
     }
     BookingRequest request() {
         return BookingRequest.builder().userId("7").tourDepartureId("1").listOfCustomers(List.of(
-                CustomerRequest.builder().fullName("Danh").birthdate("2000-01-01").gender("Male").address("Hà Nội").build())).build();
+                CustomerRequest.builder().fullName("Danh").birthdate("2000-01-01").gender("Male").build())).build();
     }
     int create() { return Integer.parseInt(lifecycle.create(request()).getId()); }
+
+    String captureSendNow() {
+        var arg = org.mockito.ArgumentCaptor.forClass(String.class);
+        verify(publisher, atLeastOnce()).sendNow(arg.capture());
+        return arg.getAllValues().isEmpty() ? null : arg.getAllValues().get(arg.getAllValues().size() - 1);
+    }
+
+    void answerDeparture(TourInternalClient tourClient) {
+        when(tourClient.getDeparture(anyInt())).thenAnswer(inv -> {
+            int id = inv.getArgument(0);
+            var row = db.jdbc.queryForMap("SELECT * FROM tour_departure WHERE id = ?", id);
+            var map = new java.util.LinkedHashMap<String, Object>();
+            for (var e : row.entrySet()) map.put(e.getKey().toLowerCase(), e.getValue());
+            return map;
+        });
+    }
 
     @Test void staleDisplayedPriceCannotCreateAHoldAndTheSameKeyCanRetry() {
         var input = request();
@@ -40,7 +82,8 @@ class BookingLifecycleTest {
         var rejected = assertThrows(ResponseStatusException.class, () -> lifecycle.create(input));
         assertEquals(409, rejected.getStatusCode().value());
         assertEquals(0, db.count("booking"));
-        assertEquals(0, db.count("mail_outbox"));
+        assertEquals(0, db.count("booking_outbox"));
+        verify(publisher, never()).sendNow(anyString());
         assertEquals(10, db.seats());
         assertNull(lifecycle.findOwnAttempt(input.getClientKey()));
 
@@ -62,6 +105,8 @@ class BookingLifecycleTest {
                 INSERT INTO booking (account_id,tour_departure_id,status,created_at) VALUES (7,1,'CONFIRMED',?)
                 """, LocalDateTime.now(clock));
         db.jdbc.update("INSERT INTO invoice (account_id,booking_id,status) VALUES (7,1,'PAID')");
+        db.jdbc.update("INSERT INTO booking_reservation (booking_id,departure_id,departure_at,seats,status,expires_at,reminder_one_at,reminder_two_at,cancel_reason,created_at,updated_at) VALUES (1,1,?,1,'PAID',?,?,?,?,?,?)",
+                LocalDateTime.of(2026,11,20,6,0), LocalDateTime.now(clock), null, null, null, LocalDateTime.now(clock), LocalDateTime.now(clock));
 
         var recent = lifecycle.ownHistory(0, null, null, null, null);
         assertEquals(8, recent.items().size());
@@ -108,19 +153,23 @@ class BookingLifecycleTest {
         original.setClientKey(UUID.randomUUID().toString());
         assertEquals(409, assertThrows(ResponseStatusException.class, () -> lifecycle.create(original)).getStatusCode().value());
         assertEquals(1, db.count("booking"));
+        verify(publisher, times(1)).sendNow(anyString());
         assertEquals(9, db.seats());
     }
     @Test void holdsSeatsAndEnqueuesAcknowledgementAtomically() {
-        int id = create(); assertEquals(9, db.seats()); assertEquals(1, db.count("mail_outbox"));
+        int id = create(); assertEquals(9, db.seats());
+        verify(publisher, times(1)).sendNow(anyString());
         var booking = lifecycle.get(id); assertEquals("HELD", booking.getReservationStatus());
         assertEquals("PENDING_PAYMENT", booking.getStatus());
         assertEquals("3350000", booking.getTotalAmount());
         assertEquals("VND", booking.getCurrency());
         assertEquals("3350000.00", booking.getUnitPrices().get("ADULT"));
         assertEquals("2026-11-07T08:00", booking.getPaymentDeadline());
-        // ISO-8601 so every browser can parse it; Timestamp.toString() used to emit a space.
         assertTrue(booking.getCreatedAt().startsWith("2026-11-01T10:00"));
-        assertTrue(db.jdbc.queryForObject("SELECT payload FROM mail_outbox", String.class).contains("holdUntil"));
+        var payload = captureSendNow();
+        assertNotNull(payload);
+        assertTrue(payload.contains("bookingId"));
+        assertTrue(payload.contains("eventType"));
     }
     @Test void sameRequestReplaysOriginalFareAfterBirthdayAtVietnamMidnight() {
         clock.set(LocalDateTime.of(2026, 11, 1, 23, 59, 59));
@@ -138,7 +187,7 @@ class BookingLifecycleTest {
         assertEquals(original.getTotalAmount(), replay.getTotalAmount());
         assertEquals(1, db.count("booking"));
         assertEquals(9, db.seats());
-        assertEquals(1, db.count("mail_outbox"));
+        verify(publisher, times(1)).sendNow(anyString());
 
         booking.setClientKey(UUID.randomUUID().toString());
         lifecycle.create(booking);
@@ -159,19 +208,19 @@ class BookingLifecycleTest {
 
         assertEquals(1, db.count("booking"));
         assertEquals(1, db.count("customer"));
-        assertEquals(1, db.count("mail_outbox"));
+        verify(publisher, times(1)).sendNow(anyString());
         assertEquals(9, db.seats());
         assertEquals(10, db.jdbc.queryForObject("SELECT available_seats FROM tour_departure WHERE id=51", Integer.class));
     }
     @Test void immediateCheckoutHasNoPrematureSuccessEmail() {
         clock.set(LocalDateTime.of(2026,11,13,10,0)); int id = create();
         assertTrue(lifecycle.get(id).isPaymentRequiredNow()); assertEquals("CHECKOUT", lifecycle.get(id).getReservationStatus());
-        assertEquals(0, db.count("mail_outbox")); assertEquals(9, db.seats());
+        verify(publisher, never()).sendNow(anyString()); assertEquals(9, db.seats());
     }
     @Test void cancellationIsIdempotentAndPreservesOriginalCreatedAt() {
         int id = create(); var original = lifecycle.get(id).getCreatedAt(); clock.set(LocalDateTime.of(2026,11,2,10,0));
         lifecycle.cancel(id); lifecycle.cancel(id); assertEquals(10, db.seats());
-        assertEquals(original, lifecycle.get(id).getCreatedAt()); assertEquals(2, db.count("mail_outbox"));
+        assertEquals(original, lifecycle.get(id).getCreatedAt()); verify(publisher, times(2)).sendNow(anyString());
         assertEquals("CANCELLED", lifecycle.get(id).getStatus());
     }
     @Test void cancellationClosesTheActiveChangeRequestAndFreesTheBooking() {
@@ -207,7 +256,7 @@ class BookingLifecycleTest {
         int id = create(); clock.set(LocalDateTime.of(2026,11,7,8,0)); expiry.sweep(); expiry.sweep();
         assertEquals(10, db.seats()); assertEquals("EXPIRED", lifecycle.get(id).getReservationStatus());
         assertEquals("EXPIRED", lifecycle.get(id).getStatus());
-        assertEquals(2, db.count("mail_outbox")); assertNotEquals(id, create()); assertEquals(9, db.seats());
+        verify(publisher, times(2)).sendNow(anyString()); assertNotEquals(id, create()); assertEquals(9, db.seats());
     }
     @Test void createCleansExpiredSeatsEvenWithoutScheduledWorker() {
         create(); db.jdbc.update("UPDATE tour_departure SET available_seats=0");
@@ -248,7 +297,6 @@ class BookingLifecycleTest {
         var booking=request();booking.setTourDepartureId("51");
         int lastBooking=Integer.parseInt(lifecycle.create(booking).getId());
         LocalDateTime created=LocalDateTime.now(clock);
-        // Seed the 50 reconciled holds directly; creating them through the service would hit the per-account hold cap.
         for (int departure=1;departure<=50;departure++) {
             if (departure>1) db.jdbc.update("INSERT INTO tour_departure (id,tour_id,departure_date,available_seats) VALUES (?,1,?,10)",departure,LocalDateTime.of(2026,11,20,6,0));
             db.jdbc.update("INSERT INTO booking (account_id,tour_departure_id,status,created_at) VALUES (7,?,'CONFIRMED',?)",departure,created);
@@ -268,7 +316,7 @@ class BookingLifecycleTest {
         assertEquals(9,db.seats());
     }
     @Test void outboxFailureRollsBackBookingPassengersHoldAndSeats() {
-        db.jdbc.execute("ALTER TABLE mail_outbox ADD CONSTRAINT reject_mail CHECK (event_type='TEST_MAIL')");
+        doThrow(new RuntimeException("Mail provider unavailable")).when(publisher).sendNow(anyString());
         assertThrows(RuntimeException.class, this::create); assertEquals(10, db.seats());
         assertEquals(0, db.count("booking")); assertEquals(0, db.count("customer")); assertEquals(0, db.count("booking_price_snapshot")); assertEquals(0, db.count("booking_reservation"));
     }
@@ -294,7 +342,7 @@ class BookingLifecycleTest {
             var a = pool.submit(() -> expiry.sweep()); var b = pool.submit(() -> lifecycle.cancel(id));
             a.get(10,TimeUnit.SECONDS); b.get(10,TimeUnit.SECONDS);
         }
-        assertEquals(10, db.seats()); assertEquals(2, db.count("mail_outbox"));
+        assertEquals(10, db.seats()); verify(publisher, times(2)).sendNow(anyString());
     }
     @Test void migrationCanBeImportedAgainWithoutChangingSeats() throws Exception {
         create(); db.run("db/003_booking_reservation.sql", System.getenv("LIFECYCLE_TEST_JDBC_URL") != null);
@@ -302,32 +350,23 @@ class BookingLifecycleTest {
     }
     @Test void lockedAccountCannotCreateBookingOrConsumeSeats(){
         db.jdbc.update("UPDATE users SET status='LOCKED' WHERE id=7");
-        assertThrows(ResponseStatusException.class,()->create());assertEquals(10,db.seats());assertEquals(0,db.count("booking"));assertEquals(0,db.count("mail_outbox"));
+        when(authClient.getUserStatus(anyLong())).thenReturn(Map.of("status", "LOCKED"));
+        assertThrows(ResponseStatusException.class,()->create());assertEquals(10,db.seats());assertEquals(0,db.count("booking"));
+        verify(publisher, never()).sendNow(anyString());
     }
-    /**
-     * The profile history page is served by the same list endpoint the admin screens use, so a staff
-     * account needs mine=true to get its own rows instead of the newest global page.
-     */
     @Test void ownListStaysScopedWhenTheAccountMayReadEveryone() {
         int own = create();
         db.jdbc.update("INSERT INTO booking (account_id,tour_departure_id,status,created_at) VALUES (8,1,'CONFIRMED',?)", LocalDateTime.now(clock));
         when(access.can("BOOKINGS_GET_ALL")).thenReturn(true);
         assertEquals(List.of(String.valueOf(own)),
-                lifecycle.list(0, 10, true).stream().map(BookingResponse::getId).toList());
+                lifecycle.list(0, 10, true).stream().map(com.example.booking_service.dto.response.BookingResponse::getId).toList());
         assertEquals(2, lifecycle.list(0, 10, false).size());
     }
-    /**
-     * The sweep walks departures in id order, so a departure that always fails would starve every
-     * later departure; only the failing departure may be left for the next tick.
-     */
     @Test void poisonDepartureDoesNotStarveLaterDepartures() {
         int first = create();
         db.jdbc.update("INSERT INTO tour_departure (id,tour_id,departure_date,available_seats) VALUES (51,1,?,10)", LocalDateTime.of(2026,11,20,6,0));
         var other = request(); other.setTourDepartureId("51");
         int later = Integer.parseInt(lifecycle.create(other).getId());
-        // Only departure 1 is poisoned: the CHECK accepts the row as it stands today and rejects the
-        // version bump the expiry write makes, so its transaction rolls back on every sweep.
-        // MySQL forbids CHECK expressions referencing an AUTO_INCREMENT column.
         db.jdbc.execute("ALTER TABLE tour_departure ADD COLUMN poison_expiry BOOLEAN NOT NULL DEFAULT FALSE");
         db.jdbc.update("UPDATE tour_departure SET poison_expiry=TRUE WHERE id=1");
         db.jdbc.execute("ALTER TABLE tour_departure ADD CONSTRAINT poison_first CHECK (NOT poison_expiry OR version<2)");

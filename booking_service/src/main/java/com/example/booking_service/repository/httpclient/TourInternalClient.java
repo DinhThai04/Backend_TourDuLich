@@ -25,6 +25,15 @@ public interface TourInternalClient {
     @PostMapping("/internal/tour/departures/{id}/increment-version")
     void incrementVersion(@PathVariable("id") Integer id);
 
+    @GetMapping("/internal/tour/departures/by-tour/{tourId}")
+    java.util.List<Map<String, Object>> getDeparturesByTour(@PathVariable("tourId") Integer tourId);
+
+    @PostMapping("/internal/tour/departures/{id}/operational-status")
+    void updateOperationalStatus(@PathVariable("id") Integer id, @RequestParam("status") String status);
+
+    @PostMapping("/internal/tour/departures/replacement")
+    Map<String, Object> createReplacement(@RequestBody Map<String, Object> request);
+
     record HoldSeatsRequest(
             Integer seats,
             String bookingId,

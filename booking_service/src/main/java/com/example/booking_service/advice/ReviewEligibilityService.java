@@ -3,6 +3,8 @@ package com.example.booking_service.advice;
 import com.example.booking_service.notification.ReminderStateReader;
 import com.example.booking_service.reservation.BookingAccess;
 import com.example.booking_service.repository.httpclient.AuthInternalClient;
+import com.example.booking_service.repository.httpclient.InvoiceInternalClient;
+import com.example.booking_service.repository.httpclient.PaymentInternalClient;
 import com.example.booking_service.repository.httpclient.TourInternalClient;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -19,9 +21,15 @@ public class ReviewEligibilityService {
 	private final Clock clock;
 	private final TourInternalClient tourClient;
 	private final AuthInternalClient authClient;
+	private final PaymentInternalClient paymentClient;
+	private final InvoiceInternalClient invoiceClient;
 
-	public ReviewEligibilityService(JdbcTemplate jdbc, BookingAccess access, Clock clock, TourInternalClient tourClient, AuthInternalClient authClient) {
-		this.jdbc=jdbc; this.access=access; this.clock=clock; this.tourClient=tourClient; this.authClient=authClient;
+	public ReviewEligibilityService(JdbcTemplate jdbc, BookingAccess access, Clock clock,
+			TourInternalClient tourClient, AuthInternalClient authClient,
+			PaymentInternalClient paymentClient, InvoiceInternalClient invoiceClient) {
+		this.jdbc=jdbc; this.access=access; this.clock=clock;
+		this.tourClient=tourClient; this.authClient=authClient;
+		this.paymentClient=paymentClient; this.invoiceClient=invoiceClient;
 	}
 	@Transactional(readOnly=true)
 	public Result check(long tourId) {
@@ -54,7 +62,7 @@ public class ReviewEligibilityService {
 			}
 		}
 		
-		var reader=new ReminderStateReader(jdbc, authClient, tourClient);
+		var reader=new ReminderStateReader(jdbc, authClient, tourClient, paymentClient, invoiceClient);
 		for(int id:filteredIds) {
 			var found=reader.read(id);
 			if(found.isEmpty()) continue;

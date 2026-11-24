@@ -15,7 +15,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(controllers=BookingAdviceController.class)
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, BookingInternalSecurityProperties.class})
 class BookingAdviceSecurityTest {
     @Autowired MockMvc mvc;
     @MockBean BookingAdviceService advice;

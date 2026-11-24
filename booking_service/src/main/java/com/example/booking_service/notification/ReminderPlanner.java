@@ -1,6 +1,8 @@
 package com.example.booking_service.notification;
 
 import com.example.booking_service.config.BookingMailOutboxPublisher;
+import com.example.booking_service.repository.httpclient.InvoiceInternalClient;
+import com.example.booking_service.repository.httpclient.PaymentInternalClient;
 import com.example.booking_service.repository.httpclient.TourInternalClient;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -30,10 +32,12 @@ public class ReminderPlanner {
 	private final ReminderRules rules = new ReminderRules();
 	private final TourInternalClient tourClient;
 	
-	public ReminderPlanner(JdbcTemplate jdbc, BookingMailOutboxPublisher publisher, MailProperties properties, Clock clock, PlatformTransactionManager manager, TourInternalClient tourClient) {
+	public ReminderPlanner(JdbcTemplate jdbc, BookingMailOutboxPublisher publisher, MailProperties properties, Clock clock,
+			PlatformTransactionManager manager, TourInternalClient tourClient,
+			PaymentInternalClient paymentClient, InvoiceInternalClient invoiceClient) {
 		this.jdbc=jdbc; this.publisher=publisher; this.properties=properties; this.clock=clock;
-		this.transactions=new TransactionTemplate(manager); 
-		this.reader=new ReminderStateReader(jdbc, null, tourClient); // AuthClient not needed here
+		this.transactions=new TransactionTemplate(manager);
+		this.reader=new ReminderStateReader(jdbc, null, tourClient, paymentClient, invoiceClient);
 		this.tourClient = tourClient;
 	}
 	public Result dispatch(Request request) {

@@ -1,6 +1,8 @@
 package com.example.booking_service.controller;
 
 import com.example.booking_service.repository.httpclient.AuthInternalClient;
+import com.example.booking_service.repository.httpclient.InvoiceInternalClient;
+import com.example.booking_service.repository.httpclient.PaymentInternalClient;
 import com.example.booking_service.repository.httpclient.TourInternalClient;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +22,8 @@ public class InternalBookingController {
 	private final JdbcTemplate jdbc;
 	private final TourInternalClient tourClient;
 	private final AuthInternalClient authClient;
+	private final PaymentInternalClient paymentClient;
+	private final InvoiceInternalClient invoiceClient;
 
 	@GetMapping("/users/{userId}/active-bookings")
 	public ResponseEntity<List<Map<String, Object>>> getActiveBookings(@PathVariable Long userId) {
@@ -58,6 +62,23 @@ public class InternalBookingController {
 			WHERE account_id = ? AND active_key = 1
 			""", userId);
 		return ResponseEntity.ok(changes);
+	}
+
+	@GetMapping("/users/{userId}/has-history")
+	public ResponseEntity<Map<String, Object>> hasUserHistory(@PathVariable Long userId) {
+		boolean hasHistory = false;
+		for (String sql : List.of(
+				"SELECT COUNT(*) FROM booking WHERE account_id = ?",
+				"SELECT COUNT(*) FROM booking_change WHERE account_id = ?",
+				"SELECT COUNT(*) FROM booking_change_event WHERE actor_id = ?",
+				"SELECT COUNT(*) FROM departure_change WHERE created_by = ?")) {
+			Integer count = jdbc.queryForObject(sql, Integer.class, userId);
+			if (count != null && count > 0) {
+				hasHistory = true;
+				break;
+			}
+		}
+		return ResponseEntity.ok(Map.of("hasHistory", hasHistory));
 	}
 
 	@GetMapping("/bookings/{id}")
@@ -135,26 +156,27 @@ public class InternalBookingController {
 
 	@GetMapping("/bookings/{id}/payment-evidence")
 	public ResponseEntity<Map<String, Object>> getPaymentEvidence(@PathVariable Integer id) {
-		LocalDateTime now = LocalDateTime.now();
-		var evidence = jdbc.queryForMap("""
-			SELECT (
-				SELECT COUNT(*) FROM invoice WHERE booking_id = ? AND status = 'PAID'
-			) + (
-				SELECT COUNT(*) FROM payment WHERE booking_id = ? AND status = 'PAID'
-			) + (
-				SELECT COUNT(*) FROM vnpay_transaction
-				WHERE booking_id = ? AND (status = 'PAID' OR (status = 'PENDING' AND expires_at > ?))
-			) + (
-				SELECT COUNT(*) FROM momo_transaction
-				WHERE booking_id = ? AND (status = 'PAID' OR (status = 'PENDING' AND expires_at > ?))
-			) + (
-				SELECT COUNT(*) FROM payment_reconciliation WHERE booking_id = ? AND status = 'OPEN'
-			) AS evidence_count
-			""", id, id, id, now, id, now, id);
-		if (evidence == null || evidence.isEmpty()) {
-			return ResponseEntity.notFound().build();
+		int count = 0;
+		try {
+			Map<String, Object> payEv = paymentClient.getBookingPaymentEvidence(id);
+			if (payEv != null && payEv.get("evidenceCount") instanceof Number n) {
+				count += n.intValue();
+			}
+		} catch (Exception e) {
+			// Fail-closed: treat unreachable payment service as evidence present so seats are not released.
+			return ResponseEntity.ok(Map.of("evidence_count", 1));
 		}
-		return ResponseEntity.ok(evidence);
+		try {
+			Map<String, Object> inv = invoiceClient.getInvoiceByBookingId(id);
+			if (inv != null && "PAID".equals(inv.get("status"))) {
+				count += 1;
+			}
+		} catch (feign.FeignException.NotFound ignored) {
+			// No invoice yet
+		} catch (Exception e) {
+			return ResponseEntity.ok(Map.of("evidence_count", 1));
+		}
+		return ResponseEntity.ok(Map.of("evidence_count", count));
 	}
 
 	@PostMapping("/bookings/{id}/decrement-seats")
@@ -164,15 +186,44 @@ public class InternalBookingController {
 			return ResponseEntity.notFound().build();
 		}
 		int departureId = ((Number) booking.get("tour_departure_id")).intValue();
-		int updated = jdbc.update("""
-			UPDATE tour_departure SET available_seats = available_seats - ?, version = version + 1
-			WHERE id = ? AND available_seats >= ?
-			""", request.seats(), departureId, request.seats());
-		if (updated != 1) {
+		try {
+			Map<String, Object> res = tourClient.holdSeats(departureId,
+					new TourInternalClient.HoldSeatsRequest(request.seats(), String.valueOf(id), LocalDateTime.now().plusMinutes(15)));
+			if (res == null || !Boolean.TRUE.equals(res.get("success"))) {
+				return ResponseEntity.status(409).build();
+			}
+			return ResponseEntity.ok().build();
+		} catch (Exception e) {
 			return ResponseEntity.status(409).build();
 		}
-		return ResponseEntity.ok().build();
 	}
 
 	public record DecrementSeatsRequest(Integer seats) {}
+
+	@PostMapping("/bookings/{id}/mark-paid")
+	public ResponseEntity<Void> markBookingPaid(@PathVariable Integer id) {
+		LocalDateTime now = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
+		jdbc.update("UPDATE booking SET status = 'CONFIRMED' WHERE id = ? AND status = 'PENDING_PAYMENT'", id);
+		jdbc.update("UPDATE booking_reservation SET status = 'PAID', updated_at = ? WHERE booking_id = ?", now, id);
+		return ResponseEntity.ok().build();
+	}
+
+	@PostMapping("/bookings/{id}/expire-checkout")
+	public ResponseEntity<Void> expireCheckout(@PathVariable Integer id) {
+		LocalDateTime now = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
+		var holds = jdbc.queryForList("SELECT departure_id, seats, status FROM booking_reservation WHERE booking_id = ?", id);
+		if (!holds.isEmpty() && "CHECKOUT".equals(holds.getFirst().get("status"))) {
+			int departureId = ((Number) holds.getFirst().get("departure_id")).intValue();
+			int seats = ((Number) holds.getFirst().get("seats")).intValue();
+			if (seats > 0) {
+				try {
+					tourClient.releaseHold(departureId, seats);
+				} catch (Exception ignored) {
+				}
+			}
+			jdbc.update("UPDATE booking SET status = 'EXPIRED' WHERE id = ? AND status IN ('PENDING_PAYMENT', 'CONFIRMED')", id);
+			jdbc.update("UPDATE booking_reservation SET status = 'EXPIRED', cancel_reason = 'CHECKOUT_FAILED', updated_at = ? WHERE booking_id = ? AND status = 'CHECKOUT'", now, id);
+		}
+		return ResponseEntity.ok().build();
+	}
 }

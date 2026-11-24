@@ -1,5 +1,7 @@
 package com.example.booking_service.change;
 
+import com.example.booking_service.repository.httpclient.InvoiceInternalClient;
+import com.example.booking_service.repository.httpclient.PaymentInternalClient;
 import com.example.booking_service.repository.httpclient.PricingInternalClient;
 import com.example.booking_service.repository.httpclient.TourInternalClient;
 import org.springframework.http.HttpStatus;
@@ -24,11 +26,16 @@ public class ChangeLedger {
 	private final JdbcTemplate jdbc;
 	private final TourInternalClient tourClient;
 	private final PricingInternalClient pricingClient;
+	private final PaymentInternalClient paymentClient;
+	private final InvoiceInternalClient invoiceClient;
 
-	public ChangeLedger(JdbcTemplate jdbc, TourInternalClient tourClient, PricingInternalClient pricingClient) {
+	public ChangeLedger(JdbcTemplate jdbc, TourInternalClient tourClient, PricingInternalClient pricingClient,
+			PaymentInternalClient paymentClient, InvoiceInternalClient invoiceClient) {
 		this.jdbc = jdbc;
 		this.tourClient = tourClient;
 		this.pricingClient = pricingClient;
+		this.paymentClient = paymentClient;
+		this.invoiceClient = invoiceClient;
 	}
 
 	public static void require(boolean condition, String message) {
@@ -100,61 +107,58 @@ public class ChangeLedger {
 	}
 
 	public void clearTransactions(int booking) {
-		require(jdbc.queryForObject(
-						"SELECT COUNT(*) FROM payment_reconciliation WHERE booking_id=? AND status='OPEN'",
-						Integer.class, booking) == 0,
-				"Booking đang cần đối soát");
-		require(jdbc.queryForObject(
-						"SELECT COUNT(*) FROM vnpay_transaction WHERE booking_id=? AND status='PENDING'",
-						Integer.class, booking) == 0,
-				"Giao dịch VNPay chưa có kết quả rõ ràng; hết hạn link chưa đủ để chuyển lịch");
-		require(jdbc.queryForObject(
-						"SELECT COUNT(*) FROM momo_transaction WHERE booking_id=? AND status='PENDING'",
-						Integer.class, booking) == 0,
-				"Giao dịch MoMo chưa có kết quả rõ ràng; hết hạn link chưa đủ để chuyển lịch");
+		Map<String, Object> ev;
+		try {
+			ev = paymentClient.getBookingPaymentEvidence(booking);
+		} catch (Exception e) {
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể xác minh trạng thái giao dịch tại payment-service");
+		}
+		require(ev != null && !Boolean.TRUE.equals(ev.get("openReconciliation")), "Booking đang cần đối soát");
+		require(ev != null && !Boolean.TRUE.equals(ev.get("inFlight")),
+				"Giao dịch thanh toán chưa có kết quả rõ ràng; hết hạn link chưa đủ để chuyển lịch");
 	}
 
 	public BigDecimal paid(int booking, int owner) {
-		var invoiceAmount = paidDocument("invoice", booking, owner);
-		var paymentAmount = paidDocument("payment", booking, owner);
+		Map<String, Object> inv;
+		Map<String, Object> pay;
+		try {
+			inv = invoiceClient.getInvoiceByBookingId(booking);
+		} catch (Exception e) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Chứng từ hóa đơn chưa đủ hoặc không thể xác minh");
+		}
+		try {
+			pay = paymentClient.getPaymentStatus(booking);
+		} catch (Exception e) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Chứng từ thanh toán chưa đủ hoặc không thể xác minh");
+		}
+		require(inv != null && "PAID".equals(inv.get("status")) && n(inv, "accountId") == owner,
+				"Chứng từ thanh toán chưa đủ hoặc bị trùng; cần đối soát");
+		require(pay != null && "PAID".equals(pay.get("status")) && n(pay, "accountId") == owner,
+				"Chứng từ thanh toán chưa đủ hoặc bị trùng; cần đối soát");
+		var invoiceAmount = new BigDecimal(inv.get("totalBookingTourExpense").toString());
+		var paymentAmount = new BigDecimal(pay.get("totalBookingTourExpense").toString());
 		require(invoiceAmount.signum() > 0 && invoiceAmount.compareTo(paymentAmount) == 0,
 				"Tiền hóa đơn và payment không khớp");
-
-		// Both providers settle into the same documents, but a stray provider row would still
-		// mean the money story is inconsistent; rescheduling must stop for manual review.
-		require(paidProvider("vnpay_transaction", booking, owner, invoiceAmount),
-				"Giao dịch VNPay PAID cần đối soát");
-		require(paidProvider("momo_transaction", booking, owner, invoiceAmount),
-				"Giao dịch MoMo PAID cần đối soát");
 		return invoiceAmount;
 	}
 
-	private boolean paidProvider(String table, int booking, int owner, BigDecimal amount) {
-		var rows = jdbc.queryForList(
-				"SELECT account_id,amount_vnd FROM " + table + " WHERE booking_id=? AND status='PAID'",
-				booking);
-		return rows.size() <= 1 && rows.stream()
-				.allMatch(row -> n(row, "account_id") == owner
-						&& new BigDecimal(row.get("amount_vnd").toString()).compareTo(amount) == 0);
-	}
-
-	private BigDecimal paidDocument(String table, int booking, int owner) {
-		var rows = jdbc.queryForList(
-				"SELECT account_id,total_booking_tour_expense FROM " + table
-						+ " WHERE booking_id=? AND status='PAID'",
-				booking);
-		require(rows.size() == 1 && n(rows.getFirst(), "account_id") == owner,
-				"Chứng từ thanh toán chưa đủ hoặc bị trùng; cần đối soát");
-		return new BigDecimal(rows.getFirst().get("total_booking_tour_expense").toString());
-	}
-
 	public boolean hasPaid(int booking) {
-		return jdbc.queryForObject("""
-				SELECT (SELECT COUNT(*) FROM invoice WHERE booking_id=? AND status='PAID')
-					 + (SELECT COUNT(*) FROM payment WHERE booking_id=? AND status='PAID')
-					 + (SELECT COUNT(*) FROM vnpay_transaction WHERE booking_id=? AND status='PAID')
-					 + (SELECT COUNT(*) FROM momo_transaction WHERE booking_id=? AND status='PAID')
-				""", Integer.class, booking, booking, booking, booking) > 0;
+		try {
+			Map<String, Object> ev = paymentClient.getBookingPaymentEvidence(booking);
+			if (ev != null && (Boolean.TRUE.equals(ev.get("paidPayment")) || Boolean.TRUE.equals(ev.get("paidProvider")))) {
+				return true;
+			}
+		} catch (Exception e) {
+			return true;
+		}
+		try {
+			Map<String, Object> inv = invoiceClient.getInvoiceByBookingId(booking);
+			return inv != null && "PAID".equals(inv.get("status"));
+		} catch (feign.FeignException.NotFound ignored) {
+			return false;
+		} catch (Exception e) {
+			return true;
+		}
 	}
 
 	public int people(int booking) {

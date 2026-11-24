@@ -3,7 +3,6 @@ package com.example.booking_service.config;
 import com.example.booking_service.config.NotificationMailClient;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -12,12 +11,12 @@ import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 /** Delivers durable Booking-owned mail-requested events to Notification with at-least-once semantics. */
 @Component
 @RequiredArgsConstructor
 @Slf4j
-@ConditionalOnProperty(name = "app.booking.outbox.enabled", havingValue = "true")
 public class BookingMailOutboxPublisher {
     private static final int BATCH_SIZE = 25;
     private static final int LEASE_SECONDS = 120;
@@ -109,8 +108,23 @@ public class BookingMailOutboxPublisher {
         return jdbc.queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class);
     }
 
-    /** Gửi ngay một sự kiện mail (dùng trực tiếp từ BookingMailEvents). */
+    /**
+     * Persists the mail request in Booking's transaction. The scheduled publisher then calls
+     * Notification with retries, so a short Notification outage cannot lose booking mail.
+     */
     public void sendNow(String payloadJson) {
-        notificationClient.sendBookingMail(payloadJson);
+        String aggregateId;
+        try {
+            var payload = new com.fasterxml.jackson.databind.ObjectMapper().readTree(payloadJson);
+            aggregateId = payload.path("bookingId").asText("0");
+        } catch (com.fasterxml.jackson.core.JsonProcessingException invalidPayload) {
+            throw new IllegalArgumentException("Booking mail payload is invalid", invalidPayload);
+        }
+        jdbc.update("""
+                INSERT INTO booking_outbox(event_id,event_type,aggregate_type,aggregate_id,
+                    aggregate_version,payload,status,attempts,available_at,created_at)
+                VALUES (?,'booking.mail.requested.v1','Booking',?,1,?,'PENDING',0,
+                    CURRENT_TIMESTAMP(6),CURRENT_TIMESTAMP(6))
+                """, UUID.randomUUID().toString(), aggregateId, payloadJson);
     }
 }

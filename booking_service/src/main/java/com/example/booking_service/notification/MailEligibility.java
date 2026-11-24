@@ -1,6 +1,8 @@
 package com.example.booking_service.notification;
 
 import com.example.booking_service.repository.httpclient.AuthInternalClient;
+import com.example.booking_service.repository.httpclient.InvoiceInternalClient;
+import com.example.booking_service.repository.httpclient.PaymentInternalClient;
 import com.example.booking_service.repository.httpclient.TourInternalClient;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
@@ -14,12 +16,17 @@ public class MailEligibility {
 	private final Clock clock;
 	private final AuthInternalClient authClient;
 	private final TourInternalClient tourClient;
-	
-	public MailEligibility(JdbcTemplate jdbc, Clock clock, AuthInternalClient authClient, TourInternalClient tourClient) { 
-		this.jdbc = jdbc; 
-		this.clock = clock; 
+	private final PaymentInternalClient paymentClient;
+	private final InvoiceInternalClient invoiceClient;
+
+	public MailEligibility(JdbcTemplate jdbc, Clock clock, AuthInternalClient authClient, TourInternalClient tourClient,
+			PaymentInternalClient paymentClient, InvoiceInternalClient invoiceClient) {
+		this.jdbc = jdbc;
+		this.clock = clock;
 		this.authClient = authClient;
 		this.tourClient = tourClient;
+		this.paymentClient = paymentClient;
+		this.invoiceClient = invoiceClient;
 	}
 
 	public String skipReason(MailOutboxItem item, MailPayload payload) {
@@ -67,7 +74,7 @@ public class MailEligibility {
 				? null : "Schedule notice was superseded";
 		}
 		if (item.eventType() == MailEventType.PAYMENT_REMINDER || item.eventType() == MailEventType.DEPARTURE_REMINDER) {
-			var state=new ReminderStateReader(jdbc, authClient, tourClient).read(item.bookingId());
+			var state=new ReminderStateReader(jdbc, authClient, tourClient, paymentClient, invoiceClient).read(item.bookingId());
 			if(state.isEmpty()) return "Reminder booking no longer exists";
 			var s=state.get();
 			if(!Objects.equals(item.accountId(),s.accountId()) || !item.recipient().equalsIgnoreCase(s.recipient())
@@ -113,12 +120,24 @@ public class MailEligibility {
 		if (!Objects.equals(item.accountId(), ((Number)booking.get("account_id")).intValue())
 				|| !item.recipient().equalsIgnoreCase(email))
 			return "Booking owner or email changed";
-		int payments = jdbc.queryForObject("SELECT COUNT(*) FROM payment WHERE booking_id=? AND account_id=? AND status='PAID'",
-				Integer.class, item.bookingId(), item.accountId());
-		int invoices = jdbc.queryForObject("SELECT COUNT(*) FROM invoice WHERE booking_id=? AND account_id=? AND status='PAID'",
-				Integer.class, item.bookingId(), item.accountId());
-		boolean paid = payments > 0 && invoices > 0;
-		if ((payments > 0) != (invoices > 0)) return "Payment and invoice require reconciliation";
+		boolean paidPayment = false;
+		try {
+			Map<String, Object> payEv = paymentClient.getBookingPaymentEvidence(item.bookingId());
+			paidPayment = payEv != null && Boolean.TRUE.equals(payEv.get("paidPayment"));
+		} catch (Exception e) {
+			return "Payment service unavailable";
+		}
+		boolean paidInvoice = false;
+		try {
+			Map<String, Object> inv = invoiceClient.getInvoiceByBookingId(item.bookingId());
+			paidInvoice = inv != null && "PAID".equals(inv.get("status"));
+		} catch (feign.FeignException.NotFound ignored) {
+			paidInvoice = false;
+		} catch (Exception e) {
+			return "Invoice service unavailable";
+		}
+		boolean paid = paidPayment && paidInvoice;
+		if (paidPayment != paidInvoice) return "Payment and invoice require reconciliation";
 		boolean active = java.util.List.of("PENDING_PAYMENT", "CONFIRMED").contains(String.valueOf(booking.get("status")));
 		if (item.eventType() == MailEventType.BOOKING_CANCELLED || item.eventType() == MailEventType.BOOKING_EXPIRED)
 			return active ? "Booking is no longer cancelled" : null;
@@ -127,15 +146,16 @@ public class MailEligibility {
 			if(!Objects.equals(payload.departureId(), departureId)
 				|| !Objects.equals(payload.departureAt(), departureDate))
 				return "Receipt departure changed; see schedule confirmation";
-			// Receipts are emitted for both providers; the reference is unique per provider table.
-			int settled = jdbc.queryForObject("""
-				SELECT (SELECT COUNT(*) FROM vnpay_transaction WHERE booking_id=? AND account_id=?
-							AND txn_ref=? AND status='PAID' AND amount_vnd=?)
-					 + (SELECT COUNT(*) FROM momo_transaction WHERE booking_id=? AND account_id=?
-							AND order_id=? AND status='PAID' AND amount_vnd=?)
-				""", Integer.class, item.bookingId(), item.accountId(), payload.transactionRef(), payload.amountVnd(),
-					item.bookingId(), item.accountId(), payload.transactionRef(), payload.amountVnd());
-			return paid && settled == 1 ? null : "Verified payment no longer matches event";
+			boolean settled = false;
+			try {
+				Map<String, Object> refRes = paymentClient.hasSettledReference(
+						item.bookingId(), item.accountId().longValue(), payload.transactionRef(),
+						payload.amountVnd() != null ? payload.amountVnd().longValue() : 0L);
+				settled = refRes != null && Boolean.TRUE.equals(refRes.get("settled"));
+			} catch (Exception e) {
+				return "Payment service unavailable";
+			}
+			return paid && settled ? null : "Verified payment no longer matches event";
 		}
 		if (!active) return "Booking is cancelled";
 		if(java.util.List.of("SUSPENDED","CANCELLED").contains(operationalStatus)) return "Departure suspended";

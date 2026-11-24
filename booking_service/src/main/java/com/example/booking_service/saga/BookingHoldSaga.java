@@ -172,8 +172,7 @@ public class BookingHoldSaga {
 			tourClient.releaseHold(departureId, seats);
 		} catch (Exception e) {
 			log.warn("Failed to release hold via Tour internal API for departure {}: {}", departureId, e.getMessage());
-			// Fallback to direct update
-			jdbc.update("UPDATE tour_departure SET available_seats = LEAST(COALESCE(capacity, 32767), available_seats + ?), version = version + 1 WHERE id = ?", seats, departureId);
+			throw new RuntimeException("Failed to release hold via Tour internal API", e);
 		}
 	}
 
