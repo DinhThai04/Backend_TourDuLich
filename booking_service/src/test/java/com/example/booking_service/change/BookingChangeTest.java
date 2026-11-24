@@ -81,16 +81,16 @@ class BookingChangeTest {
         answerDeparture(tourClient, start);
         var events = new BookingMailEvents(db.jdbc, publisher, clock, authClient, tourClient);
 
-        var payC = com.example.booking_service.TestInternalClients.payment(db.jdbc); var invC = com.example.booking_service.TestInternalClients.invoice(db.jdbc); var tourC = com.example.booking_service.TestInternalClients.tour(db.jdbc);
+        var payC = com.example.booking_service.TestInternalClients.payment(db.jdbc, clock); var invC = com.example.booking_service.TestInternalClients.invoice(db.jdbc); var tourC = com.example.booking_service.TestInternalClients.tour(db.jdbc);
         expiry = new ReservationExpiryService(db.jdbc, db.manager, events, clock, tourC, payC, invC);
         lifecycle = new BookingLifecycleService(db.jdbc, db.manager, new ReservationPolicy(), expiry, events, new BookingAccess(), clock,
                 authClient, mock(InvoiceInternalClient.class), pricingClient, tourClient);
 
         service = new BookingChangeService(db.jdbc,
-                new ChangeLedger(db.jdbc, com.example.booking_service.TestInternalClients.tour(db.jdbc), pricingClient, com.example.booking_service.TestInternalClients.payment(db.jdbc), com.example.booking_service.TestInternalClients.invoice(db.jdbc)),
+                new ChangeLedger(db.jdbc, tourC, pricingClient, payC, invC),
                 access, new ReservationPolicy(),
                 new ChangeMailEvents(db.jdbc, publisher, clock, authClient, tourClient),
-                clock, db.manager, authClient, com.example.booking_service.TestInternalClients.tour(db.jdbc), com.example.booking_service.TestInternalClients.payment(db.jdbc));
+                clock, db.manager, authClient, tourC, payC);
 
         eligibility = new MailEligibility(db.jdbc, clock, authClient, tourC, payC, invC);
         login(7);
@@ -359,9 +359,8 @@ class BookingChangeTest {
     @Test
     void mailEnqueueFailureRollsBackRequestAuditAndInventory() {
         int b = booking(true);
-        var notificationClient = mock(NotificationMailClient.class);
-        doThrow(new IllegalArgumentException("Mail provider unavailable")).when(notificationClient).sendBookingMail(anyString());
-        var publisher = new BookingMailOutboxPublisher(db.jdbc, notificationClient);
+        var publisher = mock(BookingMailOutboxPublisher.class);
+        doThrow(new IllegalArgumentException("Mail provider unavailable")).when(publisher).sendNow(anyString());
         var tourClient = mock(TourInternalClient.class);
         answerDeparture(tourClient, start);
         var changeMail = new ChangeMailEvents(db.jdbc, publisher, clock, authClient, tourClient);

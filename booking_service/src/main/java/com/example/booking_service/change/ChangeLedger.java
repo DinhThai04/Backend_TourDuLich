@@ -114,7 +114,7 @@ public class ChangeLedger {
 			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể xác minh trạng thái giao dịch tại payment-service");
 		}
 		require(ev != null && !Boolean.TRUE.equals(ev.get("openReconciliation")), "Booking đang cần đối soát");
-		require(ev != null && !Boolean.TRUE.equals(ev.get("inFlight")),
+		require(ev != null && !Boolean.TRUE.equals(ev.get("inFlight")) && !Boolean.TRUE.equals(ev.get("pendingProvider")),
 				"Giao dịch thanh toán chưa có kết quả rõ ràng; hết hạn link chưa đủ để chuyển lịch");
 	}
 

@@ -3,7 +3,9 @@ package com.example.booking_service;
 import com.example.booking_service.repository.httpclient.InvoiceInternalClient;
 import com.example.booking_service.repository.httpclient.PaymentInternalClient;
 import com.example.booking_service.repository.httpclient.TourInternalClient;
+import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
 import java.time.ZoneId;
@@ -35,8 +37,23 @@ public final class TestInternalClients {
             var req = inv.getArgument(1, TourInternalClient.HoldSeatsRequest.class);
             int updated = jdbc.update("UPDATE tour_departure SET available_seats=available_seats-?,version=version+1 WHERE id=? AND available_seats>=?",
                     req.seats(), id, req.seats());
-            if (updated != 1) throw new IllegalStateException("Insufficient seats");
+            if (updated != 1) throw new ResponseStatusException(HttpStatus.CONFLICT, "Insufficient seats");
             return Map.of("success", true);
+        });
+        when(client.createReplacement(any())).thenAnswer(inv -> {
+            @SuppressWarnings("unchecked")
+            Map<String, Object> req = inv.getArgument(0, Map.class);
+            int nextId = jdbc.queryForObject("SELECT COALESCE(MAX(id),0)+1 FROM tour_departure", Integer.class);
+            Object tourId = req.get("tourId");
+            String tourCode = String.valueOf(req.getOrDefault("tourCode", "SGU-R-" + nextId));
+            LocalDateTime depDate = LocalDateTime.parse(String.valueOf(req.get("departureDate")));
+            LocalDateTime retDate = LocalDateTime.parse(String.valueOf(req.get("returnDate")));
+            int cap = ((Number) req.get("capacity")).intValue();
+            jdbc.update("""
+                    INSERT INTO tour_departure (id, tour_id, tour_code, departure_date, return_date, available_seats, capacity, operational_status, version)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'REPLACEMENT_ONLY', 0)
+                    """, nextId, tourId, tourCode, depDate, retDate, cap, cap);
+            return normalized(jdbc.queryForMap("SELECT * FROM tour_departure WHERE id=?", nextId));
         });
         when(client.releaseHold(anyInt(), anyInt())).thenAnswer(inv -> {
             int id = inv.getArgument(0, Integer.class);
@@ -73,11 +90,14 @@ public final class TestInternalClients {
             int openRec = count(jdbc, "SELECT COUNT(*) FROM payment_reconciliation WHERE booking_id=? AND status='OPEN'", bId);
             int pendVn = count(jdbc, "SELECT COUNT(*) FROM vnpay_transaction WHERE booking_id=? AND status='PENDING' AND expires_at>?", bId, grace);
             int pendMo = count(jdbc, "SELECT COUNT(*) FROM momo_transaction WHERE booking_id=? AND status='PENDING' AND expires_at>?", bId, grace);
+            int pendAny = count(jdbc, "SELECT COUNT(*) FROM vnpay_transaction WHERE booking_id=? AND status='PENDING'", bId)
+                    + count(jdbc, "SELECT COUNT(*) FROM momo_transaction WHERE booking_id=? AND status='PENDING'", bId);
             return Map.of(
                     "paidPayment", paidPay > 0,
                     "paidProvider", (paidVn + paidMo) > 0,
                     "openReconciliation", openRec > 0,
                     "inFlight", (pendVn + pendMo) > 0,
+                    "pendingProvider", pendAny > 0,
                     "paidEvidence", (paidPay + paidVn + paidMo + openRec) > 0,
                     "evidenceCount", paidPay + paidVn + paidMo + openRec + pendVn + pendMo
             );
