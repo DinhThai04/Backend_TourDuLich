@@ -49,14 +49,55 @@ x-java-env: &java-env
   # máy nhiều RAM đặt JAVA_XMX=512m hoặc 1g nhưng phải chừa RAM cho OS/MySQL.
   JAVA_XMX: ${JAVA_XMX:-}
   JWT_SIGNER_KEY: ${JWT_SIGNER_KEY:-sgu-tour-local-dev-signing-key-2026}
+  SPRING_RABBITMQ_HOST: rabbitmq
+  SPRING_RABBITMQ_PORT: "5672"
+  SPRING_RABBITMQ_USERNAME: sgu_user
+  SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-sgu-tour-rabbit-local-only}
+  SPRING_RABBITMQ_VIRTUAL_HOST: sgu_vhost
 
 # Only datasource services inherit this dependency. Gateway has its own health dependencies.
 x-database-client: &database-client
   depends_on:
     mysql:
       condition: service_healthy
+    rabbitmq:
+      condition: service_healthy
 
 services:
+  rabbitmq-volume-init:
+    image: alpine:3.20
+    user: "0:0"
+    command: ["sh", "-ec", "if [ ! -e /var/lib/rabbitmq/.volume-initialized ]; then chown -R 100:101 /var/lib/rabbitmq; touch /var/lib/rabbitmq/.volume-initialized; chown 100:101 /var/lib/rabbitmq/.volume-initialized; fi"]
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: "no"
+    network_mode: none
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+
+  rabbitmq:
+    depends_on:
+      rabbitmq-volume-init:
+        condition: service_completed_successfully
+    image: rabbitmq:3.13-management-alpine
+    restart: unless-stopped
+    logging: *logging
+    environment:
+      RABBITMQ_DEFAULT_USER: sgu_user
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-sgu-tour-rabbit-local-only}
+      RABBITMQ_DEFAULT_VHOST: sgu_vhost
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
   mysql:
     image: mysql:8.4
     restart: unless-stopped
@@ -74,15 +115,15 @@ services:
     volumes:
       - mysql_data:/var/lib/mysql
       - ./data_seed/init-multi-db.sql:/docker-entrypoint-initdb.d/01-init-multi-db.sql:ro
-      - ./data_seed/microservices/sgu_auth.sql:/docker-entrypoint-initdb.d/sgu_auth.sql:ro
-      - ./data_seed/microservices/sgu_booking.sql:/docker-entrypoint-initdb.d/sgu_booking.sql:ro
-      - ./data_seed/microservices/sgu_payment.sql:/docker-entrypoint-initdb.d/sgu_payment.sql:ro
-      - ./data_seed/microservices/sgu_pricing.sql:/docker-entrypoint-initdb.d/sgu_pricing.sql:ro
-      - ./data_seed/microservices/sgu_tour.sql:/docker-entrypoint-initdb.d/sgu_tour.sql:ro
-      - ./data_seed/microservices/sgu_file.sql:/docker-entrypoint-initdb.d/sgu_file.sql:ro
-      - ./data_seed/microservices/sgu_invoice.sql:/docker-entrypoint-initdb.d/sgu_invoice.sql:ro
-      - ./data_seed/microservices/sgu_notification.sql:/docker-entrypoint-initdb.d/sgu_notification.sql:ro
-      - ./data_seed/microservices/sgu_reporting.sql:/docker-entrypoint-initdb.d/sgu_reporting.sql:ro
+      - ./data_seed/microservices/sgu_auth.sql:/docker-entrypoint-initdb.d/sql/sgu_auth.sql:ro
+      - ./data_seed/microservices/sgu_booking.sql:/docker-entrypoint-initdb.d/sql/sgu_booking.sql:ro
+      - ./data_seed/microservices/sgu_payment.sql:/docker-entrypoint-initdb.d/sql/sgu_payment.sql:ro
+      - ./data_seed/microservices/sgu_pricing.sql:/docker-entrypoint-initdb.d/sql/sgu_pricing.sql:ro
+      - ./data_seed/microservices/sgu_tour.sql:/docker-entrypoint-initdb.d/sql/sgu_tour.sql:ro
+      - ./data_seed/microservices/sgu_file.sql:/docker-entrypoint-initdb.d/sql/sgu_file.sql:ro
+      - ./data_seed/microservices/sgu_invoice.sql:/docker-entrypoint-initdb.d/sql/sgu_invoice.sql:ro
+      - ./data_seed/microservices/sgu_notification.sql:/docker-entrypoint-initdb.d/sql/sgu_notification.sql:ro
+      - ./data_seed/microservices/sgu_reporting.sql:/docker-entrypoint-initdb.d/sql/sgu_reporting.sql:ro
     healthcheck:
       # A real TCP query runs only after initdb, and verifies the seed completed.
       test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=TCP -h 127.0.0.1 -u sgu_tour -D sgu_auth --skip-column-names -e 'SELECT COUNT(*) FROM users' >/dev/null"]
@@ -139,7 +180,7 @@ services:
       DB_POOL_MIN: ${DB_POOL_MIN:-2}
       DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
       APP_SERVICES_PAYMENT_BASE_URL: http://payment-service:8083/payment
-      APP_SERVICES_NOTIFICATION_BASE_URL: http://notification_service:8093/notification
+      APP_SERVICES_NOTIFICATION_BASE_URL: http://notification-service:8093/notification
       APP_SERVICES_PRICING_BASE_URL: http://pricing-service:8084/pricing
       APP_SERVICES_TOUR_BASE_URL: http://tour-service:8086/tour
       BOOKING_INTERNAL_KEY: ${BOOKING_INTERNAL_KEY:-}
@@ -184,9 +225,10 @@ services:
       DB_POOL_MAX: ${DB_POOL_MAX:-10}
       DB_POOL_MIN: ${DB_POOL_MIN:-2}
       DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
-      APP_SERVICES_NOTIFICATION_BASE_URL: http://notification_service:8093/notification
+      APP_SERVICES_NOTIFICATION_BASE_URL: http://notification-service:8093/notification
       APP_SERVICES_PRICING_BASE_URL: http://pricing-service:8084/pricing
       APP_SERVICES_TOUR_BASE_URL: http://tour-service:8086/tour
+      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:-}
       PAYMENT_INTERNAL_KEY: ${PAYMENT_INTERNAL_KEY:-}
       NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY:-}
       PRICING_INTERNAL_KEY: ${PRICING_INTERNAL_KEY:-}
@@ -221,6 +263,7 @@ services:
       DB_POOL_MAX: ${DB_POOL_MAX:-10}
       DB_POOL_MIN: ${DB_POOL_MIN:-2}
       DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
+      PRICING_INTERNAL_KEY: ${PRICING_INTERNAL_KEY:-}
     volumes:
       - ./.local:/app/.local:ro
     healthcheck:
@@ -248,6 +291,11 @@ services:
       TOUR_RANDOM_TTL_MS: ${TOUR_RANDOM_TTL_MS:-0}
       # The catalogue snapshot endpoint requires this key (loopback only when blank).
       CATALOG_INTERNAL_KEY: ${CATALOG_INTERNAL_KEY:-}
+      TOUR_INTERNAL_KEY: ${TOUR_INTERNAL_KEY:-}
+      TOUR_OUTBOX_ENABLED: "true"
+      TOUR_OUTBOX_POLL_INTERVAL_MS: ${TOUR_OUTBOX_POLL_INTERVAL_MS:-1000}
+      PRICING_INTERNAL_KEY: ${PRICING_INTERNAL_KEY:-}
+      FILE_INTERNAL_KEY: ${FILE_INTERNAL_KEY:-}
     volumes:
       - ./.local:/app/.local:ro
       - tour_images:/app/data
@@ -270,6 +318,9 @@ services:
       CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-sgu-tour-local-cloud}
       CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-dummy-key}
       CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-dummy-secret}
+      FILE_INTERNAL_KEY: ${FILE_INTERNAL_KEY:-}
+      AUTH_SERVICE_BASE_URL: http://auth-service:8080/auth
+      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:-}
     volumes:
       - ./.local:/app/.local:ro
     healthcheck:
@@ -288,7 +339,10 @@ services:
       DB_POOL_MAX: ${DB_POOL_MAX:-10}
       DB_POOL_MIN: ${DB_POOL_MIN:-2}
       DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
-      TOUR_BASE_URL: http://tour-service:8086/tour
+      APP_SERVICES_TOUR_BASE_URL: http://tour-service:8086/tour
+      APP_SERVICES_BOOKING_BASE_URL: http://booking-service:8081/booking
+      BOOKING_INTERNAL_KEY: ${BOOKING_INTERNAL_KEY:-}
+      INVOICE_INTERNAL_KEY: ${INVOICE_INTERNAL_KEY:-}
     volumes:
       - ./.local:/app/.local:ro
     healthcheck:
@@ -307,6 +361,7 @@ services:
       DB_POOL_MAX: ${DB_POOL_MAX:-5}
       DB_POOL_MIN: ${DB_POOL_MIN:-1}
       DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
+      NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY:-}
     volumes:
       - ./.local:/app/.local:ro
     healthcheck:
@@ -325,6 +380,7 @@ services:
       DB_POOL_MAX: ${DB_POOL_MAX:-5}
       DB_POOL_MIN: ${DB_POOL_MIN:-1}
       DB_POOL_TIMEOUT_MS: ${DB_POOL_TIMEOUT_MS:-10000}
+      REPORTING_INTERNAL_KEY: ${REPORTING_INTERNAL_KEY:-}
     volumes:
       - ./.local:/app/.local:ro
     healthcheck:
@@ -510,6 +566,7 @@ services:
 
 volumes:
   mysql_data:
+  rabbitmq_data:
   es_data:
   tour_images:
   n8n_data:
