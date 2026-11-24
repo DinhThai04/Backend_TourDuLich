@@ -11,4 +11,10 @@ public interface PaymentInternalClient {
 
     @GetMapping("/internal/payment/reconciliation/open-count/{accountId}")
     Map<String, Object> getOpenReconciliationCount(@PathVariable("accountId") Long accountId);
+
+    @GetMapping("/internal/payment/users/{accountId}/pending-transactions")
+    Map<String, Object> getPendingTransactions(@PathVariable("accountId") Long accountId);
+
+    @GetMapping("/internal/payment/users/{accountId}/has-history")
+    Map<String, Object> hasUserHistory(@PathVariable("accountId") Long accountId);
 }

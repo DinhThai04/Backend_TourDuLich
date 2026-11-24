@@ -42,12 +42,17 @@ public class InternalAuthAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
-                "internal-auth-service",
-                null,
-                List.of(new SimpleGrantedAuthority("ROLE_INTERNAL-service"))
-        );
-        SecurityContextHolder.getContext().setAuthentication(auth);
+        // Let the resource-server bearer filter authenticate the forwarded user token.
+        // Other internal calls without a bearer token retain the internal service principal.
+        String authorization = request.getHeader("Authorization");
+        if (authorization == null || !authorization.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            UsernamePasswordAuthenticationToken auth = new UsernamePasswordAuthenticationToken(
+                    "internal-auth-service",
+                    null,
+                    List.of(new SimpleGrantedAuthority("ROLE_INTERNAL-service"))
+            );
+            SecurityContextHolder.getContext().setAuthentication(auth);
+        }
         filterChain.doFilter(request, response);
     }
 }

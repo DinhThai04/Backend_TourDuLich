@@ -54,6 +54,9 @@ jwt:
   refreshable-duration: 72000 # in seconds
 app:
   auth:
+    outbox:
+      enabled: ${AUTH_OUTBOX_ENABLED:true}
+      poll-interval-ms: ${AUTH_OUTBOX_POLL_INTERVAL_MS:1000}
     internal:
       internal-key: ${AUTH_INTERNAL_KEY}
   catalog:

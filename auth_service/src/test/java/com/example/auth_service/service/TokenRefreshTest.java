@@ -33,7 +33,7 @@ class TokenRefreshTest {
     }
     private String token(String type) throws Exception {
         long lifetimeMillis = "refresh".equals(type) ? 7_200_000L : 3_600_000L;
-        var jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS512), new JWTClaimsSet.Builder().subject("2")
+        var jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), new JWTClaimsSet.Builder().subject("2")
                 .issuer("tour.com").issueTime(new Date()).expirationTime(new Date(System.currentTimeMillis()+lifetimeMillis))
                 .jwtID("old-id").claim("tokenType", type).claim("scope", "ROLE_Customer")
                 .claim("credentialVersion", com.example.auth_service.config.CredentialVersion.of(user, KEY)).build());
@@ -50,7 +50,7 @@ class TokenRefreshTest {
                 .jwtID(jti).claim("tokenType", type).claim("scope", "ROLE_Customer")
                 .claim("credentialVersion", com.example.auth_service.config.CredentialVersion.of(user, KEY));
         if (sessionEpoch != null) claims.claim("sessionEpoch", sessionEpoch);
-        var jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS512), claims.build());
+        var jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), claims.build());
         jwt.sign(new MACSigner(KEY));
         return jwt.serialize();
     }
@@ -66,7 +66,7 @@ class TokenRefreshTest {
         assertThrows(com.example.auth_service.exception.AppException.class,
                 () -> service.refreshToken(oldRefresh));
 
-        var jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS512), new JWTClaimsSet.Builder()
+        var jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), new JWTClaimsSet.Builder()
                 .subject("2").issuer("tour.com").issueTime(new Date())
                 .expirationTime(new Date(System.currentTimeMillis()+3_600_000L))
                 .jwtID("replacement-id").claim("tokenType", "access").claim("scope", "ROLE_Customer")

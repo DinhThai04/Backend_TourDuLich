@@ -3,6 +3,9 @@ package com.example.auth_service.service;
 import com.example.auth_service.config.AccountAccess;
 import com.example.auth_service.entity.*;
 import com.example.auth_service.repository.*;
+import com.example.auth_service.repository.httpclient.BookingInternalClient;
+import com.example.auth_service.repository.httpclient.InvoiceInternalClient;
+import com.example.auth_service.repository.httpclient.NotificationInternalClient;
 import com.example.auth_service.repository.httpclient.PaymentInternalClient;
 import com.example.auth_service.repository.httpclient.TourInternalClient;
 import lombok.RequiredArgsConstructor;
@@ -16,6 +19,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.*;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 @Service @RequiredArgsConstructor
 public class AccountLifecycleService {
@@ -26,6 +30,9 @@ public class AccountLifecycleService {
 	private final AdminContinuity adminContinuity;
 	private final TourInternalClient tourClient;
 	private final PaymentInternalClient paymentClient;
+	private final BookingInternalClient bookingClient;
+	private final InvoiceInternalClient invoiceClient;
+	private final NotificationInternalClient notificationClient;
 	@Value("${app.registration.customer-role-name:Khách Hàng}") private String customerRoleName;
 	private ResponseStatusException conflict(String text){return new ResponseStatusException(HttpStatus.CONFLICT,text);}
 	private void require(boolean condition,String message){if(!condition)throw conflict(message);}
@@ -55,77 +62,110 @@ public class AccountLifecycleService {
 		adminContinuity.requireUserRoleChange(id,null);
 		return target;
 	}
-	private int count(String sql,Object... args){return jdbc.queryForObject(sql,Integer.class,args);}
+	private static long toLong(Object value) {
+		if (value instanceof Number number) return number.longValue();
+		if (value instanceof String text && !text.isBlank()) return Long.parseLong(text.trim());
+		return 0L;
+	}
+	private static boolean toBoolean(Map<String, Object> body, String key) {
+		if (body == null) return false;
+		Object value = body.get(key);
+		if (value instanceof Boolean flag) return flag;
+		if (value instanceof Number number) return number.longValue() > 0;
+		return value != null && Boolean.parseBoolean(value.toString());
+	}
+	private static LocalDateTime toLocalDateTime(Object value) {
+		if (value instanceof LocalDateTime ldt) return ldt;
+		if (value instanceof java.sql.Timestamp ts) return ts.toLocalDateTime();
+		if (value instanceof String text && !text.isBlank()) return LocalDateTime.parse(text.trim());
+		return null;
+	}
 	/** One clock for this service: the app writes Asia/Ho_Chi_Minh timestamps, so it must read them with the same clock. */
 	private static LocalDateTime now(){return LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));}
 	private void resolved(long id){
 		LocalDateTime current=now();
-		
-		// Check for active bookings without cross-DB JOIN
-		var activeBookings = jdbc.queryForList("""
-			SELECT b.id, b.tour_departure_id FROM booking b 
-			WHERE b.account_id=? AND b.status IN ('PENDING_PAYMENT','CONFIRMED') AND b.tour_departure_id IS NOT NULL
-			""", id);
-		
+
+		// 1. Check active bookings via Booking internal API (fail-closed)
+		List<Map<String, Object>> activeBookings;
+		try {
+			activeBookings = bookingClient.getActiveBookings(id);
+		} catch (Exception e) {
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể xác minh trạng thái đặt chỗ từ booking-service");
+		}
 		boolean hasActiveBooking = false;
-		for (var booking : activeBookings) {
-			Integer departureId = (Integer) booking.get("tour_departure_id");
-			if (departureId != null) {
-				try {
-					Map<String, Object> departure = tourClient.getDeparture(departureId);
-					if (departure != null) {
-						Object returnDate = departure.get("return_date");
-						LocalDateTime returnDt = returnDate instanceof LocalDateTime ? (LocalDateTime) returnDate : ((java.sql.Timestamp) returnDate).toLocalDateTime();
-						if (returnDt.isAfter(current)) {
-							hasActiveBooking = true;
-							break;
-						}
-					} else {
-						// If tour service unavailable, assume active
+		if (activeBookings != null) {
+			for (var booking : activeBookings) {
+				LocalDateTime returnDt = toLocalDateTime(booking.get("return_date"));
+				if (returnDt == null) {
+					Object rawDepId = booking.get("tour_departure_id");
+					Integer departureId = rawDepId instanceof Number n ? n.intValue() : null;
+					if (departureId == null) {
 						hasActiveBooking = true;
 						break;
 					}
-				} catch (Exception e) {
-					// If tour service unavailable, assume active
+					try {
+						Map<String, Object> departure = tourClient.getDeparture(departureId);
+						returnDt = departure != null ? toLocalDateTime(departure.get("return_date")) : null;
+					} catch (Exception e) {
+						hasActiveBooking = true;
+						break;
+					}
+				}
+				if (returnDt == null || returnDt.isAfter(current)) {
 					hasActiveBooking = true;
 					break;
 				}
-			} else {
-				// No departure ID, assume active
-				hasActiveBooking = true;
-				break;
 			}
 		}
 		require(!hasActiveBooking, "Tài khoản còn chuyến đi chưa hoàn tất");
-		
-		// Same "money still in flight" predicate as ReservationExpiryService: a PENDING row past its
-		// expiry is reconciliation work, so blocking archival on it forever would strand the account.
-		require(count("SELECT COUNT(*) FROM vnpay_transaction WHERE account_id=? AND status='PENDING' AND expires_at>?",id,current)==0,"Còn giao dịch VNPay chưa có kết quả cuối cùng");
-		require(count("SELECT COUNT(*) FROM momo_transaction WHERE account_id=? AND status='PENDING' AND expires_at>?",id,current)==0,"Còn giao dịch MoMo chưa có kết quả cuối cùng");
-		
-		// Check for open payment reconciliations via Payment internal API
+
+		// 2. Check pending VNPay/MoMo transactions via Payment internal API (fail-closed)
+		try {
+			Map<String, Object> pending = paymentClient.getPendingTransactions(id);
+			if (pending != null) {
+				require(toLong(pending.get("vnpayPending")) == 0, "Còn giao dịch VNPay chưa có kết quả cuối cùng");
+				require(toLong(pending.get("momoPending")) == 0, "Còn giao dịch MoMo chưa có kết quả cuối cùng");
+			}
+		} catch (ResponseStatusException rse) {
+			throw rse;
+		} catch (Exception e) {
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể xác minh giao dịch đang chờ từ payment-service");
+		}
+
+		// 3. Check open payment reconciliations via Payment internal API (fail-closed)
 		try {
 			Map<String, Object> result = paymentClient.getOpenReconciliationCount(id);
 			if (result != null) {
-				Long openCount = (Long) result.get("count");
-				require(openCount == null || openCount == 0, "Còn giao dịch cần đối soát");
+				require(toLong(result.get("count")) == 0, "Còn giao dịch cần đối soát");
 			}
+		} catch (ResponseStatusException rse) {
+			throw rse;
 		} catch (Exception e) {
-			// If payment service unavailable, fall back to checking local tables
-			// Note: This is a fallback and may not work if auth_service doesn't have access to payment_reconciliation
-			// In production, the payment service should be available
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể xác minh đối soát từ payment-service");
 		}
-		
-		require(count("SELECT COUNT(*) FROM booking_change WHERE account_id=? AND active_key=1",id)==0,"Còn yêu cầu dời lịch hoặc hoàn tiền chưa giải quyết");
+
+		// 4. Check pending booking changes via Booking internal API (fail-closed)
+		try {
+			List<Map<String, Object>> pendingChanges = bookingClient.getPendingChanges(id);
+			require(pendingChanges == null || pendingChanges.isEmpty(), "Còn yêu cầu dời lịch hoặc hoàn tiền chưa giải quyết");
+		} catch (ResponseStatusException rse) {
+			throw rse;
+		} catch (Exception e) {
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể xác minh yêu cầu thay đổi đặt chỗ từ booking-service");
+		}
 	}
 	private boolean hasHistory(long id){
-		for(String sql:List.of("SELECT COUNT(*) FROM booking WHERE account_id=?","SELECT COUNT(*) FROM payment WHERE account_id=?",
-				"SELECT COUNT(*) FROM invoice WHERE account_id=?","SELECT COUNT(*) FROM reviews WHERE user_id=?",
-				"SELECT COUNT(*) FROM booking_change WHERE account_id=?","SELECT COUNT(*) FROM booking_change_event WHERE actor_id=?",
-				"SELECT COUNT(*) FROM departure_change WHERE created_by=?","SELECT COUNT(*) FROM mail_outbox WHERE account_id=?",
-				"SELECT COUNT(*) FROM payment_reconciliation_event WHERE actor_id=?"))
-			if(count(sql,id)>0)return true;
-		return false;
+		try {
+			if (toBoolean(bookingClient.hasUserHistory(id), "hasHistory")) return true;
+			if (toBoolean(paymentClient.hasUserHistory(id), "hasHistory")) return true;
+			if (toBoolean(invoiceClient.hasUserHistory(id), "hasHistory")) return true;
+			if (toBoolean(tourClient.hasUserHistory(id), "hasHistory")) return true;
+			if (toBoolean(notificationClient.hasUserHistory(id), "hasHistory")) return true;
+			return false;
+		} catch (Exception e) {
+			// Fail-closed: if any owning service is unavailable, do not physically delete the account.
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể xác minh lịch sử nghiệp vụ của tài khoản");
+		}
 	}
 	private void audit(User target,String action,UserStatus next,String text){
 		var event=new UserAccountEvent();event.setTargetUserId(target.getId());event.setActorId(actorId());event.setAction(action);
@@ -152,17 +192,23 @@ public class AccountLifecycleService {
 	public void delete(long id,String why){
 		String text=reason(why);
 		if(id<1)throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"Mã tài khoản không hợp lệ");
-		// Same owner-before-user order as AvatarProfileWriter, under the existing role fence.
 		adminContinuity.lockRoles();String owner=Long.toString(id);
-		jdbc.update("INSERT INTO avatar_media_lock(owner_id) VALUES (?) ON DUPLICATE KEY UPDATE owner_id=owner_id",owner);
-		jdbc.queryForObject("SELECT owner_id FROM avatar_media_lock WHERE owner_id=? FOR UPDATE",String.class,owner);
 		var target=target(id,"USERS_DELETE");
 		require(target.getStatus()==UserStatus.LOCKED,"Chỉ xóa thật tài khoản đã khóa");
 		require(!hasHistory(id),"Tài khoản đã có lịch sử nghiệp vụ; hãy lưu trữ thay vì xóa thật");
 		resolved(id);audit(target,"DELETE",null,text);
-		// Retain metadata for explicit Cloudinary cleanup, without leaving an active avatar for a deleted owner.
-		jdbc.update("UPDATE file_mgmt SET avatar_owner_id=NULL,owner_id='',tour_id='null' WHERE avatar_owner_id=? OR (owner_id=? AND (tour_id IS NULL OR tour_id='null') AND location_id IS NULL)",owner,owner);
 		users.delete(target);
+		writeAccountDeletedOutboxEvent(id, owner);
+	}
+	private void writeAccountDeletedOutboxEvent(long accountId, String ownerId) {
+		var now = jdbc.queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class);
+		String payload = "{\"accountId\":" + accountId + "}";
+		jdbc.update("""
+				INSERT INTO auth_outbox (
+					event_id, event_type, aggregate_type, aggregate_id, aggregate_version,
+					payload, status, attempts, available_at, created_at
+				) VALUES (?, 'auth.account.deleted.v1', 'Account', ?, 1, ?, 'PENDING', 0, ?, ?)
+				""", UUID.randomUUID().toString(), ownerId, payload, now, now);
 	}
 	public boolean manageable(User target) {
 		try {

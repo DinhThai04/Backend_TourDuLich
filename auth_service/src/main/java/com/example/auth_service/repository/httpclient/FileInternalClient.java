@@ -22,6 +22,10 @@ public interface FileInternalClient {
     @DeleteMapping("/file/internal/file/files/cleanup-refs/{ownerId}")
     void cleanupRefs(@PathVariable("ownerId") String ownerId);
 
+    @DeleteMapping("/file/internal/file/files/detach-account-media/{ownerId}")
+    void detachAccountMedia(@PathVariable("ownerId") String ownerId,
+            @RequestHeader("X-Event-Id") String eventId);
+
     record LockAvatarRequest(
             java.util.UUID fileId,
             String url,

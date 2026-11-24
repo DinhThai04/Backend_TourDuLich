@@ -36,13 +36,13 @@ class PasswordChangeSecurityTest {
         var claims=new JWTClaimsSet.Builder().subject("2").issuer("tour.com").issueTime(new Date())
                 .expirationTime(new Date(System.currentTimeMillis()+3600000)).jwtID(UUID.randomUUID().toString()).claim("scope","ROLE_Customer");
         if(bound)claims.claim("credentialVersion",CredentialVersion.of(user,KEY));
-        var jwt=new SignedJWT(new JWSHeader(JWSAlgorithm.HS512),claims.build());jwt.sign(new MACSigner(KEY));return jwt.serialize();
+        var jwt=new SignedJWT(new JWSHeader(JWSAlgorithm.HS256),claims.build());jwt.sign(new MACSigner(KEY));return jwt.serialize();
     }
     String refreshToken() throws Exception {
         var claims=new JWTClaimsSet.Builder().subject("2").issuer("tour.com").issueTime(new Date())
                 .expirationTime(new Date(System.currentTimeMillis()+7200000)).jwtID(UUID.randomUUID().toString())
                 .claim("tokenType","refresh").claim("credentialVersion",CredentialVersion.of(user,KEY));
-        var jwt=new SignedJWT(new JWSHeader(JWSAlgorithm.HS512),claims.build());jwt.sign(new MACSigner(KEY));return jwt.serialize();
+        var jwt=new SignedJWT(new JWSHeader(JWSAlgorithm.HS256),claims.build());jwt.sign(new MACSigner(KEY));return jwt.serialize();
     }
     ChangePasswordRequest request(String password) {
         return ChangePasswordRequest.builder().oldPassword("OldPassword123").newPassword(password).confirmPassword(password).build();

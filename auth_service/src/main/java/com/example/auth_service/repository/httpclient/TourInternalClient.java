@@ -11,4 +11,7 @@ public interface TourInternalClient {
 
     @GetMapping("/internal/tour/departures/{id}")
     Map<String, Object> getDeparture(@PathVariable("id") Integer id);
+
+    @GetMapping("/internal/tour/departures/users/{userId}/has-history")
+    Map<String, Object> hasUserHistory(@PathVariable("userId") Long userId);
 }
