@@ -46,6 +46,12 @@ public class InternalInvoiceController {
         return ResponseEntity.ok(responses);
     }
 
+    @GetMapping("/users/{accountId}/has-history")
+    public ResponseEntity<java.util.Map<String, Object>> hasUserHistory(@PathVariable Long accountId) {
+        boolean hasHistory = invoiceRepository.existsByAccountId(accountId.intValue());
+        return ResponseEntity.ok(java.util.Map.of("hasHistory", hasHistory));
+    }
+
     private InternalInvoiceResponse toInternalResponse(Invoice invoice) {
         return InternalInvoiceResponse.builder()
                 .id(invoice.getId())

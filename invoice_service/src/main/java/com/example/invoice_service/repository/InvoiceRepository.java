@@ -15,4 +15,6 @@ public interface InvoiceRepository extends JpaRepository<Invoice, Integer> {
     List<Invoice> findByBookingIdIn(List<Integer> bookingIds);
 
     Page<Invoice> findByAccountId(int accountId, Pageable pageable);
+
+    boolean existsByAccountId(int accountId);
 }
