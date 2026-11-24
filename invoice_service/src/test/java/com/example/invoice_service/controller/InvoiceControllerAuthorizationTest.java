@@ -37,6 +37,9 @@ class InvoiceControllerAuthorizationTest {
     @MockBean
     private InvoiceService invoiceService;
 
+    @MockBean
+    private com.example.invoice_service.config.InvoiceInternalSecurityProperties internalSecurityProperties;
+
     private static final String VALID_BODY = """
             {"bookingRequest":{"bookingId":"1","userId":"7","tourDepartureId":"1",
               "listOfCustomers":[{"fullName":"Nguyen Van A"}]}}

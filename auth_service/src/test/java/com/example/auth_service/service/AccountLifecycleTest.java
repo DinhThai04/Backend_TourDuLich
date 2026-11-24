@@ -40,6 +40,11 @@ class AccountLifecycleTest {
     @org.springframework.boot.test.mock.mockito.MockBean org.springframework.security.crypto.password.PasswordEncoder encoder;
     @org.springframework.boot.test.mock.mockito.MockBean FileServiceClient files;
     @org.springframework.boot.test.mock.mockito.MockBean AvatarProfileWriter avatarProfileWriter;
+    @org.springframework.boot.test.mock.mockito.MockBean com.example.auth_service.repository.httpclient.TourInternalClient tourInternalClient;
+    @org.springframework.boot.test.mock.mockito.MockBean com.example.auth_service.repository.httpclient.PaymentInternalClient paymentInternalClient;
+    @org.springframework.boot.test.mock.mockito.MockBean com.example.auth_service.repository.httpclient.BookingInternalClient bookingInternalClient;
+    @org.springframework.boot.test.mock.mockito.MockBean com.example.auth_service.repository.httpclient.InvoiceInternalClient invoiceInternalClient;
+    @org.springframework.boot.test.mock.mockito.MockBean com.example.auth_service.repository.httpclient.NotificationInternalClient notificationInternalClient;
     @Autowired UserRepository users;
     @Autowired RoleRepository roles;
     @Autowired PermissionRepository permissions;
@@ -136,8 +141,9 @@ class AccountLifecycleTest {
             "payment_reconciliation(booking_id INT,status VARCHAR(30))","booking_change(account_id BIGINT,active_key INT)",
             "payment(account_id BIGINT)","invoice(account_id BIGINT)","booking_change_event(actor_id BIGINT)",
             "departure_change(created_by BIGINT)","mail_outbox(account_id BIGINT)","payment_reconciliation_event(actor_id BIGINT)",
-            "avatar_media_lock(owner_id VARCHAR(19) PRIMARY KEY)","file_mgmt(id VARCHAR(36) PRIMARY KEY,owner_id VARCHAR(255),tour_id VARCHAR(255),avatar_owner_id VARCHAR(19) UNIQUE,location_id INT)")) jdbc.execute("CREATE TABLE IF NOT EXISTS "+ddl);
-        for(String table:List.of("booking","tour_departure","vnpay_transaction","momo_transaction","payment_reconciliation","booking_change","payment","invoice","booking_change_event","departure_change","mail_outbox","payment_reconciliation_event","file_mgmt"))jdbc.update("DELETE FROM "+table);
+            "avatar_media_lock(owner_id VARCHAR(19) PRIMARY KEY)","file_mgmt(id VARCHAR(36) PRIMARY KEY,owner_id VARCHAR(255),tour_id VARCHAR(255),avatar_owner_id VARCHAR(19) UNIQUE,location_id INT)",
+            "auth_outbox(id BIGINT AUTO_INCREMENT PRIMARY KEY,event_id VARCHAR(36) NOT NULL,event_type VARCHAR(120) NOT NULL,aggregate_type VARCHAR(80) NOT NULL,aggregate_id VARCHAR(80) NOT NULL,aggregate_version INT NOT NULL,payload CLOB NOT NULL,status VARCHAR(20) NOT NULL,attempts INT NOT NULL,available_at TIMESTAMP NOT NULL,published_at TIMESTAMP NULL,last_error VARCHAR(1000),created_at TIMESTAMP NOT NULL)")) jdbc.execute("CREATE TABLE IF NOT EXISTS "+ddl);
+        for(String table:List.of("booking","tour_departure","vnpay_transaction","momo_transaction","payment_reconciliation","booking_change","payment","invoice","booking_change_event","departure_change","mail_outbox","payment_reconciliation_event","file_mgmt","auth_outbox"))jdbc.update("DELETE FROM "+table);
         events.deleteAll();tokens.deleteAll();users.deleteAll();roles.deleteAll();permissions.deleteAll();
         Role adminRole=new Role();adminRole.setName("admin");adminRole.setActive(true);adminRole.setPermissions(new ArrayList<>());adminRole=roles.save(adminRole);
         customerRole=new Role();customerRole.setName("Khách Hàng");customerRole.setActive(true);customerRole.setPermissions(new ArrayList<>());customerRole=roles.save(customerRole);
@@ -149,7 +155,7 @@ class AccountLifecycleTest {
     @AfterEach void clean(){SecurityContextHolder.clearContext();}
     @Test void lockUnlockAuditsAndCannotReactivateAnOldSession() throws Exception {
         String key="test".repeat(16);
-        var jwt=new SignedJWT(new JWSHeader(JWSAlgorithm.HS512),new JWTClaimsSet.Builder().subject(customer.getId().toString()).issuer("tour.com").issueTime(new Date()).expirationTime(new Date(System.currentTimeMillis()+3600000)).jwtID("old-customer-token").claim("scope","ROLE_Khách_Hàng").claim("credentialVersion",CredentialVersion.of(customer,key)).build());jwt.sign(new MACSigner(key));
+        var jwt=new SignedJWT(new JWSHeader(JWSAlgorithm.HS256),new JWTClaimsSet.Builder().subject(customer.getId().toString()).issuer("tour.com").issueTime(new Date()).expirationTime(new Date(System.currentTimeMillis()+3600000)).jwtID("old-customer-token").claim("scope","ROLE_Khách_Hàng").claim("credentialVersion",CredentialVersion.of(customer,key)).build());jwt.sign(new MACSigner(key));
         var auth=new AuthService(users,tokens,mock(UserMapper.class),mock(org.springframework.security.crypto.password.PasswordEncoder.class),mock(FileServiceClient.class),roles,events,mock(SessionEpochService.class));
         ReflectionTestUtils.setField(auth,"SIGNER_KEY",key);ReflectionTestUtils.setField(auth,"VALID_DURATION",3600L);ReflectionTestUtils.setField(auth,"REFRESHABLE_DURATION",7200L);
         var introspect=new IntrospectRequest();introspect.setToken(jwt.serialize());assertTrue(valid(auth,introspect));
@@ -194,51 +200,56 @@ class AccountLifecycleTest {
         assertThrows(org.springframework.web.server.ResponseStatusException.class,()->service.delete(customer.getId(),"active"));assertTrue(users.existsById(customer.getId()));
     }
     @Test void historicalAccountsAreArchivedWithoutDeletingBookings(){
-        jdbc.update("INSERT INTO tour_departure VALUES(1,DATEADD('DAY',-1,CURRENT_TIMESTAMP))");jdbc.update("INSERT INTO booking VALUES(1,?,1,'CONFIRMED')",customer.getId());
+        when(tourInternalClient.getDeparture(1)).thenReturn(Map.of("return_date", java.sql.Timestamp.valueOf(java.time.LocalDateTime.now().minusDays(1))));
+        when(bookingInternalClient.getActiveBookings(customer.getId())).thenReturn(List.of(Map.of("id", 1, "tour_departure_id", 1)));
+        when(bookingInternalClient.hasUserHistory(customer.getId())).thenReturn(Map.of("hasHistory", true));
         service.status(customer.getId(),UserStatus.LOCKED,"close");assertThrows(org.springframework.web.server.ResponseStatusException.class,()->service.delete(customer.getId(),"purge"));
-        assertEquals(UserStatus.ARCHIVED,service.archive(customer.getId(),"Archive completed customer").getStatus());assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM booking",Integer.class));
+        assertEquals(UserStatus.ARCHIVED,service.archive(customer.getId(),"Archive completed customer").getStatus());
         assertThrows(org.springframework.web.server.ResponseStatusException.class,()->service.status(customer.getId(),UserStatus.ACTIVE,"reopen"));
     }
     @Test void reconciliationAuditPreventsPhysicalDeletionOfItsActor() {
-        jdbc.update("INSERT INTO payment_reconciliation_event(actor_id) VALUES(?)",customer.getId());
+        when(paymentInternalClient.hasUserHistory(customer.getId())).thenReturn(Map.of("hasHistory", true));
         service.status(customer.getId(),UserStatus.LOCKED,"close");
         assertThrows(org.springframework.web.server.ResponseStatusException.class,()->service.delete(customer.getId(),"purge"));
         assertTrue(users.existsById(customer.getId()));
         assertEquals(UserStatus.ARCHIVED,service.archive(customer.getId(),"preserve audit").getStatus());
     }
-    @Test void deletingAnUnusedAccountDetachesAvatarWithoutDeletingSharedAssets() {
+    @Test void deletingAnUnusedAccountWritesOutboxWithoutCrossServiceDatabaseWrites() {
         String owner=customer.getId().toString();
         jdbc.update("INSERT INTO file_mgmt VALUES('avatar',?,'null',?,NULL)",owner,owner);
         jdbc.update("INSERT INTO file_mgmt VALUES('generic',?,'null',NULL,NULL)",owner);
         jdbc.update("INSERT INTO file_mgmt VALUES('tour-image',?,'1',NULL,NULL)",owner);
         service.status(customer.getId(),UserStatus.LOCKED,"close");service.delete(customer.getId(),"unused");
         assertFalse(users.existsById(customer.getId()));assertEquals(3,jdbc.queryForObject("SELECT COUNT(*) FROM file_mgmt",Integer.class));
-        assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM file_mgmt WHERE avatar_owner_id IS NOT NULL",Integer.class));
-        assertEquals(2,jdbc.queryForObject("SELECT COUNT(*) FROM file_mgmt WHERE owner_id='' AND tour_id='null'",Integer.class));
+        assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM file_mgmt WHERE avatar_owner_id IS NOT NULL",Integer.class));
+        assertEquals(0,jdbc.queryForObject("SELECT COUNT(*) FROM file_mgmt WHERE owner_id='' AND tour_id='null'",Integer.class));
         assertEquals("1",jdbc.queryForObject("SELECT tour_id FROM file_mgmt WHERE id='tour-image'",String.class));
+        assertEquals(1,jdbc.queryForObject("SELECT COUNT(*) FROM auth_outbox WHERE event_type='auth.account.deleted.v1' AND status='PENDING' AND aggregate_id=?",Integer.class,owner));
     }
     @Test void ongoingTourAndUnresolvedMoneyBlockArchive(){
+        when(tourInternalClient.getDeparture(1)).thenReturn(Map.of("return_date", java.sql.Timestamp.valueOf(java.time.LocalDateTime.now().plusDays(1))));
         service.status(customer.getId(),UserStatus.LOCKED,"close");
-        jdbc.update("INSERT INTO tour_departure VALUES(1,DATEADD('DAY',1,CURRENT_TIMESTAMP))");jdbc.update("INSERT INTO booking VALUES(1,?,1,'CONFIRMED')",customer.getId());
+        when(bookingInternalClient.getActiveBookings(customer.getId())).thenReturn(List.of(Map.of("id", 1, "tour_departure_id", 1)));
         assertThrows(org.springframework.web.server.ResponseStatusException.class,()->service.archive(customer.getId(),"not done"));
-        jdbc.update("DELETE FROM booking");jdbc.update("INSERT INTO vnpay_transaction VALUES(?,'PENDING',DATEADD('DAY',1,CURRENT_TIMESTAMP))",customer.getId());
+        when(bookingInternalClient.getActiveBookings(customer.getId())).thenReturn(List.of());
+        when(paymentInternalClient.getPendingTransactions(customer.getId())).thenReturn(Map.of("vnpayPending", 1, "momoPending", 0));
         assertThrows(org.springframework.web.server.ResponseStatusException.class,()->service.archive(customer.getId(),"pending"));
-        jdbc.update("DELETE FROM vnpay_transaction");jdbc.update("INSERT INTO booking_change VALUES(?,1)",customer.getId());
+        when(paymentInternalClient.getPendingTransactions(customer.getId())).thenReturn(Map.of("vnpayPending", 0, "momoPending", 0));
+        when(bookingInternalClient.getPendingChanges(customer.getId())).thenReturn(List.of(Map.of("id", 1, "active_key", 1)));
         assertThrows(org.springframework.web.server.ResponseStatusException.class,()->service.archive(customer.getId(),"change"));
     }
     @Test void expiredPendingPaymentsAreNotATicketOutOfArchival(){
         // Reconciliation, not the account lifecycle, owns a PENDING row past its expiry.
         service.status(customer.getId(),UserStatus.LOCKED,"close");
-        jdbc.update("INSERT INTO vnpay_transaction VALUES(?,'PENDING',DATEADD('HOUR',-1,CURRENT_TIMESTAMP))",customer.getId());
+        when(paymentInternalClient.getPendingTransactions(customer.getId())).thenReturn(Map.of("vnpayPending", 0, "momoPending", 0));
         assertEquals(UserStatus.ARCHIVED,service.archive(customer.getId(),"expired holds stay reconcilable").getStatus());
     }
     @Test void liveMoMoHoldIsGuardedLikeVNPay(){
         service.status(customer.getId(),UserStatus.LOCKED,"close");
-        jdbc.update("INSERT INTO momo_transaction VALUES(?,'PENDING',DATEADD('DAY',1,CURRENT_TIMESTAMP))",customer.getId());
+        when(paymentInternalClient.getPendingTransactions(customer.getId())).thenReturn(Map.of("vnpayPending", 0, "momoPending", 1));
         var blocked=assertThrows(org.springframework.web.server.ResponseStatusException.class,()->service.archive(customer.getId(),"momo pending"));
         assertEquals(409,blocked.getStatusCode().value());
-        jdbc.update("DELETE FROM momo_transaction");
-        jdbc.update("INSERT INTO momo_transaction VALUES(?,'CLOSED_UNPAID',DATEADD('HOUR',-1,CURRENT_TIMESTAMP))",customer.getId());
+        when(paymentInternalClient.getPendingTransactions(customer.getId())).thenReturn(Map.of("vnpayPending", 0, "momoPending", 0));
         assertEquals(UserStatus.ARCHIVED,service.archive(customer.getId(),"settled momo order").getStatus());
     }
     @Test void neverUsedLockedAccountCanBeDeletedButItsAuditSurvives(){

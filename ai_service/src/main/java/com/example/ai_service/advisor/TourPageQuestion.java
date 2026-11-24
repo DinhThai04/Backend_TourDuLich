@@ -1,8 +1,25 @@
 package com.example.ai_service.advisor;
 
+import java.util.regex.Pattern;
+
 /** Page context is used only for recognized clauses without another named target or unsupported date filter. */
 public record TourPageQuestion(boolean price, boolean itinerary, boolean firstDay, DepartureWindow departures) {
     public enum DepartureWindow { UPCOMING, THIS_WEEKEND, NEXT_WEEK }
+    private static final Pattern SELECTED_DEPARTURE = Pattern.compile(
+            "(?:ngay|lich|chuyen)(?: khoi hanh| di)? (?:nay|da chon|vua chon|(?:toi|minh) (?:vua |da |dang )?chon)"
+            + " (?:con|co)(?: du)?(?: cho){0,2}(?: (\\d{1,5}) (?:nguoi|khach|hanh khach|cho))? khong");
+
+    public static Integer selectedDepartureParty(String message) {
+        var match = SELECTED_DEPARTURE.matcher(PolicyCatalog.normalize(message));
+        if (!match.matches()) return null;
+        int size = match.group(1) == null ? 1 : Integer.parseInt(match.group(1));
+        return size >= 1 && size <= Short.MAX_VALUE ? size : null;
+    }
+
+    public static boolean asksMeetingPoint(String message) {
+        return PolicyCatalog.normalize(message).matches(
+                "(?:cho (?:toi|minh) hoi )?(?:diem tap trung|gio co mat|tap trung)(?: (?:cua )?(?:tour|lich|chuyen) nay)?(?: o dau| luc nao| la gi| may gio)?");
+    }
 
     public static TourPageQuestion parse(String message) {
         boolean price = false;

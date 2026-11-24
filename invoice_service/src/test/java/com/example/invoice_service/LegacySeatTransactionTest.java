@@ -39,6 +39,7 @@ class LegacySeatTransactionTest {
     @Autowired InvoiceService service;
     @Autowired InvoiceRepository invoices;
     @MockBean TourDepartureClient departures;
+    @MockBean com.example.invoice_service.repository.httpclient.BookingInternalClient bookingClient;
     InvoiceRequest request;
     private static final ZoneId VIETNAM_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
     @BeforeEach void seed() {
@@ -65,6 +66,53 @@ class LegacySeatTransactionTest {
         // Deliberately stale snapshot: the writer must use current DB seats, not 999 from the remote response.
         var schedule=TourDepartureResponse.builder().id("1").tourId("1").availableSeats("999").tourPrice(price).build();
         when(departures.getTourDepartureById(1L)).thenReturn(ApiResponse.<TourDepartureResponse>builder().result(schedule).build());
+        when(bookingClient.getBookingReservation(anyInt())).thenAnswer(inv -> {
+            var rows = jdbc.queryForList("SELECT * FROM booking_reservation WHERE booking_id=?", inv.getArgument(0, Integer.class));
+            return rows.isEmpty() ? java.util.Map.of() : rows.getFirst();
+        });
+        when(bookingClient.getBookingOwner(anyInt())).thenAnswer(inv -> {
+            var rows = jdbc.queryForList("SELECT account_id FROM booking WHERE id=?", inv.getArgument(0, Integer.class));
+            if (rows.isEmpty()) return null;
+            return java.util.Map.of("account_id", rows.getFirst().get("ACCOUNT_ID"));
+        });
+        when(bookingClient.getBooking(anyInt())).thenAnswer(inv -> {
+            var rows = jdbc.queryForList("""
+                    SELECT b.id, b.account_id, b.tour_departure_id, b.status, d.departure_date, d.operational_status
+                    FROM booking b JOIN tour_departure d ON d.id = b.tour_departure_id WHERE b.id=?
+                    """, inv.getArgument(0, Integer.class));
+            if (rows.isEmpty()) return null;
+            var m = new java.util.HashMap<String, Object>();
+            rows.getFirst().forEach((k, v) -> m.put(k.toLowerCase(), v));
+            return m;
+        });
+        when(bookingClient.getBookingCustomers(anyInt())).thenAnswer(inv ->
+            jdbc.queryForList("SELECT booking_type FROM customer WHERE booking_id=? ORDER BY id", inv.getArgument(0, Integer.class))
+                .stream().map(r -> java.util.Map.<String, Object>of("booking_type", r.get("BOOKING_TYPE"))).toList());
+        when(bookingClient.getBookingPriceSnapshot(anyInt())).thenAnswer(inv -> {
+            var rows = jdbc.queryForList("SELECT total_amount FROM booking_price_snapshot WHERE booking_id=?", inv.getArgument(0, Integer.class));
+            return rows.isEmpty() ? java.util.Map.of() : java.util.Map.of("total_amount", rows.getFirst().get("TOTAL_AMOUNT"));
+        });
+        when(bookingClient.getPaymentEvidence(anyInt())).thenAnswer(inv -> {
+            int bId = inv.getArgument(0, Integer.class);
+            LocalDateTime now = LocalDateTime.now(VIETNAM_ZONE);
+            int c = jdbc.queryForObject("""
+                SELECT (SELECT COUNT(*) FROM invoice WHERE booking_id=? AND status='PAID')
+                  +(SELECT COUNT(*) FROM payment WHERE booking_id=? AND status='PAID')
+                  +(SELECT COUNT(*) FROM vnpay_transaction WHERE booking_id=? AND (status='PAID' OR (status='PENDING' AND expires_at>?)))
+                  +(SELECT COUNT(*) FROM momo_transaction WHERE booking_id=? AND (status='PAID' OR (status='PENDING' AND expires_at>?)))
+                  +(SELECT COUNT(*) FROM payment_reconciliation WHERE booking_id=? AND status='OPEN')
+                """, Integer.class, bId, bId, bId, now, bId, now, bId);
+            return java.util.Map.of("evidence_count", c);
+        });
+        doAnswer(inv -> {
+            int bId = inv.getArgument(0, Integer.class);
+            var req = inv.getArgument(1, com.example.invoice_service.repository.httpclient.BookingInternalClient.DecrementSeatsRequest.class);
+            int depId = jdbc.queryForObject("SELECT tour_departure_id FROM booking WHERE id=?", Integer.class, bId);
+            int updated = jdbc.update("UPDATE tour_departure SET available_seats=available_seats-?,version=version+1 WHERE id=? AND available_seats>=?",
+                    req.seats(), depId, req.seats());
+            if (updated != 1) throw new ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT, "Chuyến đi không còn đủ chỗ");
+            return null;
+        }).when(bookingClient).decrementSeats(anyInt(), any());
     }
     @AfterEach void clear(){SecurityContextHolder.clearContext();}
     int seats(){return jdbc.queryForObject("SELECT available_seats FROM tour_departure WHERE id=1",Integer.class);}

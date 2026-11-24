@@ -45,7 +45,9 @@ public class FileController {
     @PostMapping(value = "/media/tour/{tourId}/edit", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<List<TourFileResponse>> editTourImages(@PathVariable String tourId,
             @RequestPart("changes") String changes,
-            @RequestPart(value = "files", required = false) List<MultipartFile> files) throws IOException {
+            @RequestPart(value = "files", required = false) List<MultipartFile> files,
+            @RequestHeader(value = "X-Tour-Gallery-Proof", required = false) String proof) throws IOException {
+        galleryAuthorization.require("edit", tourId, proof);
         return ResponseEntity.ok(fileService.editTourImages(tourId, removedImages(changes), files));
     }
 
@@ -103,7 +105,9 @@ public class FileController {
     @PostMapping("/media/uploadTour/{tourId}")
     public ResponseEntity<List<FileResponse>> uploadMultipleFiles(
             @PathVariable("tourId") String tourId,
+            @RequestHeader(value = "X-Tour-Gallery-Proof", required = false) String proof,
             @RequestPart("files") List<MultipartFile> files) throws IOException {
+        galleryAuthorization.require("retry", tourId, proof);
         return ResponseEntity.ok(fileService.uploadImageTour(tourId, files));
     }
 

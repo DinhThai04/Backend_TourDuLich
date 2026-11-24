@@ -1,0 +1,629 @@
+# Phase 1 — Microservice Docker Compose
+
+services:
+  # Prepare the persistent directory with the RabbitMQ image UID before startup.
+  # The marker prevents image copy-up from restoring a root-owned Erlang cookie.
+  rabbitmq-volume-init:
+    image: alpine:3.20
+    user: "0:0"
+    command: ["sh", "-ec", "if [ ! -e /var/lib/rabbitmq/.volume-initialized ]; then chown -R 100:101 /var/lib/rabbitmq; touch /var/lib/rabbitmq/.volume-initialized; chown 100:101 /var/lib/rabbitmq/.volume-initialized; fi"]
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: "no"
+    network_mode: none
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+
+  # ============================================================
+  # MESSAGE BROKER
+  # ============================================================
+  rabbitmq:
+    depends_on:
+      rabbitmq-volume-init:
+        condition: service_completed_successfully
+    image: rabbitmq:3.13-management-alpine
+    environment:
+      RABBITMQ_DEFAULT_USER: sgu_user
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      RABBITMQ_DEFAULT_VHOST: sgu_vhost
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+
+  # ============================================================
+  # 9 DATABASES VẬT LÝ ĐỘC LẬP
+  # Mỗi DB: container riêng, volume riêng, user/grant riêng
+  # ============================================================
+
+  # 1. sgu_auth
+  mysql-auth:
+    image: mysql:8.4
+    command:
+      - "--max-connections=80"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_AUTH_PASSWORD:?MYSQL_ROOT_AUTH_PASSWORD is required}
+      MYSQL_DATABASE: sgu_auth
+      MYSQL_USER: sgu_auth
+      MYSQL_PASSWORD: ${MYSQL_AUTH_PASSWORD:?MYSQL_AUTH_PASSWORD is required}
+    volumes:
+      - mysql_auth_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_auth.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -usgu_auth -Dsgu_auth -Nse \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='users'\" | grep -qx 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # 2. sgu_tour
+  mysql-tour:
+    image: mysql:8.4
+    command:
+      - "--max-connections=80"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_TOUR_PASSWORD:?MYSQL_ROOT_TOUR_PASSWORD is required}
+      MYSQL_DATABASE: sgu_tour
+      MYSQL_USER: sgu_tour
+      MYSQL_PASSWORD: ${MYSQL_TOUR_PASSWORD:?MYSQL_TOUR_PASSWORD is required}
+    volumes:
+      - mysql_tour_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_tour.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -usgu_tour -Dsgu_tour -Nse \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='tour'\" | grep -qx 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # 3. sgu_pricing
+  mysql-pricing:
+    image: mysql:8.4
+    command:
+      - "--max-connections=50"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PRICING_PASSWORD:?MYSQL_ROOT_PRICING_PASSWORD is required}
+      MYSQL_DATABASE: sgu_pricing
+      MYSQL_USER: sgu_pricing
+      MYSQL_PASSWORD: ${MYSQL_PRICING_PASSWORD:?MYSQL_PRICING_PASSWORD is required}
+    volumes:
+      - mysql_pricing_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_pricing.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -usgu_pricing -Dsgu_pricing -Nse \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='prices'\" | grep -qx 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # 4. sgu_booking
+  mysql-booking:
+    image: mysql:8.4
+    command:
+      - "--max-connections=80"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_BOOKING_PASSWORD:?MYSQL_ROOT_BOOKING_PASSWORD is required}
+      MYSQL_DATABASE: sgu_booking
+      MYSQL_USER: sgu_booking
+      MYSQL_PASSWORD: ${MYSQL_BOOKING_PASSWORD:?MYSQL_BOOKING_PASSWORD is required}
+    volumes:
+      - mysql_booking_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_booking.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -usgu_booking -Dsgu_booking -Nse \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='booking'\" | grep -qx 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # 5. sgu_payment
+  mysql-payment:
+    image: mysql:8.4
+    command:
+      - "--max-connections=50"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PAYMENT_PASSWORD:?MYSQL_ROOT_PAYMENT_PASSWORD is required}
+      MYSQL_DATABASE: sgu_payment
+      MYSQL_USER: sgu_payment
+      MYSQL_PASSWORD: ${MYSQL_PAYMENT_PASSWORD:?MYSQL_PAYMENT_PASSWORD is required}
+    volumes:
+      - mysql_payment_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_payment.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -usgu_payment -Dsgu_payment -Nse \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='payment'\" | grep -qx 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # 6. sgu_invoice
+  mysql-invoice:
+    image: mysql:8.4
+    command:
+      - "--max-connections=50"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_INVOICE_PASSWORD:?MYSQL_ROOT_INVOICE_PASSWORD is required}
+      MYSQL_DATABASE: sgu_invoice
+      MYSQL_USER: sgu_invoice
+      MYSQL_PASSWORD: ${MYSQL_INVOICE_PASSWORD:?MYSQL_INVOICE_PASSWORD is required}
+    volumes:
+      - mysql_invoice_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_invoice.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -usgu_invoice -Dsgu_invoice -Nse \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='invoice'\" | grep -qx 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # 7. sgu_file
+  mysql-file:
+    image: mysql:8.4
+    command:
+      - "--max-connections=50"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_FILE_PASSWORD:?MYSQL_ROOT_FILE_PASSWORD is required}
+      MYSQL_DATABASE: sgu_file
+      MYSQL_USER: sgu_file
+      MYSQL_PASSWORD: ${MYSQL_FILE_PASSWORD:?MYSQL_FILE_PASSWORD is required}
+    volumes:
+      - mysql_file_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_file.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -usgu_file -Dsgu_file -Nse \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='file_mgmt'\" | grep -qx 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # 8. sgu_notification
+  mysql-notification:
+    image: mysql:8.4
+    command:
+      - "--max-connections=50"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_NOTIFICATION_PASSWORD:?MYSQL_ROOT_NOTIFICATION_PASSWORD is required}
+      MYSQL_DATABASE: sgu_notification
+      MYSQL_USER: sgu_notification
+      MYSQL_PASSWORD: ${MYSQL_NOTIFICATION_PASSWORD:?MYSQL_NOTIFICATION_PASSWORD is required}
+    volumes:
+      - mysql_notification_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_notification.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -usgu_notification -Dsgu_notification -Nse \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='mail_outbox'\" | grep -qx 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # 9. sgu_reporting
+  mysql-reporting:
+    image: mysql:8.4
+    command:
+      - "--max-connections=50"
+      - "--innodb-buffer-pool-size=48M"
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_REPORTING_PASSWORD:?MYSQL_ROOT_REPORTING_PASSWORD is required}
+      MYSQL_DATABASE: sgu_reporting
+      MYSQL_USER: sgu_reporting
+      MYSQL_PASSWORD: ${MYSQL_REPORTING_PASSWORD:?MYSQL_REPORTING_PASSWORD is required}
+    volumes:
+      - mysql_reporting_data:/var/lib/mysql
+      - ./data_seed/microservices/sgu_reporting.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -usgu_reporting -Dsgu_reporting -Nse \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='operation_audit'\" | grep -qx 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ============================================================
+  # SEARCH INFRASTRUCTURE (giữ nguyên từ compose gốc)
+  # ============================================================
+  # elasticsearch: DISABLED for 8GB machine - enable when more memory available
+  # elasticsearch:
+  #   image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+  #   container_name: sgu_elasticsearch
+  #   environment:
+  #     - discovery.type=single-node
+  #     - xpack.security.enabled=false
+  #     - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+  #   volumes:
+  #     - elasticsearch_data:/usr/share/elasticsearch/data
+  #   ports:
+  #     - "9200:9200"
+  #   healthcheck:
+  #     test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 10
+  #   networks:
+  #     - sgu-network
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 1G
+
+  redis:
+    image: redis:7.2-alpine
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru", "--requirepass", "${REDIS_PASSWORD:?REDIS_PASSWORD is required}"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$$REDIS_PASSWORD redis-cli ping | grep -qx PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - sgu-network
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+
+  # ============================================================
+  # 12 SPRING BOOT MICROSERVICES (9 DB-OWNING + SEARCH + AI + GATEWAY)
+  # ============================================================
+
+  auth-service:
+    build: ./auth_service
+    depends_on:
+      mysql-auth:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql-auth:3306/sgu_auth?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
+      DB_USERNAME: sgu_auth
+      DB_PASSWORD: ${MYSQL_AUTH_PASSWORD:?MYSQL_AUTH_PASSWORD is required}
+      JWT_SIGNER_KEY: ${JWT_SIGNER_KEY:?JWT_SIGNER_KEY is required}
+      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?AUTH_INTERNAL_KEY is required}
+      BOOKING_INTERNAL_KEY: ${BOOKING_INTERNAL_KEY:?BOOKING_INTERNAL_KEY is required}
+      PAYMENT_INTERNAL_KEY: ${PAYMENT_INTERNAL_KEY:?PAYMENT_INTERNAL_KEY is required}
+      INVOICE_INTERNAL_KEY: ${INVOICE_INTERNAL_KEY:?INVOICE_INTERNAL_KEY is required}
+      TOUR_INTERNAL_KEY: ${TOUR_INTERNAL_KEY:?TOUR_INTERNAL_KEY is required}
+      FILE_INTERNAL_KEY: ${FILE_INTERNAL_KEY:?FILE_INTERNAL_KEY is required}
+      NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY:?NOTIFICATION_INTERNAL_KEY is required}
+      CATALOG_INTERNAL_KEY: ${CATALOG_INTERNAL_KEY:?CATALOG_INTERNAL_KEY is required}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: sgu_user
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      SPRING_RABBITMQ_VIRTUAL_HOST: sgu_vhost
+      APP_SERVICES_BOOKING_BASE_URL: http://booking-service:8082/booking
+      APP_SERVICES_PAYMENT_BASE_URL: http://payment-service:8083/payment
+      APP_SERVICES_INVOICE_BASE_URL: http://invoice-service:8084/invoice
+      APP_SERVICES_TOUR_BASE_URL: http://tour-service:8086/tour
+      APP_SERVICES_NOTIFICATION_BASE_URL: http://notification-service:8090
+    networks:
+      - sgu-network
+
+  tour-service:
+    build: ./tour_service
+    depends_on:
+      mysql-tour:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql-tour:3306/sgu_tour?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
+      DB_USERNAME: sgu_tour
+      DB_PASSWORD: ${MYSQL_TOUR_PASSWORD:?MYSQL_TOUR_PASSWORD is required}
+      JWT_SIGNER_KEY: ${JWT_SIGNER_KEY:?JWT_SIGNER_KEY is required}
+      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?AUTH_INTERNAL_KEY is required}
+      TOUR_INTERNAL_KEY: ${TOUR_INTERNAL_KEY:?TOUR_INTERNAL_KEY is required}
+      PRICING_INTERNAL_KEY: ${PRICING_INTERNAL_KEY:?PRICING_INTERNAL_KEY is required}
+      FILE_INTERNAL_KEY: ${FILE_INTERNAL_KEY:?FILE_INTERNAL_KEY is required}
+      CATALOG_INTERNAL_KEY: ${CATALOG_INTERNAL_KEY:?CATALOG_INTERNAL_KEY is required}
+      APP_AUTH_BASE_URL: http://auth-service:8080/auth
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: sgu_user
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      SPRING_RABBITMQ_VIRTUAL_HOST: sgu_vhost
+    networks:
+      - sgu-network
+
+  pricing-service:
+    build: ./pricing_service
+    depends_on:
+      mysql-pricing:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql-pricing:3306/sgu_pricing?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
+      DB_USERNAME: sgu_pricing
+      DB_PASSWORD: ${MYSQL_PRICING_PASSWORD:?MYSQL_PRICING_PASSWORD is required}
+      JWT_SIGNER_KEY: ${JWT_SIGNER_KEY:?JWT_SIGNER_KEY is required}
+      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?AUTH_INTERNAL_KEY is required}
+      PRICING_INTERNAL_KEY: ${PRICING_INTERNAL_KEY:?PRICING_INTERNAL_KEY is required}
+      APP_AUTH_BASE_URL: http://auth-service:8080/auth
+    networks:
+      - sgu-network
+
+  booking-service:
+    build: ./booking_service
+    depends_on:
+      mysql-booking:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql-booking:3306/sgu_booking?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
+      DB_USERNAME: sgu_booking
+      DB_PASSWORD: ${MYSQL_BOOKING_PASSWORD:?MYSQL_BOOKING_PASSWORD is required}
+      JWT_SIGNER_KEY: ${JWT_SIGNER_KEY:?JWT_SIGNER_KEY is required}
+      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?AUTH_INTERNAL_KEY is required}
+      BOOKING_INTERNAL_KEY: ${BOOKING_INTERNAL_KEY:?BOOKING_INTERNAL_KEY is required}
+      TOUR_INTERNAL_KEY: ${TOUR_INTERNAL_KEY:?TOUR_INTERNAL_KEY is required}
+      PRICING_INTERNAL_KEY: ${PRICING_INTERNAL_KEY:?PRICING_INTERNAL_KEY is required}
+      PAYMENT_INTERNAL_KEY: ${PAYMENT_INTERNAL_KEY:?PAYMENT_INTERNAL_KEY is required}
+      INVOICE_INTERNAL_KEY: ${INVOICE_INTERNAL_KEY:?INVOICE_INTERNAL_KEY is required}
+      NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY:?NOTIFICATION_INTERNAL_KEY is required}
+      MAIL_INTERNAL_API_KEY: ${MAIL_INTERNAL_API_KEY:?MAIL_INTERNAL_API_KEY is required}
+      REPORTING_INTERNAL_KEY: ${REPORTING_INTERNAL_KEY:?REPORTING_INTERNAL_KEY is required}
+      REPORTING_ENABLED: "true"
+      APP_AUTH_BASE_URL: http://auth-service:8080/auth
+      APP_SERVICES_TOUR_BASE_URL: http://tour-service:8086/tour
+      APP_SERVICES_PRICING_BASE_URL: http://pricing-service:8085/pricing
+      APP_SERVICES_PAYMENT_BASE_URL: http://payment-service:8083/payment
+      APP_SERVICES_INVOICE_BASE_URL: http://invoice-service:8084/invoice
+      APP_SERVICES_NOTIFICATION_BASE_URL: http://notification-service:8090
+      APP_SERVICES_REPORTING_BASE_URL: http://reporting-service:8091
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: sgu_user
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      SPRING_RABBITMQ_VIRTUAL_HOST: sgu_vhost
+    networks:
+      - sgu-network
+
+  payment-service:
+    build: ./payment_service
+    depends_on:
+      mysql-payment:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql-payment:3306/sgu_payment?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
+      DB_USERNAME: sgu_payment
+      DB_PASSWORD: ${MYSQL_PAYMENT_PASSWORD:?MYSQL_PAYMENT_PASSWORD is required}
+      JWT_SIGNER_KEY: ${JWT_SIGNER_KEY:?JWT_SIGNER_KEY is required}
+      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?AUTH_INTERNAL_KEY is required}
+      PAYMENT_INTERNAL_KEY: ${PAYMENT_INTERNAL_KEY:?PAYMENT_INTERNAL_KEY is required}
+      BOOKING_INTERNAL_KEY: ${BOOKING_INTERNAL_KEY:?BOOKING_INTERNAL_KEY is required}
+      TOUR_INTERNAL_KEY: ${TOUR_INTERNAL_KEY:?TOUR_INTERNAL_KEY is required}
+      PRICING_INTERNAL_KEY: ${PRICING_INTERNAL_KEY:?PRICING_INTERNAL_KEY is required}
+      NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY:?NOTIFICATION_INTERNAL_KEY is required}
+      VNPAY_TMN_CODE: ${VNPAY_TMN_CODE:-SANDBOXTMN}
+      VNPAY_HASH_SECRET: ${VNPAY_HASH_SECRET:?VNPAY_HASH_SECRET is required}
+      MOMO_PARTNER_CODE: ${MOMO_PARTNER_CODE:-MOMOSANDBOX}
+      MOMO_ACCESS_KEY: ${MOMO_ACCESS_KEY:-sandbox_access}
+      MOMO_SECRET_KEY: ${MOMO_SECRET_KEY:-sandbox_secret}
+      APP_AUTH_BASE_URL: http://auth-service:8080/auth
+      APP_SERVICES_BOOKING_BASE_URL: http://booking-service:8082/booking
+      APP_SERVICES_TOUR_BASE_URL: http://tour-service:8086/tour
+      APP_SERVICES_PRICING_BASE_URL: http://pricing-service:8085/pricing
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: sgu_user
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      SPRING_RABBITMQ_VIRTUAL_HOST: sgu_vhost
+    networks:
+      - sgu-network
+
+  invoice-service:
+    build: ./invoice_service
+    depends_on:
+      mysql-invoice:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql-invoice:3306/sgu_invoice?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
+      DB_USERNAME: sgu_invoice
+      DB_PASSWORD: ${MYSQL_INVOICE_PASSWORD:?MYSQL_INVOICE_PASSWORD is required}
+      JWT_SIGNER_KEY: ${JWT_SIGNER_KEY:?JWT_SIGNER_KEY is required}
+      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?AUTH_INTERNAL_KEY is required}
+      INVOICE_INTERNAL_KEY: ${INVOICE_INTERNAL_KEY:?INVOICE_INTERNAL_KEY is required}
+      BOOKING_INTERNAL_KEY: ${BOOKING_INTERNAL_KEY:?BOOKING_INTERNAL_KEY is required}
+      APP_AUTH_BASE_URL: http://auth-service:8080/auth
+      APP_SERVICES_BOOKING_BASE_URL: http://booking-service:8082/booking
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: sgu_user
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      SPRING_RABBITMQ_VIRTUAL_HOST: sgu_vhost
+    networks:
+      - sgu-network
+
+  file-service:
+    build: ./file_service
+    depends_on:
+      mysql-file:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql-file:3306/sgu_file?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
+      DB_USERNAME: sgu_file
+      DB_PASSWORD: ${MYSQL_FILE_PASSWORD:?MYSQL_FILE_PASSWORD is required}
+      JWT_SIGNER_KEY: ${JWT_SIGNER_KEY:?JWT_SIGNER_KEY is required}
+      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?AUTH_INTERNAL_KEY is required}
+      FILE_INTERNAL_KEY: ${FILE_INTERNAL_KEY:?FILE_INTERNAL_KEY is required}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME:-sandbox-cloud}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY:-sandbox-key}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET:-sandbox-secret}
+      APP_AUTH_BASE_URL: http://auth-service:8080/auth
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: sgu_user
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      SPRING_RABBITMQ_VIRTUAL_HOST: sgu_vhost
+    networks:
+      - sgu-network
+
+  notification-service:
+    build: ./notification_service
+    depends_on:
+      mysql-notification:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql-notification:3306/sgu_notification?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
+      DB_USERNAME: sgu_notification
+      DB_PASSWORD: ${MYSQL_NOTIFICATION_PASSWORD:?MYSQL_NOTIFICATION_PASSWORD is required}
+      NOTIFICATION_INTERNAL_KEY: ${NOTIFICATION_INTERNAL_KEY:?NOTIFICATION_INTERNAL_KEY is required}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: sgu_user
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      SPRING_RABBITMQ_VIRTUAL_HOST: sgu_vhost
+    networks:
+      - sgu-network
+
+  reporting-service:
+    build: ./reporting_service
+    depends_on:
+      mysql-reporting:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      DB_URL: jdbc:mysql://mysql-reporting:3306/sgu_reporting?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
+      DB_USERNAME: sgu_reporting
+      DB_PASSWORD: ${MYSQL_REPORTING_PASSWORD:?MYSQL_REPORTING_PASSWORD is required}
+      REPORTING_INTERNAL_KEY: ${REPORTING_INTERNAL_KEY:?REPORTING_INTERNAL_KEY is required}
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: sgu_user
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      SPRING_RABBITMQ_VIRTUAL_HOST: sgu_vhost
+    networks:
+      - sgu-network
+
+  search-service:
+    build: ./search_service
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    environment:
+      JWT_SIGNER_KEY: ${JWT_SIGNER_KEY:?JWT_SIGNER_KEY is required}
+      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?AUTH_INTERNAL_KEY is required}
+      APP_AUTH_BASE_URL: http://auth-service:8080/auth
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_USERNAME: sgu_user
+      SPRING_RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:?RABBITMQ_PASSWORD is required}
+      SPRING_RABBITMQ_VIRTUAL_HOST: sgu_vhost
+    networks:
+      - sgu-network
+
+  ai-service:
+    build: ./ai_service
+    environment:
+      JWT_SIGNER_KEY: ${JWT_SIGNER_KEY:?JWT_SIGNER_KEY is required}
+      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?AUTH_INTERNAL_KEY is required}
+    networks:
+      - sgu-network
+
+  api_gateway:
+    build: ./api_gateway
+    depends_on:
+      - auth-service
+      - tour-service
+      - pricing-service
+      - booking-service
+      - payment-service
+      - invoice-service
+      - file-service
+      - search-service
+      - ai-service
+    environment:
+      JWT_SIGNER_KEY: ${JWT_SIGNER_KEY:?JWT_SIGNER_KEY is required}
+      MAIL_INTERNAL_API_KEY: ${MAIL_INTERNAL_API_KEY:?MAIL_INTERNAL_API_KEY is required}
+      SPRING_DATA_REDIS_HOST: redis
+      SPRING_DATA_REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
+    ports:
+      - "127.0.0.1:8888:8888"
+    networks:
+      - sgu-network
+
+# ============================================================
+# VOLUMES
+# ============================================================
+volumes:
+  rabbitmq_data:
+  mysql_auth_data:
+  mysql_tour_data:
+  mysql_pricing_data:
+  mysql_booking_data:
+  mysql_payment_data:
+  mysql_invoice_data:
+  mysql_file_data:
+  mysql_notification_data:
+  mysql_reporting_data:
+  # elasticsearch_data:
+  redis_data:
+
+# ============================================================
+# NETWORK
+# ============================================================
+networks:
+  sgu-network:
+    driver: bridge

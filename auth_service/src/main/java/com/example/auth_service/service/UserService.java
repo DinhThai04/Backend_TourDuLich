@@ -254,7 +254,7 @@ public class UserService {
                     org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, "Dịch vụ tệp tạm thời không khả dụng");
         }
 
-        fileResponse.setUrl(avatarProfileWriter.apply(accountId));
+        fileResponse.setUrl(avatarProfileWriter.apply(accountId, fileResponse.getUrl(), fileResponse.getAvatarVersion()));
         return fileResponse;
     }
 

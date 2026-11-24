@@ -3,6 +3,7 @@ package com.example.payment_service.service;
 import com.example.payment_service.config.MoMoConfig;
 import com.example.payment_service.notification.PaymentMailOutboxWriter;
 import com.example.payment_service.reservation.LifecycleTestDatabase;
+import com.example.payment_service.TestServiceClients;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,8 +29,8 @@ class MoMoBookingPaymentTest {
         db = new LifecycleTestDatabase();
         db.jdbc.update("INSERT INTO booking (id,account_id,tour_departure_id,status,created_at) VALUES (1,7,1,'CONFIRMED',?)", LocalDateTime.of(2026, 11, 1, 8, 0));
         db.jdbc.update("INSERT INTO customer (booking_id,booking_type) VALUES (1,'ADULT'),(1,'ADULT')");
-        vnpayOrders = new VnPayOrderService(db.jdbc, new PaymentMailOutboxWriter(db.jdbc, mapper), clock);
-        orders = new MoMoOrderService(vnpayOrders, db.jdbc, clock);
+        vnpayOrders = TestServiceClients.vnpay(db.jdbc, clock, mapper);
+        orders = new MoMoOrderService(vnpayOrders, db.jdbc, clock, TestServiceClients.tour(db.jdbc));
         service = new MoMoService(orders, vnpayOrders, config, mapper, clock);
     }
 
@@ -79,12 +80,14 @@ class MoMoBookingPaymentTest {
         var fields = callback(prepare(), true);
         var result = db.tx.execute(tx -> service.handlePaymentReturn(fields));
         assertEquals("success", result.getStatus());
-        assertEquals(1, count("invoice")); assertEquals(1, count("payment")); assertEquals(8, seats());
+        assertEquals(1, db.jdbc.queryForObject("SELECT COUNT(*) FROM payment_outbox WHERE event_type='payment.settled.v1'", Integer.class));
+        assertEquals(1, count("payment")); assertEquals(8, seats());
         assertEquals("CONFIRMED", db.jdbc.queryForObject("SELECT status FROM booking WHERE id=1", String.class));
         assertEquals("PAID", db.jdbc.queryForObject("SELECT status FROM momo_transaction", String.class));
-        assertEquals(2, db.jdbc.queryForObject("SELECT pay_method_id FROM invoice", Integer.class));
+        assertEquals(2, db.jdbc.queryForObject("SELECT pay_method_id FROM payment", Integer.class));
         assertTrue(db.tx.execute(tx -> service.handlePaymentReturn(fields)).isAlreadyProcessed());
-        assertEquals(1, count("invoice")); assertEquals(8, seats());
+        assertEquals(1, db.jdbc.queryForObject("SELECT COUNT(*) FROM payment_outbox WHERE event_type='payment.settled.v1'", Integer.class));
+        assertEquals(8, seats());
     }
 
     @Test void wrongAmountIsRejectedWithoutSettling() {

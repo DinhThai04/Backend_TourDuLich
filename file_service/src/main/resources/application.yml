@@ -33,7 +33,14 @@ spring:
       max-file-size: 5MB
       max-request-size: 26MB
 app:
+  auth:
+    base-url: ${AUTH_SERVICE_BASE_URL:http://localhost:8080/auth}
+    internal-key: ${AUTH_INTERNAL_KEY:}
+    connect-timeout: ${AUTH_CONNECT_TIMEOUT:2s}
+    read-timeout: ${AUTH_READ_TIMEOUT:3s}
   file:
+    internal:
+      internal-key: ${FILE_INTERNAL_KEY}
     # Public /media/download/** calls allowed per client IP per minute; 0 disables it (e.g. CDN in front).
     downloads-per-minute: ${FILE_DOWNLOADS_PER_MINUTE:60}
 cloudinary:

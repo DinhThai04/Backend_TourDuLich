@@ -4,9 +4,12 @@ import com.example.booking_service.dto.request.BookingRequest;
 import com.example.booking_service.dto.response.ApiResponse;
 import com.example.booking_service.dto.response.BookingResponse;
 import com.example.booking_service.service.BookingService;
+import com.example.booking_service.reservation.BookingLifecycleService.HistoryPage;
 import lombok.AccessLevel;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
+import org.springframework.format.annotation.DateTimeFormat;
+import java.time.LocalDate;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -18,6 +21,19 @@ import java.util.List;
 public class BookingController {
 
     private final BookingService bookingService;
+
+    @GetMapping("/attempt")
+    public ApiResponse<BookingResponse> findOwnAttempt(@RequestParam String key) {
+        return ApiResponse.<BookingResponse>builder().result(bookingService.findOwnAttempt(key)).build();
+    }
+
+    @GetMapping("/history")
+    public ApiResponse<HistoryPage> ownHistory(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(required = false) Long bookingId, @RequestParam(required = false) String status,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to) {
+        return ApiResponse.<HistoryPage>builder().result(bookingService.ownHistory(page, bookingId, status, from, to)).build();
+    }
 
     @GetMapping("/{id}")
     public ApiResponse<BookingResponse> getBookingsById(@PathVariable Long id) {

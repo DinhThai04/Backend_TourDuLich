@@ -19,7 +19,7 @@ import static org.mockito.Mockito.*;
 class InvoiceOwnershipTest {
     private final InvoiceRepository invoices = mock(InvoiceRepository.class);
     private final InvoiceMapper mapper = mock(InvoiceMapper.class);
-    private final InvoiceService service = new InvoiceService(null, invoices, mapper, null, null);
+    private final InvoiceService service = new InvoiceService(invoices, mapper, null, null, null);
     @AfterEach void clean() { SecurityContextHolder.clearContext(); }
     private void login(String id, String... permissions) {
         SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(id, "",

@@ -1,56 +1,73 @@
-    package com.example.tour_service.config;
+package com.example.tour_service.config;
 
-    import org.springframework.context.annotation.Bean;
-    import org.springframework.context.annotation.Configuration;
-    import org.springframework.http.HttpMethod;
-    import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
-    import org.springframework.security.config.annotation.web.builders.HttpSecurity;
-    import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
-    import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-    import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
-    import org.springframework.security.crypto.password.PasswordEncoder;
-    import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
-    import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
-    import org.springframework.security.web.SecurityFilterChain;
+import com.example.tour_service.exception.ErrorCode;
+import com.example.tour_service.dto.request.ApiResponse;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.http.HttpMethod;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
+import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
+import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-    @Configuration
-    @EnableWebSecurity
-    @EnableMethodSecurity
-    public class SecurityConfig {
+import java.util.Arrays;
+import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
-        // Only the catalogue reads the storefront needs are anonymous; admin listings stay authenticated.
-        private static final String[] PUBLIC_URLS = {
-                "/tours/list",
-                "/tours/random-3",
-                "/tours/search",
-                // Service-to-service catalogue feed for the search/auth index. The route stays
-                // permitAll so the key filter can reject callers without a JWT.
-                "/tours/search-snapshot",
-                "/tours/{id:[0-9]+}",
-                "/vehicles/list",
-                "/locations/all",
-                "/locations/departures",
-                "/locations/destinations",
-                "/locations/departures/search",
-                "/locations/destinations/search",
-                "/locations/destinations/attractive",
-                "/tour-departures/tour/{tourId:[0-9]+}",
-                "/tour-departures/{id:[0-9]+}",
-                "/itineraries/tour/{tourId:[0-9]+}"
+@Configuration
+@EnableWebSecurity
+@EnableMethodSecurity
+@EnableConfigurationProperties(TourInternalSecurityProperties.class)
+public class SecurityConfig {
+
+    private final InternalTourAuthenticationFilter internalTourAuthenticationFilter;
+
+    public SecurityConfig(InternalTourAuthenticationFilter internalTourAuthenticationFilter) {
+        this.internalTourAuthenticationFilter = internalTourAuthenticationFilter;
+    }
+
+    // Only the catalogue reads the storefront needs are anonymous; admin listings stay authenticated.
+    private static final String[] PUBLIC_URLS = {
+            "/tours/list",
+            "/tours/random-3",
+            "/tours/search",
+            "/tours/search-snapshot",
+            "/tours/{id:[0-9]+}",
+            "/vehicles/list",
+            "/locations/all",
+            "/locations/departures",
+            "/locations/destinations",
+            "/locations/departures/search",
+            "/locations/destinations/search",
+            "/locations/destinations/attractive",
+            "/tour-departures/tour/{tourId:[0-9]+}",
+            "/tour-departures/{id:[0-9]+}",
+            "/itineraries/tour/{tourId:[0-9]+}"
         };
-
-        private final CustomJwtDecoder customJwtDecoder;
-        public SecurityConfig(CustomJwtDecoder customJwtDecoder) {
-            this.customJwtDecoder = customJwtDecoder;
-        }
 
         @Bean
         public SecurityFilterChain filterChain(HttpSecurity httpSecurity) throws Exception {
             httpSecurity.authorizeHttpRequests(request -> request
+                    .requestMatchers("/internal/**").permitAll()
                     .requestMatchers(HttpMethod.POST, "/advice/search").permitAll()
                     .requestMatchers(HttpMethod.GET, "/advice/locations").permitAll()
                     .requestMatchers(HttpMethod.GET, "/tour-departures/*/capacity").authenticated()
-                    // Admin/shop history view: past, suspended and cancelled departures.
+                    .requestMatchers(HttpMethod.GET, "/tour-departures/*/meeting-point").permitAll()
+                    .requestMatchers(HttpMethod.GET, "/tour-departures/upcoming")
+                    .hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOUR_DEPARTURES_GET_LIST")
                     .requestMatchers(HttpMethod.GET, "/tour-departures/tour/*/all")
                     .hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOUR_DEPARTURES_GET_LIST", "PERM:SHOP_CHANGE_CREATE")
                     .requestMatchers(HttpMethod.GET, PUBLIC_URLS)
@@ -70,12 +87,11 @@
                     .requestMatchers(HttpMethod.PUT, "/vehicles", "/vehicles/**").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:VEHICLES_UPDATE")
                     .anyRequest()
                     .authenticated());
-
             httpSecurity.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwtConfigurer -> jwtConfigurer
-                    .decoder(customJwtDecoder)
                     .jwtAuthenticationConverter(jwtAuthenticationConverter()))
                     .authenticationEntryPoint(new JwtAuthenticationEntryPoint()));
             httpSecurity.csrf(AbstractHttpConfigurer::disable);
+            httpSecurity.addFilterBefore(internalTourAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
             return httpSecurity.build();
         }
@@ -95,5 +111,4 @@
         PasswordEncoder passwordEncoder() {
             return new BCryptPasswordEncoder(10);
         }
-
     }

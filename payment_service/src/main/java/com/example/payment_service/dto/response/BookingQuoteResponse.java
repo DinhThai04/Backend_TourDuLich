@@ -20,4 +20,6 @@ public class BookingQuoteResponse {
     String amount;
 
     Map<String, String> unitPrices;
+
+    String singleSupplementPrice;
 }

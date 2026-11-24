@@ -12,6 +12,7 @@ import org.springframework.data.redis.core.RedisTemplate;
 		"spring.data.elasticsearch.repositories.enabled=false",
 		"spring.data.redis.repositories.enabled=false",
 		"app.search.sync-enabled=false",
+		"SEARCH_SOURCE_KEY=test-search-source-key",
 		"jwt.signerKey=test-signer-key-0123456789abcdefghijklmnopqrstuvwxyz-ABCDEFGHIJKLMNOPQRSTUVWXYZ-0123456789"
 })
 class SearchServiceApplicationTests {

@@ -1,12 +1,18 @@
 package com.example.booking_service.reservation;
 
 import com.example.booking_service.notification.MailEventType;
+import com.example.booking_service.repository.httpclient.InvoiceInternalClient;
+import com.example.booking_service.repository.httpclient.PaymentInternalClient;
+import com.example.booking_service.repository.httpclient.TourInternalClient;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Map;
 
 @Service
 public class ReservationExpiryService {
@@ -15,40 +21,62 @@ public class ReservationExpiryService {
     private final TransactionTemplate transactions;
     private final BookingMailEvents events;
     private final Clock clock;
-    public ReservationExpiryService(JdbcTemplate jdbc, PlatformTransactionManager manager, BookingMailEvents events, Clock clock) {
-        this.jdbc = jdbc; this.events = events; this.clock = clock;
-        transactions = new TransactionTemplate(manager);
+    private final TourInternalClient tourClient;
+    private final PaymentInternalClient paymentClient;
+    private final InvoiceInternalClient invoiceClient;
+
+    @Autowired
+    public ReservationExpiryService(JdbcTemplate jdbc, PlatformTransactionManager manager, BookingMailEvents events,
+                                    Clock clock, TourInternalClient tourClient, PaymentInternalClient paymentClient,
+                                    InvoiceInternalClient invoiceClient) {
+        this.jdbc = jdbc;
+        this.events = events;
+        this.clock = clock;
+        this.tourClient = tourClient;
+        this.paymentClient = paymentClient;
+        this.invoiceClient = invoiceClient;
+        this.transactions = new TransactionTemplate(manager);
     }
+
     public void expireDeparture(int departureId) {
+        Map<String, Object> departure;
+        try {
+            departure = tourClient.getDeparture(departureId);
+        } catch (Exception e) {
+            log.warn("Tour service unavailable while expiring departure {}: {}", departureId, e.getMessage());
+            return;
+        }
+        if (departure == null || departure.isEmpty()) return;
+        boolean suspended = "SUSPENDED".equals(departure.get("operational_status"));
+
         transactions.executeWithoutResult(tx -> {
-            var departures = jdbc.queryForList("SELECT * FROM tour_departure WHERE id=? FOR UPDATE", departureId);
-            if (departures.isEmpty()) return;
-            boolean suspended = "SUSPENDED".equals(departures.getFirst().get("operational_status"));
             LocalDateTime now = LocalDateTime.now(clock).withNano(0);
             var candidates = jdbc.queryForList("""
                 SELECT booking_id FROM booking_reservation WHERE departure_id=?
                   AND status IN ('HELD','CHECKOUT') AND expires_at<=? ORDER BY booking_id
                 """, departureId, now);
             for (var candidate : candidates) {
-                int id = ((Number)candidate.get("booking_id")).intValue();
-                var booking=jdbc.queryForMap("SELECT id,tour_departure_id FROM booking WHERE id=? FOR UPDATE", id);
+                int id = ((Number) candidate.get("booking_id")).intValue();
+                var booking = jdbc.queryForMap("SELECT id,tour_departure_id FROM booking WHERE id=? FOR UPDATE", id);
                 var hold = jdbc.queryForMap("SELECT * FROM booking_reservation WHERE booking_id=? FOR UPDATE", id);
-                int seats=((Number)hold.get("seats")).intValue();
-                if(((Number)booking.get("tour_departure_id")).intValue()!=departureId || ((Number)hold.get("departure_id")).intValue()!=departureId
-                        || !java.util.List.of("HELD","CHECKOUT").contains(hold.get("status")) || seats<=0
-                        || seats!=jdbc.queryForObject("SELECT COUNT(*) FROM customer WHERE booking_id=?",Integer.class,id)) continue;
+                int seats = ((Number) hold.get("seats")).intValue();
+                if (((Number) booking.get("tour_departure_id")).intValue() != departureId
+                        || ((Number) hold.get("departure_id")).intValue() != departureId
+                        || !java.util.List.of("HELD", "CHECKOUT").contains(hold.get("status")) || seats <= 0
+                        || seats != jdbc.queryForObject("SELECT COUNT(*) FROM customer WHERE booking_id=?", Integer.class, id)) {
+                    continue;
+                }
                 if (suspended && hasActiveShopOffer(id, departureId)) continue;
                 // Any evidence of payment prevents automatic release, even when records disagree.
                 if (paidEvidence(id)) continue;
                 // A checkout the provider may still confirm (IPN in transit) must keep its seats.
                 if (paymentInFlight(id, now)) continue;
-                // Clamp to capacity: a hold must always be released, otherwise it retries forever.
-                // available_seats is SMALLINT, so legacy rows without capacity cap at 32767.
-                jdbc.update("UPDATE tour_departure SET available_seats=LEAST(COALESCE(capacity,32767),available_seats+?),version=version+1 WHERE id=?", hold.get("seats"), departureId);
+
+                // Release seats via Tour internal API
+                tourClient.releaseHold(departureId, seats);
+
                 jdbc.update("UPDATE booking SET status='EXPIRED' WHERE id=? AND status IN ('PENDING_PAYMENT','CONFIRMED')", id);
                 jdbc.update("UPDATE booking_reservation SET status='EXPIRED',cancel_reason='PAYMENT_DEADLINE',updated_at=? WHERE booking_id=?", now, id);
-                // An expired booking cannot honour a reschedule offer, and a lingering active row
-                // would keep blocking new requests for the same booking.
                 for (var change : jdbc.queryForList("SELECT id,requested_by FROM booking_change WHERE booking_id=? AND active_key=1", id)) {
                     long changeId = ((Number) change.get("id")).longValue();
                     jdbc.update("UPDATE booking_change SET status='WITHDRAWN',active_key=NULL,version=version+1,updated_at=? WHERE id=?", now, changeId);
@@ -61,6 +89,7 @@ public class ReservationExpiryService {
             }
         });
     }
+
     /** Only orders actually awaiting a shop decision or replacement keep their hold during an incident. */
     boolean hasActiveShopOffer(int bookingId, int departureId) {
         return jdbc.queryForObject("""
@@ -71,23 +100,37 @@ public class ReservationExpiryService {
 
     /** True while a VNPay or MoMo transaction may still be paid or confirmed, including the IPN grace window. */
     public boolean paymentInFlight(int bookingId, LocalDateTime now) {
-        LocalDateTime grace = now.minusMinutes(5);
-        return jdbc.queryForObject("""
-            SELECT (SELECT COUNT(*) FROM vnpay_transaction
-                     WHERE booking_id=? AND status='PENDING' AND expires_at>?)
-                 + (SELECT COUNT(*) FROM momo_transaction
-                     WHERE booking_id=? AND status='PENDING' AND expires_at>?)
-            """, Integer.class, bookingId, grace, bookingId, grace) > 0;
+        try {
+            Map<String, Object> ev = paymentClient.getBookingPaymentEvidence(bookingId);
+            return ev == null || Boolean.TRUE.equals(ev.get("inFlight"));
+        } catch (Exception e) {
+            // Fail-closed: if payment service is unreachable, assume payment may be in flight.
+            return true;
+        }
     }
+
     public boolean paidEvidence(int id) {
-        return jdbc.queryForObject("""
-            SELECT (SELECT COUNT(*) FROM payment WHERE booking_id=? AND status='PAID')
-                 + (SELECT COUNT(*) FROM invoice WHERE booking_id=? AND status='PAID')
-                 + (SELECT COUNT(*) FROM vnpay_transaction WHERE booking_id=? AND status='PAID')
-                 + (SELECT COUNT(*) FROM momo_transaction WHERE booking_id=? AND status='PAID')
-                 + (SELECT COUNT(*) FROM payment_reconciliation WHERE booking_id=? AND status='OPEN')
-            """, Integer.class, id, id, id, id, id) > 0;
+        try {
+            Map<String, Object> ev = paymentClient.getBookingPaymentEvidence(id);
+            if (ev == null || Boolean.TRUE.equals(ev.get("paidEvidence"))) {
+                return true;
+            }
+        } catch (Exception e) {
+            return true;
+        }
+        try {
+            Map<String, Object> inv = invoiceClient.getInvoiceByBookingId(id);
+            if (inv != null && "PAID".equals(inv.get("status"))) {
+                return true;
+            }
+        } catch (feign.FeignException.NotFound ignored) {
+            // No invoice yet
+        } catch (Exception e) {
+            return true;
+        }
+        return false;
     }
+
     public void sweep() {
         LocalDateTime cutoff = LocalDateTime.now(clock);
         int afterDeparture = 0;
@@ -98,12 +141,10 @@ public class ReservationExpiryService {
                 ORDER BY departure_id LIMIT 50
                 """, Integer.class, cutoff, afterDeparture);
             if (due.isEmpty()) return;
-            // Paid/inconsistent holds remain unchanged, but cannot monopolise the first page. Each
-            // departure is its own transaction, so a failing one is retried on the next sweep instead
-            // of aborting the queue and starving every departure with a larger id forever.
             for (int departure : due) {
-                try { expireDeparture(departure); }
-                catch (RuntimeException error) {
+                try {
+                    expireDeparture(departure);
+                } catch (RuntimeException error) {
                     log.warn("Skipped expiry for departure {} ({}); will retry on the next sweep", departure, error.getMessage(), error);
                 }
             }

@@ -1,5 +1,5 @@
 server:
-  address: 127.0.0.1
+  address: 0.0.0.0
   port: ${AI_PORT:8091}
   servlet:
     context-path: /ai
@@ -34,7 +34,7 @@ app:
     faq-approved-version: ${AI_FAQ_APPROVED_VERSION:2026-10-26-v4}
     # Kênh liên hệ chatbot nêu cho khách; bản demo dùng hộp thư của nhóm, deploy thật thì ghi AI_SUPPORT_EMAIL.
     support-email: ${AI_SUPPORT_EMAIL:danhcong6205@gmail.com}
-    booking-base-url: ${AI_BOOKING_BASE_URL:http://127.0.0.1:8081/booking}
+    booking-base-url: ${AI_BOOKING_BASE_URL:http://booking-service:8081/booking}
     booking-help:
       # Own lane permits so a long chat turn cannot starve read-only booking lookups.
       max-concurrent: ${AI_BOOKING_HELP_MAX_CONCURRENT:2}
@@ -45,7 +45,7 @@ app:
       tokens-per-day: 150000
       prompt-utf8-bytes: 11000
       turn-timeout: 38s
-    catalog-base-url: ${AI_CATALOG_BASE_URL:http://127.0.0.1:8888/api/v1/tour}
+    catalog-base-url: ${AI_CATALOG_BASE_URL:http://api-gateway:8888/api/v1/tour}
     session:
       ttl: ${AI_SESSION_TTL:30m}
       max-sessions: 100

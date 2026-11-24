@@ -4,6 +4,10 @@ server:
     context-path: /tour
 
 spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.oauth2.server.servlet.OAuth2ResourceServerAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
   config:
     import: "optional:file:./.local/tour_service.properties,optional:file:../.local/tour_service.properties,optional:file:./Backend_TourDuLich/.local/tour_service.properties"
   application:
@@ -57,11 +61,21 @@ spring:
 jwt:
   signerKey: ${JWT_SIGNER_KEY}
 app:
+  tour:
+    internal:
+      internal-key: ${TOUR_INTERNAL_KEY}
+    outbox:
+      enabled: ${TOUR_OUTBOX_ENABLED:true}
+      poll-interval-ms: ${TOUR_OUTBOX_POLL_INTERVAL_MS:1000}
+  pricing:
+    internal:
+      internal-key: ${PRICING_INTERNAL_KEY}
   services:
-    pricing-base-url: ${APP_SERVICES_PRICING_BASE_URL:http://localhost:8084/pricing}
+    pricing-base-url: ${APP_SERVICES_PRICING_BASE_URL:http://pricing-service:8084/pricing}
+    file-base-url: ${APP_SERVICES_FILE_BASE_URL:http://file-service:8087}
   catalog:
     # Bulk catalogue feed for auth/search; blank accepts loopback callers only.
-    internal-key: ${CATALOG_INTERNAL_KEY:}
+    internal-key: ${CATALOG_INTERNAL_KEY}
   tour-cache:
     # 0 = a fresh random pick per view (a 15-tour RAND query is cheap); set >0 on weak machines.
     random-ttl-ms: ${TOUR_RANDOM_TTL_MS:0}

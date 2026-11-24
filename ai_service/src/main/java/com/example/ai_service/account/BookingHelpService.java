@@ -58,12 +58,20 @@ public class BookingHelpService {
         var b=matches.getFirst();
         String intro="Booking #"+b.bookingId()+" — "+b.tourTitle()+". "+(b.createdAt()==null?"":"Bạn đặt lúc "+date(b.createdAt())+". ")
                 +(b.departureAt()==null?"":"Khởi hành lúc "+date(b.departureAt())+". ");
+        if (BookingQuestions.meetingPoint(question) && "PAID".equals(b.state())) {
+            return answer(intro + "Mở đúng đơn bên dưới và xem mục Chuẩn bị chuyến đi để kiểm tra điểm tập trung, giờ có mặt và chỉ đường theo lịch hiện tại.",
+                    b.bookingId(), List.of(), b.checkedAt(), "P16");
+        }
+        boolean reportsDebit = BookingQuestions.has(question, "tru tien", "tai khoan bi tru", "ngan hang da tru", "da chuyen tien");
         String reply=switch(b.state()) {
-            case "HELD","CHECKOUT" -> "Đơn chưa thanh toán. Hạn giữ chỗ/thanh toán đã lưu là "+date(b.paymentDeadline())
+            case "HELD","CHECKOUT" -> reportsDebit
+                    ? "Hệ thống chưa ghi nhận thanh toán thành công. Nếu ngân hàng đã trừ tiền, vui lòng mở trạng thái đơn, liên hệ SGU Tour kèm mã đơn và không thanh toán lại trong lúc chờ kiểm tra."
+                    : "Đơn chưa thanh toán. Hạn giữ chỗ/thanh toán đã lưu là "+date(b.paymentDeadline())
                     +" (giờ Việt Nam). Tại thời điểm kiểm tra "+date(b.checkedAt())+", bạn còn "+remaining(b.remainingSeconds())+". "
                     +(b.state().equals("CHECKOUT")?"Đây là đặt sát ngày: cần thanh toán ngay trong phiên tối đa 15 phút, không vượt giờ khởi hành. ":
                     "Theo P01, hạn là 08:00 ngày sớm hơn giữa ngày đặt + 6 ngày và ngày khởi hành − 6 ngày; không cộng thêm thời gian từ hôm nay. ")
                     +"Bạn thực hiện thanh toán tại đơn trên website; tôi chỉ tra cứu, không tự thanh toán hoặc gia hạn.";
+            case "PAYMENT_PENDING" -> "Đơn đang chờ kết quả giao dịch. Bạn có thể mở đơn và chọn cập nhật trạng thái. Nếu ngân hàng đã trừ tiền, vui lòng chờ xác nhận và không thanh toán lại.";
             case "SCHEDULE_CHANGE_REQUIRED" -> "Chuyến cũ đang dừng và đơn này có đề xuất dời lịch. Vào Hồ sơ → Lịch sử đặt chỗ → Dời lịch để xem và phản hồi. Đơn giữ chỗ có đề xuất đang xử lý được bảo toàn trên lịch tạm dừng. Chỉ thanh toán trên lịch hợp lệ sau khi xử lý xong.";
             case "DEPARTURE_SUSPENDED" -> "Chuyến đang tạm dừng nên hiện không thể thanh toán. Đơn này chưa có đề xuất dời lịch. Với đơn chưa trả tiền, hệ thống vẫn áp dụng hạn giữ chỗ gốc ghi trong đơn. Hãy kiểm tra đơn hoặc liên hệ SGU Tour nếu bạn đã thực hiện giao dịch.";
             case "DEPARTURE_CANCELLED" -> "Lịch khởi hành của đơn đã đóng và không tiếp nhận thanh toán. Hãy xem trạng thái đơn trong hồ sơ hoặc liên hệ SGU Tour kèm mã booking nếu bạn đã chuyển tiền.";
@@ -78,7 +86,7 @@ public class BookingHelpService {
         };
         String policyKey=switch(b.state()) {
             case "HELD","CHECKOUT","DEADLINE_PASSED" -> "P01";
-            case "PAID","REVIEW_REQUIRED" -> "P06";
+            case "PAID","PAYMENT_PENDING","REVIEW_REQUIRED" -> "P06";
             case "SCHEDULE_CHANGE_REQUIRED","DEPARTURE_SUSPENDED","DEPARTURE_CANCELLED" -> "P15";
             case "REFUNDED" -> "P11";
             case "EXPIRED","CANCELLED" -> "P02";
@@ -87,7 +95,7 @@ public class BookingHelpService {
         return answer(intro+reply,b.bookingId(),List.of(),b.checkedAt(),policyKey);
     }
     private static boolean isFollowup(String question) {
-        return BookingQuestions.has(question,"con bao lau","con bao nhieu","don nay","tour nay","han luc nao","het han chua","da thanh toan chua","da tra tien chua");
+        return BookingQuestions.meetingPoint(question) || BookingQuestions.has(question,"con bao lau","con bao nhieu","don nay","tour nay","han luc nao","het han chua","da thanh toan chua","da tra tien chua");
     }
     private static boolean mentions(String question,String value) {
         if(value==null || value.isBlank()) return false;

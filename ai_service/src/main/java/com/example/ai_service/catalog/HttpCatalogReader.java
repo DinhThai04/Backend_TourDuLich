@@ -33,14 +33,15 @@ public final class HttpCatalogReader implements CatalogReader {
     }
     @Override public SearchResult search(Criteria criteria,int page) {
         try {
-            var envelope=http.post().uri("/advice/search").body(new SearchRequest(criteria,page,5)).retrieve()
+            int size = criteria.budgetScope() == BudgetScope.TOTAL_GROUP ? 3 : 5;
+            var envelope=http.post().uri("/advice/search").body(new SearchRequest(criteria,page,size)).retrieve()
                     .body(new ParameterizedTypeReference<Envelope<SearchResult>>(){});
             if(envelope==null || envelope.code()!=1000) throw ChatFailure.catalog();
-            return checked(envelope.result(),page);
+            return checked(envelope.result(),page,size);
         } catch(RuntimeException failure) { throw ChatFailure.catalog(); }
     }
-    static SearchResult checked(SearchResult data,int page) {
-        if(data==null || data.tours()==null || data.tours().size()>5 || data.page()!=page || data.size()!=5 || data.searchSummary()==null)
+    static SearchResult checked(SearchResult data,int page,int size) {
+        if(data==null || data.tours()==null || data.tours().size()>size || data.page()!=page || data.size()!=size || data.searchSummary()==null)
             throw ChatFailure.catalog();
         var summary=data.searchSummary();
         if(summary.returnedCount()!=data.tours().size() || summary.matchingCatalogCount()<0 || summary.matchingBookableCount()<0

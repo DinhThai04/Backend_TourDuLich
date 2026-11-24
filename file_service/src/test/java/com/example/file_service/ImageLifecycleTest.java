@@ -21,9 +21,11 @@ class ImageLifecycleTest {
     final FileMgmtRepository records=mock(FileMgmtRepository.class);
     final FileMgmtMapper mapper=mock(FileMgmtMapper.class);
     final org.springframework.jdbc.core.JdbcTemplate jdbc = mock(org.springframework.jdbc.core.JdbcTemplate.class);
-    final FileService service=new FileService(storage,records,mapper,jdbc,new TestTransactionTemplate(org.springframework.transaction.support.TransactionSynchronization.STATUS_COMMITTED),mock(com.example.file_service.service.AvatarWritePolicy.class));
+    final FileService service=new FileService(storage,records,mock(FileReferenceRepository.class),mapper,jdbc,new TestTransactionTemplate(org.springframework.transaction.support.TransactionSynchronization.STATUS_COMMITTED),mock(com.example.file_service.service.AvatarWritePolicy.class));
     @org.junit.jupiter.api.BeforeEach void existingTour() {
         when(jdbc.queryForList(startsWith("SELECT id FROM tour"), eq(1))).thenReturn(List.of(Map.of("id", 1)));
+        when(records.saveAll(anyList())).thenAnswer(call -> call.getArgument(0));
+        when(records.saveAndFlush(any())).thenAnswer(call -> call.getArgument(0));
     }
     MockMultipartFile png(byte last) {
         try {
@@ -137,7 +139,7 @@ class ImageLifecycleTest {
         order.verify(records).saveAndFlush(any());
     }
     @Test void aConcurrentLocationEditIsAConflictAndCleansTheFreshUpload() throws Exception {
-        var rolledBack=new FileService(storage,records,mapper,mock(org.springframework.jdbc.core.JdbcTemplate.class),
+        var rolledBack=new FileService(storage,records,mock(FileReferenceRepository.class),mapper,mock(org.springframework.jdbc.core.JdbcTemplate.class),
             new TestTransactionTemplate(org.springframework.transaction.support.TransactionSynchronization.STATUS_ROLLED_BACK),mock(com.example.file_service.service.AvatarWritePolicy.class));
         when(storage.store(any())).thenReturn(FileInfo.builder().url("new").path("new").build());
         when(mapper.toFileMgmt(any())).thenReturn(new FileMgmt());

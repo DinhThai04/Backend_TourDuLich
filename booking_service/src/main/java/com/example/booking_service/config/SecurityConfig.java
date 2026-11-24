@@ -11,6 +11,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 @EnableWebSecurity
@@ -30,14 +31,21 @@ public class SecurityConfig {
     }
 
     private final CustomJwtDecoder customJwtDecoder;
-    public SecurityConfig(CustomJwtDecoder customJwtDecoder) {
+    private final InternalBookingAuthenticationFilter internalBookingAuthenticationFilter;
+
+    public SecurityConfig(CustomJwtDecoder customJwtDecoder,
+            InternalBookingAuthenticationFilter internalBookingAuthenticationFilter) {
         this.customJwtDecoder = customJwtDecoder;
+        this.internalBookingAuthenticationFilter = internalBookingAuthenticationFilter;
     }
 
     @Bean
     @org.springframework.core.annotation.Order(2)
     public SecurityFilterChain filterChain(HttpSecurity httpSecurity) throws Exception {
-        httpSecurity.authorizeHttpRequests(request -> request.anyRequest().authenticated());
+        httpSecurity.authorizeHttpRequests(request -> request
+                .requestMatchers("/internal/**").permitAll()
+                .anyRequest().authenticated());
+        httpSecurity.addFilterBefore(internalBookingAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         httpSecurity.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwtConfigurer -> jwtConfigurer
                 .decoder(customJwtDecoder)

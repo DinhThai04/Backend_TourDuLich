@@ -18,7 +18,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest({UserController.class, RoleController.class, PermissionController.class, ReviewController.class})
-@Import({SecurityConfig.class, AccountAccess.class})
+@Import({SecurityConfig.class, AccountAccess.class, AuthInternalSecurityProperties.class})
 class ManagementAccessTest {
     @Autowired MockMvc mvc;
     @MockBean CustomJwtDecoder decoder;

@@ -2,6 +2,7 @@ package com.example.payment_service.service;
 
 import com.example.payment_service.config.VnPayConfig;
 import com.example.payment_service.dto.request.VnPayRequest;
+import com.example.payment_service.TestServiceClients;
 import org.h2.jdbcx.JdbcDataSource;
 import org.junit.jupiter.api.*;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -46,10 +47,8 @@ class VnPayBookingPaymentTest {
             }
         };
         transaction = new TransactionTemplate(new DataSourceTransactionManager(ds));
-        orders = new VnPayOrderService(jdbc,
-            new com.example.payment_service.notification.PaymentMailOutboxWriter(jdbc,
-                new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()),
-            Clock.system(ZoneId.of("Asia/Ho_Chi_Minh")));
+        orders = TestServiceClients.vnpay(jdbc, Clock.system(ZoneId.of("Asia/Ho_Chi_Minh")),
+            new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules());
         service = new VnPayService(orders, config);
         jdbc.execute("CREATE TABLE booking (id INT PRIMARY KEY, account_id INT, tour_departure_id INT, status VARCHAR(20))");
         jdbc.execute("CREATE TABLE tour_departure (id INT PRIMARY KEY, tour_id INT, departure_date TIMESTAMP, operational_status VARCHAR(20), available_seats INT, capacity INT NULL, version BIGINT NOT NULL DEFAULT 0)");
@@ -61,6 +60,14 @@ class VnPayBookingPaymentTest {
         jdbc.execute("CREATE TABLE momo_transaction (order_id VARCHAR(32) PRIMARY KEY, request_id VARCHAR(32), booking_id INT, account_id INT, amount_vnd BIGINT, status VARCHAR(16), created_at TIMESTAMP, expires_at TIMESTAMP, trans_id BIGINT, result_code INT)");
         for (String table : List.of("invoice", "payment"))
             jdbc.execute("CREATE TABLE " + table + " (id INT AUTO_INCREMENT PRIMARY KEY, account_id INT, booking_id INT, day_of_pay TIMESTAMP, pay_method_id INT, status VARCHAR(20), total_booking_tour_expense DECIMAL(15,2))");
+        jdbc.execute("""
+                CREATE TABLE payment_outbox (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY, event_id VARCHAR(36) NOT NULL, event_type VARCHAR(120) NOT NULL,
+                    aggregate_type VARCHAR(80) NOT NULL, aggregate_id VARCHAR(80) NOT NULL, aggregate_version INT NOT NULL,
+                    correlation_id VARCHAR(64), causation_id VARCHAR(64), payload CLOB NOT NULL, status VARCHAR(20) NOT NULL,
+                    attempts INT NOT NULL, available_at TIMESTAMP NOT NULL, published_at TIMESTAMP, last_error VARCHAR(1000), created_at TIMESTAMP NOT NULL
+                )
+                """);
         jdbc.update("INSERT INTO booking VALUES (1,7,1,'CONFIRMED')");
         jdbc.update("INSERT INTO tour_departure (id,tour_id,departure_date,available_seats) VALUES (1,1,?,10)", LocalDateTime.now(VIETNAM_ZONE).plusDays(30));
         jdbc.update("INSERT INTO tour VALUES (1,1)");
@@ -136,7 +143,7 @@ class VnPayBookingPaymentTest {
     }
     @Test void quoteRejectsForeignOrPaidBooking() {
         assertThrows(ResponseStatusException.class, () -> transaction.execute(s -> orders.quote(1, 99, "vnpay")));
-        jdbc.update("INSERT INTO invoice (account_id,booking_id,status) VALUES (7,1,'PAID')");
+        jdbc.update("INSERT INTO payment (account_id,booking_id,status) VALUES (7,1,'PAID')");
         assertThrows(IllegalArgumentException.class, () -> transaction.execute(s -> orders.quote(1, 7, "vnpay")));
     }
     /** The invoice a customer sees must not look payable when the pay button is already a 409. */
@@ -197,10 +204,10 @@ class VnPayBookingPaymentTest {
         var fields = callback(prepare("23370000"), true);
         var result = transaction.execute(s -> service.handlePaymentReturn(fields));
         assertEquals("success", result.getStatus()); assertEquals("23370000.00", result.getAmount());
-        assertEquals(1, count("invoice")); assertEquals(1, count("payment")); assertEquals(7, seats());
+        assertEquals(1, count("payment")); assertEquals(7, seats());
         assertTrue(transaction.execute(s -> service.handlePaymentReturn(fields)).isAlreadyProcessed());
-        assertEquals(1, count("invoice")); assertEquals(1, count("payment")); assertEquals(7, seats());
-        assertEquals("PAID", jdbc.queryForObject("SELECT status FROM invoice", String.class));
+        assertEquals(1, count("payment")); assertEquals(7, seats());
+        assertEquals("PAID", jdbc.queryForObject("SELECT status FROM payment", String.class));
         assertThrows(IllegalArgumentException.class, () -> prepare("23370000"));
     }
     @Test void failedDatabaseWriteRollsBackInvoiceSeatsAndTransaction() {

@@ -15,6 +15,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 class WriteAuthorizationTest {
     @Autowired MockMvc mvc;
     @MockBean CustomJwtDecoder decoder;
+    @MockBean PricingInternalSecurityProperties internalSecurityProperties;
     @RestController static class TestApi {
         @GetMapping("/prices") String read() { return "ok"; }
         @GetMapping("/prices/{id}") String readOne() { return "ok"; }

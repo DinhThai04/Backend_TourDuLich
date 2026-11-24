@@ -17,6 +17,7 @@ public class MoMoOrderService {
     private final VnPayOrderService shared;
     private final JdbcTemplate jdbc;
     private final Clock clock;
+    private final com.example.payment_service.repository.httpclient.TourInternalClient tourClient;
 
     public record Order(String orderId, String requestId, long amountVnd, LocalDateTime createdAt, LocalDateTime expiresAt, boolean reused) {}
 
@@ -35,7 +36,7 @@ public class MoMoOrderService {
         String orderId = "M" + UUID.randomUUID().toString().replace("-", "").substring(0, 31);
         jdbc.update("INSERT INTO momo_transaction (order_id,request_id,booking_id,account_id,amount_vnd,status,created_at,expires_at) VALUES (?,?,?,?,?,'PENDING',?,?)",
                 orderId, orderId, bookingId, accountId, c.amountVnd(), c.now(), c.expires());
-        jdbc.update("UPDATE tour_departure SET version=version+1 WHERE id=?", c.departureId());
+        try { tourClient.incrementVersion(c.departureId()); } catch (Exception ignored) {}
         return new Order(orderId, orderId, c.amountVnd(), c.now(), c.expires(), false);
     }
 

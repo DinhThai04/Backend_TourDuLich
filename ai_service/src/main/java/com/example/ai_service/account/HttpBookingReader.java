@@ -40,7 +40,7 @@ public final class HttpBookingReader implements BookingReader {
                             var cleanTitle=CatalogText.clean(b.tourTitle(),400);
                             if(b.bookingId()<1 || b.tourId()<1 || !ids.add(b.bookingId()) || b.tourTitle()==null || b.tourTitle().isBlank()
                                     || cleanTitle.truncated() || !cleanTitle.text().equals(b.tourTitle())
-                                    || b.state()==null || !List.of("HELD","CHECKOUT","PAID","CANCELLED","EXPIRED","DEADLINE_PASSED",
+                                    || b.state()==null || !List.of("HELD","CHECKOUT","PAYMENT_PENDING","PAID","CANCELLED","EXPIRED","DEADLINE_PASSED",
                                             "DEPARTURE_PASSED","LEGACY_UNVERIFIED","REVIEW_REQUIRED","SCHEDULE_CHANGE_REQUIRED",
                                             "DEPARTURE_SUSPENDED","DEPARTURE_CANCELLED","REFUNDED").contains(b.state())
                                     || b.checkedAt()==null || !b.checkedAt().equals(page.checkedAt()) || !"reservation-v1".equals(b.ruleVersion())

@@ -1,0 +1,53 @@
+server:
+  port: 8093
+  servlet:
+    context-path: /notification
+
+spring:
+  config:
+    import: "optional:file:./.local/notification_service.properties,optional:file:../.local/notification_service.properties"
+  application:
+    name: notification-service
+  datasource:
+    url: "${DB_URL:jdbc:mysql://localhost:3317/sgu_notification}"
+    driver-class-name: "com.mysql.cj.jdbc.Driver"
+    username: sgu_notification
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_MAX:5}
+      minimum-idle: ${DB_POOL_MIN:1}
+      connection-timeout: ${DB_POOL_TIMEOUT_MS:10000}
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
+  mail:
+    host: ${MAIL_SMTP_HOST:smtp.gmail.com}
+    port: ${MAIL_SMTP_PORT:587}
+    username: ${MAIL_SMTP_USERNAME:}
+    password: ${MAIL_SMTP_PASSWORD:}
+    default-encoding: UTF-8
+    properties:
+      "[mail.smtp.auth]": ${MAIL_SMTP_AUTH:true}
+      "[mail.smtp.starttls.enable]": ${MAIL_SMTP_STARTTLS:true}
+      "[mail.smtp.starttls.required]": ${MAIL_SMTP_STARTTLS:true}
+      "[mail.smtp.ssl.checkserveridentity]": true
+      "[mail.smtp.connectiontimeout]": 5000
+      "[mail.smtp.timeout]": 10000
+      "[mail.smtp.writetimeout]": 10000
+
+app:
+  notification:
+    internal-key: ${NOTIFICATION_INTERNAL_KEY}
+    consumer:
+      max-attempts: ${NOTIFICATION_EVENT_MAX_ATTEMPTS:5}
+  mail:
+    enabled: ${MAIL_ENABLED:false}
+    test-mode: ${MAIL_TEST_MODE:true}
+    test-recipient: ${MAIL_TEST_RECIPIENT:no-reply@sgu-tour.example}
+    from: ${MAIL_FROM:no-reply@sgu-tour.example}
+    batch-size: ${MAIL_BATCH_SIZE:10}
+    max-attempts: ${MAIL_MAX_ATTEMPTS:3}
+    lease: 2m
+    poll-delay-ms: ${MAIL_POLL_DELAY_MS:5000}

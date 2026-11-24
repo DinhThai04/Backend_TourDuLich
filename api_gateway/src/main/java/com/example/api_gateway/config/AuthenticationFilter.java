@@ -29,10 +29,10 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.List;
 
-@Component
 @Slf4j
-@RequiredArgsConstructor
+@RequiredArgsConstructor(access = AccessLevel.PUBLIC)
 @FieldDefaults(level = AccessLevel.PACKAGE, makeFinal = true)
+@Component
 public class AuthenticationFilter implements GlobalFilter, Ordered {
      /** What introspection concluded; the routed call itself is outside this decision. */
      private enum AuthDecision { ACCEPT, REJECT, UNAVAILABLE }
@@ -41,6 +41,8 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
      ObjectMapper objectMapper;
      AuthCircuitBreaker authCircuitBreaker;
      IntrospectionCache introspectionCache;
+
+
 
      // Token introspection stays behind authentication at the edge: the gateway and search service
      // call auth directly, so publishing it would expose an unthrottled validity oracle for any token.
@@ -204,6 +206,8 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
                 || (HttpMethod.GET.equals(request.getMethod())
                 && (apiPrefix + "/tour/advice/locations").equals(path))) return true;
         String relative = path.startsWith(apiPrefix) ? path.substring(apiPrefix.length()) : path;
+        if (HttpMethod.GET.equals(request.getMethod()) && relative.matches("/tour/tour-departures/[0-9]+/meeting-point"))
+            return request.getQueryParams().containsKey("tourId");
         // Management summary lives below the public departure catalog, but must still introspect credentials.
         if(relative.matches("/tour/tour-departures/[^/]+/capacity/?")) return false;
         if (HttpMethod.POST.equals(request.getMethod())) return PUBLIC_POST.contains(relative);

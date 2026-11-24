@@ -39,4 +39,12 @@ class DepartureCapacityAccessTest {
   mvc.perform(get("/tour-departures/1/capacity").with(jwt().authorities(new SimpleGrantedAuthority("PERM:SHOP_CHANGE_CREATE"))))
       .andExpect(status().isOk());verify(service).capacity(1);
  }
+ @Test void upcomingListRequiresDepartureReadPermission() throws Exception {
+  mvc.perform(get("/tour-departures/upcoming")).andExpect(status().isUnauthorized());
+  mvc.perform(get("/tour-departures/upcoming").with(jwt())).andExpect(status().isForbidden());
+  mvc.perform(get("/tour-departures/upcoming").param("page", "1").param("day", "2026-11-21")
+      .with(jwt().authorities(new SimpleGrantedAuthority("PERM:TOUR_DEPARTURES_GET_LIST"))))
+      .andExpect(status().isOk());
+  verify(service).upcoming(1, java.time.LocalDate.of(2026,11,21));
+ }
 }

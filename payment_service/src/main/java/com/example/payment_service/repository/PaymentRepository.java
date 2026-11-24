@@ -4,6 +4,7 @@ import com.example.payment_service.entity.Payment;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
+import java.util.List;
 import java.util.Optional;
 
 /**
@@ -21,4 +22,8 @@ public interface PaymentRepository extends JpaRepository<Payment, Integer> {
      */
     @Query("SELECT COUNT(p) > 0 FROM Payment p WHERE p.bookingId = ?1 AND p.status = 'PAID'")
     boolean existsPaidByBookingId(Integer bookingId);
+
+    Optional<Payment> findByBookingId(Integer bookingId);
+
+    List<Payment> findByBookingIdIn(List<Integer> bookingIds);
 }

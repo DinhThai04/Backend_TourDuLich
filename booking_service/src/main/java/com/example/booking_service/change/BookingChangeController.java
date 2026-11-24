@@ -29,8 +29,9 @@ public class BookingChangeController {
 
     @GetMapping("/mine")
     public ApiResponse<Object> mine(@RequestParam(required = false) Integer page,
-                                    @RequestParam(required = false) Integer size) {
-        return ok(service.mine(page, size));
+                                    @RequestParam(required = false) Integer size,
+                                    @RequestParam(required = false) Integer bookingId) {
+        return ok(service.mine(page, size, bookingId));
     }
 
     @GetMapping("/eligible")
@@ -52,8 +53,17 @@ public class BookingChangeController {
     @GetMapping("/admin")
     public ApiResponse<Object> admin(@RequestParam(required = false) Integer tourId,
                                      @RequestParam(required = false) Integer page,
-                                     @RequestParam(required = false) Integer size) {
-        return ok(service.admin(tourId, page, size));
+                                     @RequestParam(required = false) Integer size,
+                                     @RequestParam(required = false) Long requestId) {
+        return ok(service.admin(tourId, page, size, requestId));
+    }
+
+    @GetMapping("/admin/pending")
+    public ApiResponse<Object> pending(@RequestParam(defaultValue = "0") int page,
+                                       @RequestParam(required = false) Integer bookingId,
+                                       @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate day,
+                                       @RequestParam(required = false) Boolean customerAction) {
+        return ok(service.pending(page, bookingId, day, customerAction));
     }
 
     @PostMapping("/shop/preview")

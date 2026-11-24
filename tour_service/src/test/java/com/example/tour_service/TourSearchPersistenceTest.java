@@ -1,6 +1,7 @@
 package com.example.tour_service;
 
 import com.example.tour_service.entity.*;
+import com.example.tour_service.dto.internal.InternalPriceResponse;
 import com.example.tour_service.enums.LocationType;
 import com.example.tour_service.repository.*;
 import com.example.tour_service.dto.request.TourSearchRequest;
@@ -10,6 +11,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.data.domain.*;
 import org.springframework.jdbc.core.JdbcTemplate;
+import com.example.tour_service.repository.httpclient.PricingInternalClient;
+import static org.mockito.Mockito.*;
 import java.math.BigDecimal;
 import java.time.*;
 import java.util.*;
@@ -21,6 +24,8 @@ class TourSearchPersistenceTest {
     @Autowired EntityManager em;
     @Autowired JdbcTemplate jdbc;
     @Autowired TourRepository tours;
+    @Autowired org.springframework.transaction.PlatformTransactionManager transactionManager;
+    private final PricingInternalClient pricing = mock(PricingInternalClient.class);
     int a,b,c,d;
     private static final LocalDateTime NOW=LocalDateTime.of(2026,11,1,0,0);
     @BeforeEach void seed() {
@@ -30,9 +35,9 @@ class TourSearchPersistenceTest {
         var ids=new ArrayList<Integer>();
         int n=0;
         for(long price:new long[]{3000000,8000000,1000000,5000000}) {
-            long priceId=++n; jdbc.update("INSERT INTO prices(id,adult_price) VALUES (?,?)",priceId,price);
+            long priceId=++n;
             var tour=Tour.builder().tourProgram("P"+n).tourTitle("Tour "+n).description("Fixture").duration(2)
-                    .basePrice(BigDecimal.ONE).tourPriceId(priceId).departureLocation(origin).destinationLocation(destination).vehicle(vehicle).build();
+                    .basePrice(BigDecimal.valueOf(price)).tourPriceId(priceId).departureLocation(origin).destinationLocation(destination).vehicle(vehicle).build();
             em.persist(tour);ids.add(tour.getId());
             for(String date: switch(n) {
                 case 1 -> List.of("2026-11-20T08:00:00", "2026-11-25T08:00:00");
@@ -44,6 +49,9 @@ class TourSearchPersistenceTest {
                 em.persist(TourDeparture.builder().tour(tour).tourCode("D"+n+date).departureDate(start).returnDate(start.plusDays(2)).availableSeats((short)30).build());
             }
         }
+        when(pricing.getPricesBatch(List.of(1L, 2L, 3L, 4L))).thenReturn(List.of(
+                internalPrice(1L, 3000000), internalPrice(2L, 8000000),
+                internalPrice(3L, 1000000), internalPrice(4L, 5000000)));
         em.flush();em.clear();a=ids.get(0);b=ids.get(1);c=ids.get(2);d=ids.get(3);
     }
     @Test void displayAssociationsAreFetchedBeforeTheSessionCloses() {
@@ -79,12 +87,12 @@ class TourSearchPersistenceTest {
     }
     @Test void budgetAndPriceSortUseAdultFareEvenWhenOldBasePriceIsStale() {
         var request=new TourSearchRequest();request.setMaxP(new BigDecimal("4000000"));
-        var result=tours.findAll(TourSpecification.build(request, NOW),PageRequest.of(0,10,Sort.by("priceView.adultPrice")));
+        var result=tours.findAll(TourSpecification.build(request, NOW),PageRequest.of(0,10,Sort.by("basePrice")));
         assertEquals(List.of(c,a),result.map(Tour::getId).getContent());
     }
     @Test void priceSortAndDepartureDateFilterCanBeCombinedWithoutDistinctOrderConflicts() {
         var request=new TourSearchRequest();request.setDepD(LocalDate.of(2026,11,10));
-        var result=tours.findAll(TourSpecification.build(request, NOW),PageRequest.of(0,10,Sort.by("priceView.adultPrice")));
+        var result=tours.findAll(TourSpecification.build(request, NOW),PageRequest.of(0,10,Sort.by("basePrice")));
         assertEquals(2,result.getTotalElements());assertEquals(List.of(d,b),result.map(Tour::getId).getContent());
     }
     @Test void vehicleFilterUsesStringVehicleIds() {
@@ -94,15 +102,25 @@ class TourSearchPersistenceTest {
         assertTrue(tours.findAll(TourSpecification.build(missing, NOW)).isEmpty());
     }
     @Test void searchSnapshotUsesAdultPriceAndOnlyOpenUpcomingSeats() {
-        var source=new com.example.tour_service.service.SearchCatalogSnapshot(jdbc,Clock.fixed(NOW.atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant(),ZoneId.of("Asia/Ho_Chi_Minh")));
+        var source=new com.example.tour_service.service.SearchCatalogSnapshot(jdbc,
+                Clock.fixed(NOW.atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant(),ZoneId.of("Asia/Ho_Chi_Minh")),
+                pricing, transactionManager);
         var snapshot=source.read();assertTrue(snapshot.complete());assertEquals(4,snapshot.total());
+        verify(pricing).getPricesBatch(List.of(1L, 2L, 3L, 4L));
         var first=snapshot.tours().stream().filter(t->t.id()==a).findFirst().orElseThrow();
         assertEquals(0,new BigDecimal("3000000").compareTo(first.basePrice()));assertEquals(2,first.departureDates().size());
-        jdbc.update("UPDATE prices SET adult_price=4500000 WHERE id=(SELECT price_id FROM tour WHERE id=?)",a);
+        when(pricing.getPricesBatch(List.of(1L, 2L, 3L, 4L))).thenReturn(List.of(
+                internalPrice(1L, 4500000), internalPrice(2L, 8000000),
+                internalPrice(3L, 1000000), internalPrice(4L, 5000000)));
         jdbc.update("UPDATE tour_departure SET operational_status='SUSPENDED' WHERE tour_id=?",a);
         var updated=source.read().tours().stream().filter(t->t.id()==a).findFirst().orElseThrow();
         assertEquals(0,new BigDecimal("4500000").compareTo(updated.basePrice()));assertTrue(updated.departureDates().isEmpty());
-        jdbc.update("DELETE FROM prices WHERE id=(SELECT price_id FROM tour WHERE id=?)",a);
+        when(pricing.getPricesBatch(List.of(1L, 2L, 3L, 4L))).thenReturn(List.of());
         assertThrows(org.springframework.web.server.ResponseStatusException.class,source::read);
+    }
+
+    private static InternalPriceResponse internalPrice(long id, long adultPrice) {
+        return new InternalPriceResponse(id, BigDecimal.valueOf(adultPrice), BigDecimal.ZERO,
+                BigDecimal.ZERO, BigDecimal.ZERO, BigDecimal.ZERO);
     }
 }

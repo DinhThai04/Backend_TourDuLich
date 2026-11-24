@@ -1,6 +1,7 @@
 package com.example.booking_service.notification;
 
 import com.example.booking_service.config.SecurityConfig;
+import com.example.booking_service.config.BookingInternalSecurityProperties;
 import com.example.booking_service.config.CustomJwtDecoder;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,7 +14,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(controllers=InternalMailController.class,properties="app.mail.internal-api-key=test-only-internal-key-0123456789abcdef")
-@Import(SecurityConfig.class)
+@Import({SecurityConfig.class, BookingInternalSecurityProperties.class})
 class InternalMailSecurityTest {
     static final String PATH="/internal/mail/reminders/dispatch";
     static final String KEY="test-only-internal-key-0123456789abcdef";

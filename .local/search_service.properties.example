@@ -1,9 +1,0 @@
-# Copy to search_service.properties and configure locally. Never commit the runtime file.
-# Search has no datasource, but verifies JWT with the same key as auth.
-JWT_SIGNER_KEY=
-
-# Optional native-mode search configuration:
-# ES_URIS=http://localhost:9200
-# REDIS_HOST=localhost
-# REDIS_PORT=6379
-# SEARCH_SOURCE_KEY=

@@ -6,4 +6,7 @@ public class TourMediaLock {
     @jakarta.persistence.Id
     @jakarta.persistence.Column(name="tour_id",length=9)
     private String tourId;
+
+    @jakarta.persistence.Column(name="deleted_at")
+    private java.time.LocalDateTime deletedAt;
 }

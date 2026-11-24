@@ -26,4 +26,6 @@ public class BookingRequest {
     private String clientKey;
     /** Vietnam calendar date used for the preview. Older clients may omit it. */
     private java.time.LocalDate pricingDate;
+    @jakarta.validation.constraints.Pattern(regexp = "[0-9]{1,18}", message = "Tổng dự kiến không hợp lệ")
+    private String expectedAmount;
 }

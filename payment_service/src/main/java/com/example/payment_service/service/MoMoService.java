@@ -55,6 +55,7 @@ public class MoMoService {
         return BookingQuoteResponse.builder()
                 .amount(Long.toString(quote.amountVnd()))
                 .unitPrices(quote.unitPrices())
+            .singleSupplementPrice(quote.singleSupplementPrice())
                 .build();
     }
 

@@ -29,5 +29,10 @@ spring:
     show-sql: false
     properties:
       hibernate.dialect: org.hibernate.dialect.MySQLDialect
+app:
+  pricing:
+    internal:
+      internal-key: ${PRICING_INTERNAL_KEY}
+
 jwt:
   signerKey: ${JWT_SIGNER_KEY}

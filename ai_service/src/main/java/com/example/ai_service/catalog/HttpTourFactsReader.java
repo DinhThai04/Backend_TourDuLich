@@ -63,6 +63,45 @@ public final class HttpTourFactsReader implements TourFactsReader {
         }
         return future;
     }
+
+    @Override public List<DepartureOption> upcomingDepartures(int tourId) {
+        try {
+            var rows = http.get().uri("/tour-departures/tour/{id}", tourId)
+                    .exchange((request, response) -> result(body(response), response));
+            if (rows == null || !rows.isArray() || rows.size() > 10000) throw ChatFailure.catalog();
+            var now = LocalDateTime.now(clock);
+            var departures = new ArrayList<DepartureOption>();
+            for (var row : rows) {
+                int id = integer(row, "id");
+                int seats = integer(row, "availableSeats");
+                if (id < 1 || seats < 0 || integer(row, "tourId") != tourId) throw ChatFailure.catalog();
+                var at = LocalDateTime.parse(rawText(row, "departureDate"));
+                if ("OPEN".equals(rawText(row, "operationalStatus")) && at.isAfter(now))
+                    departures.add(new DepartureOption(id, at, seats));
+            }
+            return departures.stream().sorted(Comparator.comparing(DepartureOption::departureAt)).toList();
+        } catch (RuntimeException failure) {
+            throw ChatFailure.catalog();
+        }
+    }
+
+    @Override public MeetingPoint meetingPoint(int tourId, int departureId) {
+        try {
+            var point = http.get().uri("/tour-departures/{id}/meeting-point?tourId={tour}", departureId, tourId)
+                    .exchange((request, response) -> {
+                        var envelope = body(response);
+                        if (!response.getStatusCode().is2xxSuccessful() || envelope.path("code").asInt() != 1000)
+                            throw ChatFailure.catalog();
+                        return envelope.get("result");
+                    });
+            if (point == null || point.isNull()) return null;
+            return new MeetingPoint(requiredText(point, "address", 300),
+                    CatalogText.clean(optionalText(point, "landmark"), 300).text(), optionalText(point, "arrivalTime"));
+        } catch (RuntimeException failure) {
+            throw ChatFailure.catalog();
+        }
+    }
+
     @Override public TourDetail detail(Facts facts) {
         try {
             JsonNode rows=http.get().uri("/itineraries/tour/{id}",facts.id())

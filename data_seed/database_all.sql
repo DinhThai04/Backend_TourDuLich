@@ -24,6 +24,8 @@ SET @sgu_previous_fk=@@SESSION.foreign_key_checks;
 SET FOREIGN_KEY_CHECKS=0;
 CREATE TABLE `avatar_media_lock` (
   `owner_id` varchar(19) NOT NULL,
+  `deleted_at` DATETIME(6) NULL,
+  `avatar_version` bigint(20) NOT NULL DEFAULT 0,
   PRIMARY KEY (`owner_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -37,7 +39,8 @@ CREATE TABLE `booking` (
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_booking_client_key` (`client_key`),
   KEY `ix_booking_account` (`account_id`,`id`),
-  KEY `ix_booking_departure` (`tour_departure_id`)
+  KEY `ix_booking_departure` (`tour_departure_id`),
+  KEY `ix_booking_report_day` (`created_at`,`status`)
 ) ENGINE=InnoDB AUTO_INCREMENT=7 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `booking_price_snapshot` (
@@ -204,7 +207,8 @@ CREATE TABLE `payment` (
   `status` enum('PENDING','UNPAID','PAID','REFUNDED') NOT NULL,
   `total_booking_tour_expense` decimal(19,0) NOT NULL,
   PRIMARY KEY (`id`),
-  KEY `ix_payment_booking` (`booking_id`,`status`)
+  KEY `ix_payment_booking` (`booking_id`,`status`),
+  KEY `ix_payment_report_day` (`day_of_pay`,`status`)
 ) ENGINE=InnoDB AUTO_INCREMENT=3 DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `payment_reconciliation` (
@@ -268,6 +272,7 @@ CREATE TABLE `roles` (
 
 CREATE TABLE `tour_media_lock` (
   `tour_id` varchar(9) NOT NULL,
+  `deleted_at` DATETIME(6) NULL,
   PRIMARY KEY (`tour_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -366,6 +371,7 @@ CREATE TABLE `users` (
   `id` bigint(20) NOT NULL AUTO_INCREMENT,
   `address` varchar(255) DEFAULT NULL,
   `avatar` varchar(255) DEFAULT NULL,
+  `avatar_version` bigint(20) NOT NULL DEFAULT 0,
   `email` varchar(255) NOT NULL,
   `google_id` varchar(255) DEFAULT NULL,
   `password` varchar(255) NOT NULL,
@@ -1398,6 +1404,26 @@ LEFT JOIN `booking_price_snapshot` s ON s.`booking_id` = b.`id`
 WHERE s.`booking_id` IS NULL
 GROUP BY b.`id`, t.`price_id`, p.`adult_price`, p.`child_price`, p.`toddler_price`,
          p.`infant_price`, p.`single_supplement_price`;
+
+CREATE TABLE IF NOT EXISTS departure_meeting_point (
+    departure_id INT PRIMARY KEY,
+    address VARCHAR(300) NOT NULL,
+    landmark VARCHAR(300),
+    arrival_time TIME,
+    directions_url VARCHAR(1000),
+    CONSTRAINT fk_meeting_departure FOREIGN KEY (departure_id) REFERENCES tour_departure(id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS operation_audit (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    area VARCHAR(40) NOT NULL,
+    target_id BIGINT NOT NULL,
+    actor_id INT NOT NULL,
+    before_value VARCHAR(2000),
+    after_value VARCHAR(2000),
+    created_at DATETIME(6) NOT NULL,
+    INDEX ix_operation_audit_area_id (area, target_id, id)
+);
 
 -- G. Read-only checks after the one-time import.
 SELECT 'SGU Tour ready' AS result,(SELECT COUNT(*) FROM tour) AS tours,(SELECT COUNT(*) FROM users) AS users,(SELECT COUNT(*) FROM booking) AS bookings,(SELECT COUNT(*) FROM reviews) AS reviews;

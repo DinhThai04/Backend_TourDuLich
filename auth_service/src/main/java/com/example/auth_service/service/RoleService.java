@@ -31,6 +31,8 @@ public class RoleService {
     private final AdminContinuity adminContinuity;
     private final com.example.auth_service.repository.UserRepository userRepository;
     private final SessionEpochService sessionEpochService;
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.example.auth_service.operations.OperationAudit audit;
 
     @Value("${app.registration.customer-role-name:Khách Hàng}")
     private String customerRoleName;
@@ -156,6 +158,10 @@ public class RoleService {
         if (authorizationChanged) {
             sessionEpochService.revokeAll(userRepository.findIdsByRoleId(role.getId()),
                     "Quyền của vai trò \"" + name + "\" đã thay đổi, đã thu hồi phiên đăng nhập cũ");
+        }
+        if (audit != null && authorizationChanged) {
+            audit.record("ROLE", role.getId(), previousName + " / " + previousActive + " / " + new java.util.TreeSet<>(previousPermissions),
+                    name + " / " + active + " / " + new java.util.TreeSet<>(permissionIds(saved)));
         }
         return saved;
     }

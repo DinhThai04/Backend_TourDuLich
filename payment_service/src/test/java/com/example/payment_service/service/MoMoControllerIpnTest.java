@@ -4,6 +4,7 @@ import com.example.payment_service.config.MoMoConfig;
 import com.example.payment_service.controller.MoMoController;
 import com.example.payment_service.notification.PaymentMailOutboxWriter;
 import com.example.payment_service.reservation.LifecycleTestDatabase;
+import com.example.payment_service.TestServiceClients;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,8 +40,8 @@ class MoMoControllerIpnTest {
         db = new LifecycleTestDatabase();
         db.jdbc.update("INSERT INTO booking (id,account_id,tour_departure_id,status,created_at) VALUES (1,7,1,'CONFIRMED',?)", LocalDateTime.of(2026, 11, 1, 8, 0));
         db.jdbc.update("INSERT INTO customer (booking_id,booking_type) VALUES (1,'ADULT'),(1,'ADULT')");
-        var shared = new VnPayOrderService(db.jdbc, new PaymentMailOutboxWriter(db.jdbc, mapper), clock);
-        orders = new MoMoOrderService(shared, db.jdbc, clock);
+        var shared = TestServiceClients.vnpay(db.jdbc, clock, mapper);
+        orders = new MoMoOrderService(shared, db.jdbc, clock, TestServiceClients.tour(db.jdbc));
         mvc = MockMvcBuilders.standaloneSetup(new MoMoController(new MoMoService(orders, shared, config, mapper, clock))).build();
     }
 
@@ -97,7 +98,7 @@ class MoMoControllerIpnTest {
         var response = postJson(payload(order));
         assertEquals(200, response.getStatus());
         assertEquals(0, status(response));
-        assertEquals(1, db.count("invoice"));
+        assertEquals(1, db.jdbc.queryForObject("SELECT COUNT(*) FROM payment_outbox WHERE event_type='payment.settled.v1'", Integer.class));
         assertEquals("PAID", db.jdbc.queryForObject("SELECT status FROM momo_transaction", String.class));
         assertEquals("CONFIRMED", db.jdbc.queryForObject("SELECT status FROM booking WHERE id=1", String.class));
     }
@@ -116,7 +117,7 @@ class MoMoControllerIpnTest {
 
         // The retry IPN that MoMo is still allowed to send settles the same order.
         assertEquals(0, status(postJson(payload(order, "0"))));
-        assertEquals(1, db.count("invoice"));
+        assertEquals(1, db.jdbc.queryForObject("SELECT COUNT(*) FROM payment_outbox WHERE event_type='payment.settled.v1'", Integer.class));
         assertEquals("PAID", db.jdbc.queryForObject("SELECT status FROM momo_transaction", String.class));
     }
 
@@ -159,6 +160,6 @@ class MoMoControllerIpnTest {
             }
         });
         assertEquals(0, status(response));
-        assertEquals(1, db.count("invoice"));
+        assertEquals(1, db.jdbc.queryForObject("SELECT COUNT(*) FROM payment_outbox WHERE event_type='payment.settled.v1'", Integer.class));
     }
 }

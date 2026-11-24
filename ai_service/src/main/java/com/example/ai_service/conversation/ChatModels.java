@@ -47,7 +47,11 @@ public final class ChatModels {
     }
     public record ChatRequest(@NotBlank @Pattern(regexp=CONVERSATION_ID_PATTERN) String conversationId,
                               @NotBlank @Pattern(regexp=REQUEST_ID_PATTERN) String requestId,
-                              @NotBlank String message, @Min(1) Integer selectedTourId) {
+                              @NotBlank String message, @Min(1) Integer selectedTourId,
+                              @Min(1) Integer selectedDepartureId) {
+        public ChatRequest(String conversationId, String requestId, String message, Integer selectedTourId) {
+            this(conversationId, requestId, message, selectedTourId, null);
+        }
         public ChatRequest(String conversationId, String requestId, String message) {
             this(conversationId, requestId, message, null);
         }
@@ -67,8 +71,15 @@ public final class ChatModels {
     public record ItineraryDay(int dayNumber,String title,String description,String meal) {}
     public record TourDetail(int tourId,String title,List<ItineraryDay> itinerary,OffsetDateTime dataAsOf,boolean truncated) {}
     public record DepartureOverview(boolean scheduled,LocalDateTime nextAt) {}
+    public record DepartureOption(int departureId, LocalDateTime departureAt, int availableSeats) {}
+    public record DepartureAvailability(int partySize, DepartureOption selected, DepartureOption alternative) {}
     public record TourOverview(int tourId,String title,Long referenceAdultPriceVnd,
-                               DepartureOverview departures,OffsetDateTime dataAsOf) {}
+                               DepartureOverview departures,OffsetDateTime dataAsOf, DepartureAvailability availability) {
+        public TourOverview(int tourId, String title, Long referenceAdultPriceVnd,
+                            DepartureOverview departures, OffsetDateTime dataAsOf) {
+            this(tourId, title, referenceAdultPriceVnd, departures, dataAsOf, null);
+        }
+    }
     public record ComparisonItem(int tourId,String title,int durationDays,String destinationName,
                                  long referenceAdultPriceVnd,boolean hasFutureDeparture) {}
     public record TourComparison(List<Integer> tourIds,List<ComparisonItem> items,OffsetDateTime dataAsOf) {}

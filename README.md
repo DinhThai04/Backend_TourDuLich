@@ -1,57 +1,96 @@
 # SGU Tour — Backend
 
+[![Java](https://img.shields.io/badge/Java-21-ED8B00?logo=openjdk&logoColor=white)](https://openjdk.org/)
+[![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.2%20%2F%203.5-6DB33F?logo=springboot&logoColor=white)](https://spring.io/projects/spring-boot)
+[![Architecture](https://img.shields.io/badge/Architecture-Microservices%20(Database--per--Service)-0A66C2)](#kiến-trúc-microservice)
+[![Docker Compose](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)](docker-compose.microservice.yml)
+
 ## Giới thiệu
 
-SGU Tour là hệ thống đặt tour du lịch tại Việt Nam, cung cấp các nghiệp vụ từ quản lý danh mục, đặt chỗ và thanh toán đến chăm sóc khách hàng sau khi đặt tour. Backend gồm 10 ứng dụng Spring Boot; các service nghiệp vụ sử dụng chung database `dbtour_v2`.
+SGU Tour là hệ thống đặt tour du lịch tại Việt Nam, cung cấp trọn vẹn nghiệp vụ từ quản lý danh mục, giữ chỗ có thời hạn, thanh toán trực tuyến, phát hành hóa đơn, dời lịch/hoàn tiền đến thông báo và báo cáo vận hành.
 
-Các chức năng chính:
+Hệ thống được thiết kế theo kiến trúc **Microservices chuẩn Database-per-Service** gồm **12 ứng dụng Spring Boot** và **9 cơ sở dữ liệu MySQL 8.4 vật lý độc lập** (`sgu_auth` → `sgu_reporting`), kết hợp **RabbitMQ** (Transactional Outbox/Inbox + Saga), **Redis**, **Elasticsearch** và **Spring AI**.
 
-- Quản lý tour, điểm đến, phương tiện, lịch trình, bảng giá và lịch khởi hành.
-- Xác thực tài khoản, phân quyền theo vai trò, quản lý trạng thái tài khoản và phiên đăng nhập.
-- Đặt tour theo danh sách hành khách, chốt giá tại thời điểm đặt, giữ chỗ có hạn và tự động giải phóng chỗ hết hạn.
-- Xử lý thanh toán sandbox, xác minh callback, phát hành hóa đơn và ghi nhận đối soát.
-- Tiếp nhận yêu cầu dời lịch, xử lý đề xuất từ đơn vị tổ chức và ghi nhận hoàn tiền theo quy trình.
-- Tìm kiếm danh mục bằng Elasticsearch/Redis; tư vấn tour và tra cứu đơn đặt tour qua trợ lý AI.
-- Quản lý hình ảnh, đánh giá, thông báo thời gian thực và gửi email qua hàng đợi outbox kết hợp workflow n8n.
+Các năng lực cốt lõi:
+
+- **Cô lập dữ liệu tuyệt đối (0 cross-DB SQL):** Mỗi service nghiệp vụ sở hữu schema, container MySQL và tài khoản DB riêng (`SHOW GRANTS` chỉ cấp quyền trên đúng DB của mình).
+- **Bảo mật Fail-Closed:** JWT HS256/HS512 đồng bộ; kiểm tra phiên/thu hồi token qua `POST /internal/auth/sessions/validate`; toàn bộ `/internal/**` được bảo vệ bởi `Internal*AuthenticationFilter` và `X-Internal-*-Key`.
+- **Đặt tour & Thanh toán tin cậy:** Chốt giá snapshot tại thời điểm đặt, giữ chỗ qua `TourInternalClient` (`departure_hold`), tự động giải phóng chỗ hết hạn, thanh toán VNPay/MoMo sandbox, đối soát thanh toán và phát sự kiện `payment.settled.v1` / `payment.refunded.v1` qua Outbox/Inbox idempotent.
+- **Tìm kiếm & Trợ lý AI:** Đồng bộ danh mục sang Elasticsearch/Redis; tư vấn tour và tra cứu booking qua Spring AI + Groq.
+- **Thông báo & Báo cáo tách biệt:** `notification_service` xử lý email outbox & DLQ bất đồng bộ; `reporting_service` tổng hợp chỉ số vận hành không PII qua RabbitMQ.
+
+## Kiến trúc Microservice
+
+```text
+                         ┌───────────────────────────┐
+                         │  Frontend (React + Nginx) │
+                         └─────────────┬─────────────┘
+                                       │ HTTPS / REST
+                                       ▼
+                         ┌───────────────────────────┐
+                         │    api_gateway (:8888)    │  ◄── Redis (Rate Limit / Cache)
+                         └─────────────┬─────────────┘
+       ┌───────────────┬───────────────┼───────────────┬───────────────┐
+       ▼               ▼               ▼               ▼               ▼
+┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+│auth_service │ │tour_service │ │booking_svc  │ │payment_svc  │ │invoice_svc  │
+│  sgu_auth   │ │  sgu_tour   │ │ sgu_booking │ │ sgu_payment │ │ sgu_invoice │
+└──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘ └──────┬──────┘
+       │               │               │               │               │
+       └───────────────┴───────┬───────┴───────────────┴───────────────┘
+                               │  Internal REST (Feign + X-Internal-*-Key)
+                               │  & Async Events (RabbitMQ + Outbox / Inbox)
+       ┌───────────────┬───────┴───────┬───────────────┬───────────────┐
+       ▼               ▼               ▼               ▼               ▼
+┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐ ┌─────────────┐
+│pricing_svc  │ │file_service │ │notification │ │reporting_svc│ │search & ai  │
+│ sgu_pricing │ │  sgu_file   │ │sgu_notific. │ │sgu_reporting│ │ ES / Groq   │
+└─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘ └─────────────┘
+```
 
 ## Công nghệ
 
 | Thành phần | Công nghệ | Vai trò |
 |---|---|---|
 | Ngôn ngữ | Java 21 | Nền tảng thực thi backend |
-| Framework | Spring Boot 3.2; AI service dùng 3.5 | Cấu hình và vận hành các ứng dụng |
-| API và giao tiếp | Spring MVC, Spring Cloud Gateway, OpenFeign | REST API, định tuyến và gọi giữa các service |
-| Bảo mật | Spring Security, OAuth2 Resource Server, JWT | Xác thực token, phân quyền và quản lý truy cập |
-| Truy cập dữ liệu | Spring Data JPA, Hibernate, Spring JDBC | Ánh xạ dữ liệu, transaction và truy vấn nghiệp vụ |
-| Database | MySQL 8.4 trong Compose; hỗ trợ MySQL/MariaDB theo cấu hình | Lưu dữ liệu nghiệp vụ |
-| Tìm kiếm và cache | Elasticsearch 8.15, Redis 7.2 | Lập chỉ mục và cache tìm kiếm |
-| AI | Spring AI 1.1, Groq | Phân tích yêu cầu và tư vấn dựa trên dữ liệu hệ thống |
-| Hình ảnh | Cloudinary | Lưu trữ và quản lý tài nguyên ảnh |
-| Email và workflow | Spring Email, SMTP, n8n | Gửi thư qua outbox và lập lịch nhắc |
-| Thời gian thực | Socket.IO | Phát sự kiện đánh giá tour |
-| Ánh xạ DTO | MapStruct, Lombok | Chuyển đổi dữ liệu và giảm mã lặp |
-| Build | Maven | Quản lý dependency và đóng gói ứng dụng |
-| Kiểm thử | JUnit 5, Mockito, Spring Test, H2 | Unit test và kiểm thử tích hợp |
-| Đóng gói | Docker, Docker Compose | Build image và điều phối toàn hệ thống |
+| Framework | Spring Boot 3.2 (AI service dùng 3.5) | Xây dựng và vận hành 12 microservices |
+| API & Giao tiếp | Spring MVC, Spring Cloud Gateway, OpenFeign, RestClient | Định tuyến `/api/v1`, gọi đồng bộ giữa các service |
+| Messaging & Saga | RabbitMQ 3.13, Transactional Outbox/Inbox | Truyền sự kiện bất đồng bộ, đảm bảo idempotency |
+| Bảo mật | Spring Security, OAuth2 Resource Server, JWT, Internal Key Filters | Xác thực, phân quyền RBAC và bảo vệ `/internal/**` |
+| Dữ liệu | 9 × MySQL 8.4 độc lập, Spring Data JPA, Spring JDBC | Cô lập dữ liệu theo từng bounded context |
+| Tìm kiếm & Cache | Elasticsearch 8.15, Redis 7.2 | Lập chỉ mục danh mục tour và cache tìm kiếm |
+| AI | Spring AI 1.1, Groq | Tư vấn tour và tra cứu đơn đặt tour |
+| Media & Email | Cloudinary, Spring Mail (SMTP), Durable DLQ | Lưu trữ hình ảnh và gửi email bất đồng bộ |
+| Kiểm thử & Đóng gói | JUnit 5, Mockito, Spring Test, H2, Docker Compose | 600+ unit/integration tests và điều phối container |
 
-Phiên bản cụ thể được khai báo trong `pom.xml` của từng module và [docker-compose.yml](docker-compose.yml).
+## Các module (12 Services)
 
-## Các module
+| Module | Cổng / Context | Database sở hữu | Chức năng chính |
+|---|---|---|---|
+| `api_gateway` | `8888` | *(Redis)* | Định tuyến `/api/v1`, rate limiting, xác thực tập trung |
+| `auth_service` | `8080` `/auth` (Socket.IO `8099`) | `sgu_auth` | Tài khoản, JWT, Google OAuth, RBAC, session validation |
+| `tour_service` | `8086` `/tour` | `sgu_tour` | Tour, lịch trình, địa điểm, phương tiện, `departure_hold` |
+| `pricing_service` | `8085` `/pricing` | `sgu_pricing` | Bảng giá theo nhóm tuổi và phụ thu |
+| `booking_service` | `8082` `/booking` | `sgu_booking` | Đặt tour, chốt giá snapshot, giữ/trả chỗ, dời lịch, hoàn tiền |
+| `payment_service` | `8083` `/payment` | `sgu_payment` | VNPay/MoMo sandbox, đối soát, `payment_outbox` |
+| `invoice_service` | `8084` `/invoice` | `sgu_invoice` | Hóa đơn theo booking, `invoice_inbox` (`payment.settled.v1`) |
+| `file_service` | `8087` `/file` | `sgu_file` | Upload/quản lý ảnh Cloudinary, `file_reference` & tombstone |
+| `notification_service` | `8090` | `sgu_notification` | Gửi email outbox, template và durable DLQ |
+| `reporting_service` | `8091` | `sgu_reporting` | Tổng hợp báo cáo vận hành (không PII) qua RabbitMQ |
+| `search_service` | `8089` `/search` | *(Elasticsearch/Redis)* | Tìm kiếm danh mục tour tốc độ cao |
+| `ai_service` | `8091` `/ai` | *(Stateless)* | Trợ lý AI tư vấn tour và tra cứu booking |
 
-| Module | Cổng / context | Chức năng |
-|---|---|---|
-| api_gateway | 8888 | Định tuyến `/api/v1`, xác thực và phân quyền |
-| auth_service | 8080 `/auth`; Socket.IO 8099 | Tài khoản, JWT, Google, vai trò và quyền |
-| booking_service | 8081 `/booking` | Đặt tour, giữ/trả chỗ, dời lịch, gửi email |
-| payment_service | 8083 `/payment` | VNPay/MoMo sandbox và đối soát thanh toán |
-| pricing_service | 8084 `/pricing` | Giá theo nhóm tuổi và phụ thu |
-| tour_service | 8086 `/tour` | Tour, lịch trình, địa điểm, phương tiện, lịch khởi hành |
-| file_service | 8087 `/file` | Upload và quản lý ảnh qua Cloudinary |
-| invoice_service | 8090 `/invoice` | Hóa đơn theo booking |
-| search_service | 8089 `/search` | Tìm kiếm bằng Elasticsearch, cache Redis |
-| ai_service | 8091 `/ai` | Tư vấn tour và tra cứu booking qua Spring AI/Groq |
+Mỗi module là một project Maven độc lập (có sẵn `./mvnw`).
 
-Mỗi module là một project Maven riêng; chạy lệnh tại thư mục module, không phải thư mục gốc backend.
+## Khởi chạy nhanh (Microservice 9 DB)
+
+```bash
+cp .env.microservice.example .env.microservice
+# Điền các secret ngẫu nhiên (>= 32 ký tự cho internal keys, >= 64 byte cho JWT_SIGNER_KEY)
+docker compose -f docker-compose.microservice.yml --env-file .env.microservice up -d --build
+```
+
+Gateway mặc định lắng nghe tại `http://127.0.0.1:8888`. Các cổng DB nội bộ không publish ra host để đảm bảo bảo mật.
 
 ## Chuẩn bị
 
@@ -208,6 +247,12 @@ JAR được tạo trong `target/`; lệnh này bỏ qua test. Dockerfile dùng 
 
 Frontend sử dụng Dockerfile Node.js/Nginx trong repository riêng; Compose build từ thư mục frontend cạnh backend. Cấu hình frontend cần truyền ở thời điểm build, trong khi credential backend được đọc từ cấu hình runtime. Xem [hướng dẫn Docker](docs/DOCKER.md) để vận hành dữ liệu và container.
 
+## Nâng cấp cơ sở dữ liệu hiện có
+
+Khi dùng lại schema `dbtour_v2` hoặc volume MySQL đã có dữ liệu, chạy [004_travel_operations.sql](data_seed/migrations/004_travel_operations.sql) trên schema đó trước khi khởi động phiên bản mới. Bản nâng cấp tạo bảng điểm tập trung và nhật ký vận hành, đồng thời bổ sung chỉ mục cho báo cáo nếu còn thiếu. Có thể chạy lại cùng tập lệnh trên schema đã nâng cấp.
+
+Khi tạo cơ sở dữ liệu từ đầu theo phần Khởi chạy, dữ liệu khởi tạo đã có cấu trúc này.
+
 ## Kiểm thử
 
 Backend có 10 project Maven riêng, không có lệnh `mvn test` tổng tại thư mục gốc. Các lệnh Bash dưới đây chạy từ `Backend_TourDuLich` bằng Bash trên Linux/WSL hoặc Git Bash. Cần JDK 21 và Maven trong chính môi trường terminal đó; Docker Desktop không cung cấp sẵn Maven cho terminal host. Các lệnh `mvn -f ...` cũng dùng được trong PowerShell.
@@ -318,6 +363,7 @@ Lệnh đầu chỉ kiểm tra index; index rỗng không chứng minh working t
 - [Cấu hình cục bộ](.local/README.md)
 - [Kiến trúc và cấu hình hệ thống](docs/PROJECT.md)
 - [Docker và dữ liệu](docs/DOCKER.md)
+- [Microservice — kiến trúc và lộ trình](docs/MICROSERVICES.md)
 - [Schema và dữ liệu mẫu](data_seed/README.md)
 - [Email/n8n](docs/mail/README.md)
 - [AI service](ai_service/README.md)

@@ -6,7 +6,7 @@ import com.example.tour_service.entity.Location;
 import com.example.tour_service.enums.LocationType;
 import com.example.tour_service.repository.LocationRepository;
 import com.example.tour_service.repository.TourRepository;
-import com.example.tour_service.repository.httpClient.FileClient;
+import com.example.tour_service.repository.httpclient.FileClient;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;

@@ -18,6 +18,11 @@ public class BookingService {
     }
     public BookingResponse getBookingById(Long id) { return lifecycle.get(requireId(id)); }
     public BookingResponse createBooking(BookingRequest request) { return lifecycle.create(request); }
+    public BookingResponse findOwnAttempt(String key) { return lifecycle.findOwnAttempt(key); }
+    public BookingLifecycleService.HistoryPage ownHistory(int page, Long bookingId, String status,
+                                                        java.time.LocalDate from, java.time.LocalDate to) {
+        return lifecycle.ownHistory(page, bookingId, status, from, to);
+    }
     /** Compatibility route: cancellation preserves history and allows a new booking. */
     public BookingResponse deleteBooking(Long id) { return lifecycle.cancel(requireId(id)); }
 

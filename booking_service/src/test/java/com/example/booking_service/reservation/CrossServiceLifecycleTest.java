@@ -1,7 +1,13 @@
 package com.example.booking_service.reservation;
 
 import com.example.booking_service.dto.request.*;
-import com.example.booking_service.notification.*;
+import com.example.booking_service.config.BookingMailOutboxPublisher;
+import com.example.booking_service.config.NotificationMailClient;
+import com.example.booking_service.notification.MailEventType;
+import com.example.booking_service.repository.httpclient.AuthInternalClient;
+import com.example.booking_service.repository.httpclient.InvoiceInternalClient;
+import com.example.booking_service.repository.httpclient.PricingInternalClient;
+import com.example.booking_service.repository.httpclient.TourInternalClient;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -24,13 +30,29 @@ class CrossServiceLifecycleTest {
     Object orders;
     URLClassLoader paymentClasses;
     int id;
+    JsonMapper mapper;
     @BeforeEach void setup() throws Exception {
         db=new LifecycleTestDatabase(); clock=new LifecycleTestDatabase.MutableClock(LocalDateTime.of(2026,11,1,10,0));
-        var mapper=JsonMapper.builder().findAndAddModules().build();
-        var events=new BookingMailEvents(db.jdbc,new MailOutboxService(new MailOutboxRepository(db.jdbc,db.manager),mapper,clock),clock);
-        expiry=new ReservationExpiryService(db.jdbc,db.manager,events,clock);
+        mapper=JsonMapper.builder().findAndAddModules().build();
+        var authClient = mock(AuthInternalClient.class);
+        var tourClient = mock(TourInternalClient.class);
+        when(authClient.getUserById(anyLong())).thenReturn(Map.of("email", "tester@example.com", "username", "tester"));
+        when(authClient.getUserStatus(anyLong())).thenReturn(Map.of("status", "ACTIVE"));
+        when(tourClient.getDeparture(anyInt())).thenAnswer(inv -> {
+            int id = inv.getArgument(0);
+            var row = db.jdbc.queryForMap("SELECT * FROM tour_departure WHERE id = ?", id);
+            var map = new java.util.LinkedHashMap<String, Object>();
+            for (var e : row.entrySet()) map.put(e.getKey().toLowerCase(), e.getValue());
+            return map;
+        });
+        var publisher = mock(BookingMailOutboxPublisher.class);
+        var events=new BookingMailEvents(db.jdbc, publisher, clock, authClient, tourClient);
+        expiry=new ReservationExpiryService(db.jdbc,db.manager,events,clock,tourClient,
+                com.example.booking_service.TestInternalClients.payment(db.jdbc),
+                com.example.booking_service.TestInternalClients.invoice(db.jdbc));
         var access=mock(BookingAccess.class); when(access.accountId()).thenReturn(7);
-        lifecycle=new BookingLifecycleService(db.jdbc,db.manager,new ReservationPolicy(),expiry,events,access,clock);
+        lifecycle=new BookingLifecycleService(db.jdbc,db.manager,new ReservationPolicy(),expiry,events,access,clock,
+            authClient, mock(InvoiceInternalClient.class), mock(PricingInternalClient.class), tourClient);
         id=Integer.parseInt(lifecycle.create(BookingRequest.builder().userId("7").tourDepartureId("1").listOfCustomers(List.of(
             CustomerRequest.builder().fullName("Danh").birthdate("2000-01-01").gender("Male").build())).build()).getId());
         paymentClasses=new URLClassLoader(new java.net.URL[]{Path.of("../payment_service/target/classes").toUri().toURL()},getClass().getClassLoader());
@@ -58,7 +80,7 @@ class CrossServiceLifecycleTest {
     String settle(Map<String,String> fields){return db.tx.execute(tx->(String)call("settle",new Class<?>[]{Map.class},fields));}
     @Test void actualBookingAndPaymentProduceCorrectSeatsAndTwoEvents() {
         var fields=prepare();assertEquals("success",settle(fields));assertEquals("duplicate",settle(fields));
-        assertEquals(9,db.seats());assertEquals("PAID",lifecycle.get(id).getReservationStatus());assertEquals(2,db.count("mail_outbox"));
+        assertEquals(9,db.seats());assertEquals("PAID",lifecycle.get(id).getReservationStatus());assertEquals(2,db.count("booking_outbox"));
         clock.set(LocalDateTime.of(2026,11,8,10,0));expiry.sweep();assertEquals(9,db.seats());
     }
     @Test void actualCancelAndSettlementRacePreservesCapacityAndFinancialHistory() throws Exception {
@@ -70,11 +92,10 @@ class CrossServiceLifecycleTest {
             if("success".equals(result)){assertEquals(9,db.seats());assertEquals(1,db.count("payment"));}
             else{assertEquals("reconciliation",result);assertEquals(10,db.seats());assertEquals(0,db.count("payment"));assertEquals(1,db.count("payment_reconciliation"));}
         }
-        assertEquals(1,db.count("booking"));assertEquals(2,db.count("mail_outbox"));
+        assertEquals(1,db.count("booking"));assertEquals(2,db.count("booking_outbox"));
     }
     @Test void actualExpiryAndLateCallbackNeverRestoreExpiredBooking() {
         clock.set(LocalDateTime.of(2026,11,7,7,55));var fields=prepare();
-        // Allow the five-minute IPN grace to finish before asserting seats were released.
         clock.set(LocalDateTime.of(2026,11,7,8,5));expiry.sweep();
         assertEquals("reconciliation",settle(fields));assertEquals(10,db.seats());assertEquals("EXPIRED",lifecycle.get(id).getReservationStatus());
     }

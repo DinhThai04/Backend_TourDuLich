@@ -4,6 +4,10 @@ import com.example.booking_service.dto.request.BookingRequest;
 import com.example.booking_service.dto.response.BookingResponse;
 import com.example.booking_service.notification.MailEventType;
 import com.example.booking_service.paging.PageSlice;
+import com.example.booking_service.repository.httpclient.AuthInternalClient;
+import com.example.booking_service.repository.httpclient.InvoiceInternalClient;
+import com.example.booking_service.repository.httpclient.PricingInternalClient;
+import com.example.booking_service.repository.httpclient.TourInternalClient;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.support.GeneratedKeyHolder;
@@ -30,10 +34,19 @@ public class BookingLifecycleService {
     private final BookingMailEvents events;
     private final BookingAccess access;
     private final Clock clock;
+    private final AuthInternalClient authClient;
+    private final InvoiceInternalClient invoiceClient;
+    private final PricingInternalClient pricingClient;
+    private final TourInternalClient tourClient;
+
     public BookingLifecycleService(JdbcTemplate jdbc, PlatformTransactionManager manager, ReservationPolicy policy,
-            ReservationExpiryService expiry, BookingMailEvents events, BookingAccess access, Clock clock) {
+            ReservationExpiryService expiry, BookingMailEvents events, BookingAccess access, Clock clock,
+            AuthInternalClient authClient, InvoiceInternalClient invoiceClient,
+            PricingInternalClient pricingClient, TourInternalClient tourClient) {
         this.jdbc = jdbc; transactions = new TransactionTemplate(manager); this.policy = policy;
         this.expiry = expiry; this.events = events; this.access = access; this.clock = clock;
+        this.authClient = authClient; this.invoiceClient = invoiceClient;
+        this.pricingClient = pricingClient; this.tourClient = tourClient;
     }
     public BookingResponse create(BookingRequest request) {
         int account = access.accountId();
@@ -62,16 +75,29 @@ public class BookingLifecycleService {
         }
     }
     private BookingResponse createInTransaction(int account, int departureId, BookingRequest request, String clientKey) {
-            var departures = jdbc.queryForList("SELECT * FROM tour_departure WHERE id=? FOR UPDATE", departureId);
-            if (departures.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy lịch khởi hành");
-            var departure = departures.getFirst();
-            // Lock and validate the account BEFORE any plain SELECT: the first consistent read opens
-            // the REPEATABLE READ snapshot, and the replay lookup below would otherwise open it while
-            // a concurrent booking of the same account is still uncommitted — letting both pass the
-            // MAX_ACTIVE_HOLDS quota check. Lock order stays departure -> account.
-            var accounts = jdbc.queryForList("SELECT status FROM users WHERE id=? FOR UPDATE", account);
-            if (accounts.size() != 1 || !"ACTIVE".equals(accounts.getFirst().get("status")))
+            // Get departure info via Tour internal API (replaces direct tour_departure query)
+            Map<String, Object> departure;
+            try {
+                departure = tourClient.getDeparture(departureId);
+            } catch (Exception e) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy lịch khởi hành");
+            }
+if (departure == null || departure.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy lịch khởi hành");
+            }
+            // Concurrency for seat consumption is owned by Tour: holdSeats() below locks the
+            // departure row on the Tour side and decrements available_seats atomically, so
+            // Booking must not SELECT ... FOR UPDATE tour_departure itself.
+            // Lock and validate the account via Auth internal API (replaces direct users query)
+            Map<String, Object> userStatus;
+            try {
+                userStatus = authClient.getUserStatus((long) account);
+            } catch (Exception e) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Tài khoản không hoạt động");
+            }
+            if (userStatus == null || userStatus.isEmpty() || !"ACTIVE".equals(userStatus.get("status"))) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Tài khoản không hoạt động");
+            }
             LocalDateTime now = LocalDateTime.now(clock).withNano(0);
             var passengers = passengers(request, now.toLocalDate());
             if (clientKey != null) {
@@ -85,7 +111,8 @@ public class BookingLifecycleService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,"Chuyến đang dừng hoặc dành riêng cho khách bị dời lịch; không nhận đặt mới");
             var plan = policy.plan(now, BookingMailEvents.date(departure.get("departure_date")));
             int seats = passengers.size();
-            if (seats > ((Number)departure.get("available_seats")).intValue())
+            Integer availableSeats = (Integer) departure.get("available_seats");
+            if (availableSeats == null || seats > availableSeats)
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Chuyến đi không còn đủ chỗ");
             var usage = jdbc.queryForMap("""
                 SELECT COUNT(*) AS holds,COALESCE(SUM(r.seats),0) AS seats
@@ -99,7 +126,11 @@ public class BookingLifecycleService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "Số chỗ đang giữ chưa thanh toán vượt mức " + MAX_HELD_SEATS + "; hãy hoàn tất hoặc hủy bớt");
             // Giá được chốt ngay khi tạo booking, không đọc lại bảng giá lúc thanh toán.
-            PriceSnapshot snapshot = snapshotFor(((Number) departure.get("tour_id")).intValue(), passengers);
+            PriceSnapshot snapshot = snapshotFor(tourIdOf(departure.get("tour_id")), passengers);
+            String expected = request.getExpectedAmount();
+            if (expected != null && BigDecimal.valueOf(snapshot.total()).compareTo(new BigDecimal(expected)) != 0)
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Giá chuyến đi đã thay đổi. Vui lòng xem lại tổng tiền trước khi giữ chỗ.");
             var key = new GeneratedKeyHolder();
             jdbc.update(connection -> {
                 var statement = connection.prepareStatement("INSERT INTO booking (account_id,tour_departure_id,status,created_at,client_key) VALUES (?,?,'PENDING_PAYMENT',?,?)", Statement.RETURN_GENERATED_KEYS);
@@ -112,7 +143,14 @@ public class BookingLifecycleService {
                         bookingId, passenger.fullName(), passenger.birthdate(), passenger.male(), passenger.address(), passenger.type());
             }
             persistSnapshot(bookingId, snapshot, now);
-            jdbc.update("UPDATE tour_departure SET available_seats=available_seats-?,version=version+1 WHERE id=?", seats, departureId);
+            // Seat consumption is owned by Tour: holdSeats locks the departure row on the Tour side
+            // and decrements available_seats atomically, so Booking must not write tour_departure.
+            LocalDateTime expiresAt = plan.immediate() ? now.plusMinutes(15) : plan.deadline();
+            try {
+                tourClient.holdSeats(departureId, new TourInternalClient.HoldSeatsRequest(seats, String.valueOf(bookingId), expiresAt));
+            } catch (Exception e) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể giữ chỗ tại tour-service");
+            }
             jdbc.update("""
                 INSERT INTO booking_reservation (booking_id,departure_id,departure_at,seats,status,expires_at,
                   reminder_one_at,reminder_two_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)
@@ -202,10 +240,16 @@ public class BookingLifecycleService {
         int departureId = ((Number)before.get("tour_departure_id")).intValue();
         expiry.expireDeparture(departureId);
         return transactions.execute(tx -> {
-            // A legacy booking can outlive its schedule; the lock read must answer the same 409 the
-            // rest of the lifecycle uses instead of surfacing EmptyResultDataAccessException as a 500.
-            if (jdbc.queryForList("SELECT id FROM tour_departure WHERE id=? FOR UPDATE", departureId).isEmpty())
+            // Check departure exists via Tour internal API
+            Map<String, Object> departure;
+            try {
+                departure = tourClient.getDeparture(departureId);
+            } catch (Exception e) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Lịch khởi hành không còn tồn tại");
+            }
+            if (departure == null || departure.isEmpty()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Lịch khởi hành không còn tồn tại");
+            }
             var booking = jdbc.queryForMap("SELECT * FROM booking WHERE id=? FOR UPDATE", id);
             access.requireOwner(((Number)booking.get("account_id")).intValue());
             if (((Number)booking.get("tour_departure_id")).intValue() != departureId)
@@ -225,13 +269,21 @@ public class BookingLifecycleService {
                 if(seats<=0 || seats!=jdbc.queryForObject("SELECT COUNT(*) FROM customer WHERE booking_id=?",Integer.class,id))
                     throw new ResponseStatusException(HttpStatus.CONFLICT,"Số khách và chỗ giữ không khớp; cần kiểm tra trước khi trả chỗ");
                 if (List.of("HELD","CHECKOUT").contains(hold.get("status"))) {
-                    // Clamp to capacity so an already-inflated counter cannot block the customer's
-                    // cancellation; the hold is always closed and seats never exceed capacity.
-                    // available_seats is SMALLINT, so legacy rows without capacity cap at 32767.
-                    jdbc.update("UPDATE tour_departure SET available_seats=LEAST(COALESCE(capacity,32767),available_seats+?),version=version+1 WHERE id=?", hold.get("seats"), departureId);
+                    // Release seats via Tour internal API
+                    try {
+                        tourClient.releaseHold(departureId, seats);
+                    } catch (Exception e) {
+                        throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể giải phóng chỗ tại tour-service");
+                    }
                     jdbc.update("UPDATE booking_reservation SET status='CANCELLED',cancel_reason='USER_CANCELLED',updated_at=? WHERE booking_id=?", LocalDateTime.now(clock), id);
                 } else throw new ResponseStatusException(HttpStatus.CONFLICT, "Trạng thái giữ chỗ cần kiểm tra");
-            } else jdbc.update("UPDATE tour_departure SET version=version+1 WHERE id=?",departureId);
+            } else {
+                try {
+                    tourClient.incrementVersion(departureId);
+                } catch (Exception e) {
+                    throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể cập nhật phiên bản lịch khởi hành tại tour-service");
+                }
+            }
             int cancelled = jdbc.update("UPDATE booking SET status='CANCELLED' WHERE id=? AND status IN ('PENDING_PAYMENT','CONFIRMED')", id);
             if (cancelled == 1) {
                 // A pending change request must not outlive its booking and keep blocking rebooking.
@@ -258,6 +310,97 @@ public class BookingLifecycleService {
         // still presents an already-due hold as expired without writing anything.
         return response(id);
     }
+
+    public BookingResponse findOwnAttempt(String key) {
+        int account = access.accountId();
+        String requestKey = clientKey(key);
+        if (requestKey == null) throw new IllegalArgumentException("Thiếu mã lượt giữ chỗ");
+        var rows = jdbc.queryForList(SELECT_BOOKING + " WHERE b.account_id=? AND b.client_key=?", account, requestKey);
+        if (rows.isEmpty()) return null;
+        var row = rows.getFirst();
+        var result = toResponse(row);
+        int id = ((Number) row.get("id")).intValue();
+        Object hold = row.get("reservation_status");
+        boolean closed = List.of("EXPIRED", "CANCELLED").contains(row.get("status"))
+                && (hold == null || List.of("EXPIRED", "CANCELLED").contains(hold));
+        result.setRestartAllowed(closed && !expiry.paidEvidence(id) && !expiry.paymentInFlight(id, LocalDateTime.now(clock)));
+        return result;
+    }
+
+    public record HistoryRow(BookingResponse booking, String tourCode, String tourTitle,
+                             String departureDate, String returnDate, String invoiceStatus) {}
+    public record HistoryPage(List<HistoryRow> items, boolean hasNext) {}
+
+    public HistoryPage ownHistory(int page, Long bookingId, String status, LocalDate from, LocalDate to) {
+        int account = access.accountId();
+        if (page < 0 || page > 10000 || (bookingId != null && bookingId < 1)
+                || (from != null && to != null && from.isAfter(to)))
+            throw new IllegalArgumentException("Bộ lọc lịch sử đặt tour không hợp lệ");
+        // Base query without cross-DB JOINs
+        String sql = SELECT_BOOKING;
+        var clauses = new StringBuilder(" WHERE b.account_id=?");
+        var args = new java.util.ArrayList<Object>();
+        args.add(account);
+        if (bookingId != null) { clauses.append(" AND b.id=?"); args.add(bookingId); }
+        if (from != null) { clauses.append(" AND b.created_at>=?"); args.add(from.atStartOfDay()); }
+        if (to != null) { clauses.append(" AND b.created_at<?"); args.add(to.plusDays(1).atStartOfDay()); }
+        if (status != null && !status.isBlank()) {
+            clauses.append(switch (status) {
+                case "PAID" -> " AND r.status='PAID'";
+                case "UNPAID" -> " AND b.status IN ('PENDING_PAYMENT','CONFIRMED') AND COALESCE(r.status,'')<>'PAID'";
+                case "CLOSED" -> " AND (b.status IN ('CANCELLED','EXPIRED','UNCONFIRMED') OR r.status IN ('CANCELLED','EXPIRED'))";
+                default -> throw new IllegalArgumentException("Trạng thái lịch sử không hợp lệ");
+            });
+        }
+        int limit = bookingId == null ? 8 : 1;
+        args.add(limit + 1);
+        args.add(bookingId == null ? page * limit : 0);
+        var rows = jdbc.queryForList(sql + clauses + " ORDER BY b.id DESC LIMIT ? OFFSET ?", args.toArray());
+        
+        // Enrich with tour and invoice data via Feign clients
+        List<HistoryRow> items = new ArrayList<>();
+        for (var row : rows.stream().limit(limit).toList()) {
+            BookingResponse bookingResp = toResponse(row);
+            String tourCode = null, tourTitle = null, departureDate = null, returnDate = null, invoiceStatus = null;
+            
+            // Get tour info via Tour internal API
+            Integer departureId = (Integer) row.get("hold_departure_id");
+            if (departureId != null) {
+                try {
+                    Map<String, Object> departure = tourClient.getDeparture(departureId);
+                    if (departure != null) {
+                        tourCode = (String) departure.get("tour_code");
+                        tourTitle = (String) departure.get("tour_id") != null ? 
+                            "Tour #" + departure.get("tour_id") : null; // Would need another call for full title
+                        Object depDate = departure.get("departure_date");
+                        Object retDate = departure.get("return_date");
+                        departureDate = depDate != null ? BookingMailEvents.date(depDate).toString() : null;
+                        returnDate = retDate != null ? BookingMailEvents.date(retDate).toString() : null;
+                    }
+                } catch (Exception ignored) {
+                    // Tour service unavailable, continue without tour info
+                }
+            }
+            
+            // Get invoice status via Invoice internal API
+            Integer bookingIdInt = ((Number) row.get("id")).intValue();
+            try {
+                Map<String, Object> invoice = invoiceClient.getInvoiceByBookingId(bookingIdInt);
+                if (invoice != null) {
+                    invoiceStatus = (String) invoice.get("status");
+                }
+            } catch (Exception ignored) {
+                // Invoice service unavailable, continue without invoice info
+            }
+            
+            items.add(new HistoryRow(bookingResp, tourCode, tourTitle, departureDate, returnDate, invoiceStatus));
+        }
+        return new HistoryPage(items, rows.size() > limit);
+    }
+
+    private static String historyDate(Object value) {
+        return value == null ? null : BookingMailEvents.date(value).toString();
+    }
     /**
      * {@code mine} is what the profile page sends: a staff account also holds BOOKINGS_GET_ALL, and
      * the global page would show it somebody else's newest bookings instead of its own history.
@@ -276,14 +419,12 @@ public class BookingLifecycleService {
     private static final String SELECT_BOOKING = """
             SELECT b.*,r.status AS reservation_status,r.expires_at AS payment_deadline,
               r.seats AS hold_seats,r.departure_id AS hold_departure_id,
-              d.operational_status AS departure_status,
               (SELECT COUNT(*) FROM customer c WHERE c.booking_id=b.id) AS passenger_count,
               r.reminder_one_at,r.reminder_two_at,
               s.adult_price AS snap_adult,s.child_price AS snap_child,s.toddler_price AS snap_toddler,
               s.infant_price AS snap_infant,s.total_amount AS snap_total,s.currency AS snap_currency,
               s.snapshot_at AS snap_at
             FROM booking b LEFT JOIN booking_reservation r ON r.booking_id=b.id
-            LEFT JOIN tour_departure d ON d.id=b.tour_departure_id
             LEFT JOIN booking_price_snapshot s ON s.booking_id=b.id
             """;
     private Map<String,Object> booking(int id) {
@@ -300,6 +441,22 @@ public class BookingLifecycleService {
         LocalDateTime deadline = row.get("payment_deadline") == null ? null : BookingMailEvents.date(row.get("payment_deadline"));
         int bookingId = ((Number) row.get("id")).intValue();
         LocalDateTime now = LocalDateTime.now(clock);
+        
+        // Fetch departure status via Tour internal API (replaces direct tour_departure JOIN)
+        String departureStatus = "OPEN";
+        Integer departureId = (Integer) row.get("hold_departure_id");
+        if (departureId != null) {
+            try {
+                Map<String, Object> departure = tourClient.getDeparture(departureId);
+                if (departure != null) {
+                    Object status = departure.get("operational_status");
+                    if (status != null) departureStatus = status.toString();
+                }
+            } catch (Exception ignored) {
+                // Tour service unavailable, assume OPEN
+            }
+        }
+        
         // The background worker releases due holds a little later; present the same view
         // during that window without writing to the database on a read request. Payment
         // evidence or an in-flight checkout keeps the same guard the worker applies, so a
@@ -312,7 +469,7 @@ public class BookingLifecycleService {
         boolean dueHold = deadline != null && ("HELD".equals(hold) || "CHECKOUT".equals(hold))
                 && consistentHold
                 && !deadline.plusSeconds(EXPIRY_DISPLAY_GRACE_SECONDS).isAfter(now)
-                && (!"SUSPENDED".equals(row.get("departure_status"))
+                && (!"SUSPENDED".equals(departureStatus)
                         || !expiry.hasActiveShopOffer(bookingId, ((Number) row.get("tour_departure_id")).intValue()))
                 && !expiry.paidEvidence(bookingId)
                 && !expiry.paymentInFlight(bookingId, now);
@@ -323,7 +480,7 @@ public class BookingLifecycleService {
                 .paymentDeadline(deadline == null ? null : deadline.toString())
                 // Same payable-departure rule the payment service applies when an order is created:
                 // a stopped or missing schedule must not invite a checkout that can only be rejected.
-                .paymentRequiredNow(!dueHold && "CHECKOUT".equals(hold) && departureIsPayable(row));
+                .paymentRequiredNow(!dueHold && "CHECKOUT".equals(hold) && departureIsPayable(departureStatus));
         if (row.get("snap_total") != null) {
             builder.totalAmount(new BigDecimal(row.get("snap_total").toString()).toBigIntegerExact().toString())
                     .currency(String.valueOf(row.get("snap_currency")))
@@ -333,9 +490,8 @@ public class BookingLifecycleService {
         return builder.build();
     }
 
-    private static boolean departureIsPayable(Map<String, Object> row) {
-        Object status = row.get("departure_status");
-        return status != null && !List.of("SUSPENDED", "CANCELLED").contains(String.valueOf(status));
+    private static boolean departureIsPayable(String departureStatus) {
+        return departureStatus != null && !List.of("SUSPENDED", "CANCELLED").contains(departureStatus);
     }
 
     private static Map<String, String> unitPrices(Map<String, Object> row) {
@@ -352,15 +508,31 @@ public class BookingLifecycleService {
     private record PriceSnapshot(long priceId, BigDecimal adult, BigDecimal child, BigDecimal toddler,
             BigDecimal infant, BigDecimal supplement, long total) {}
 
+    private int tourIdOf(Object value) {
+        if (value instanceof Number number) return number.intValue();
+        if (value instanceof String text) {
+            try { return Integer.parseInt(text.trim()); }
+            catch (RuntimeException invalid) { throw new IllegalArgumentException("Tour ID không hợp lệ"); }
+        }
+        throw new IllegalArgumentException("Tour ID không hợp lệ");
+    }
+
     private PriceSnapshot snapshotFor(int tourId, List<Passenger> passengers) {
-        var rows = jdbc.queryForList("SELECT p.* FROM prices p JOIN tour t ON t.price_id=p.id WHERE t.id=?", tourId);
-        if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để đặt");
-        var price = rows.getFirst();
-        BigDecimal adult = price(price, "adult_price");
-        BigDecimal child = price(price, "child_price");
-        BigDecimal toddler = price(price, "toddler_price");
-        BigDecimal infant = price(price, "infant_price");
-        BigDecimal supplement = price(price, "single_supplement_price");
+        // Get price info via Pricing internal API (replaces direct prices+tour JOIN)
+        Map<String, Object> price;
+        try {
+            price = pricingClient.getPriceById((long) tourId);
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để đặt");
+        }
+        if (price == null || price.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để đặt");
+        }
+        BigDecimal adult = price(price, "adultPrice");
+        BigDecimal child = price(price, "childPrice");
+        BigDecimal toddler = price(price, "toddlerPrice");
+        BigDecimal infant = price(price, "infantPrice");
+        BigDecimal supplement = price(price, "singleSupplementPrice");
         BigDecimal total = BigDecimal.ZERO;
         for (var passenger : passengers) {
             total = total.add(switch (passenger.type()) {

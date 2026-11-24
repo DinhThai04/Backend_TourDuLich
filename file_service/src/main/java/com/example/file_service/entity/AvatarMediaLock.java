@@ -6,4 +6,10 @@ public class AvatarMediaLock {
     @jakarta.persistence.Id
     @jakarta.persistence.Column(name="owner_id",length=19)
     private String ownerId;
+
+    @jakarta.persistence.Column(name="deleted_at")
+    private java.time.LocalDateTime deletedAt;
+
+    @jakarta.persistence.Column(name="avatar_version", nullable=false, columnDefinition="BIGINT NOT NULL DEFAULT 0")
+    private long avatarVersion;
 }

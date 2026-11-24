@@ -1,5 +1,7 @@
 package com.example.booking_service.notification;
 
+import jakarta.mail.internet.AddressException;
+import jakarta.mail.internet.InternetAddress;
 import lombok.Getter;
 import lombok.Setter;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -23,13 +25,26 @@ public class MailProperties {
                 || lease.compareTo(Duration.ofMinutes(1)) < 0) {
             throw new IllegalArgumentException("Invalid mail batch, retry or lease configuration");
         }
-        MailOutboxService.validateAddress(from);
-        if (testMode) MailOutboxService.validateAddress(testRecipient);
+        validateAddress(from);
+        if (testMode) validateAddress(testRecipient);
         var uri = java.net.URI.create(frontendBaseUrl);
         if (!("https".equals(uri.getScheme()) || "http".equals(uri.getScheme()))
                 || uri.getHost() == null || uri.getUserInfo() != null
                 || uri.getQuery() != null || uri.getFragment() != null) {
             throw new IllegalArgumentException("Mail frontend URL must be an http(s) base URL");
+        }
+    }
+
+    private static void validateAddress(String value) {
+        try {
+            if (value == null || value.length() > 254 || value.contains("\r") || value.contains("\n"))
+                throw new jakarta.mail.internet.AddressException("Invalid email");
+            InternetAddress address = new InternetAddress(value, true);
+            address.validate();
+            if (!value.equals(address.getAddress()) || address.getPersonal() != null)
+                throw new jakarta.mail.internet.AddressException("Expected a single plain email address");
+        } catch (jakarta.mail.internet.AddressException exception) {
+            throw new IllegalArgumentException("Invalid recipient or sender email", exception);
         }
     }
 }

@@ -29,6 +29,10 @@ public class User {
     @Column
     private String avatar;
 
+    @Builder.Default
+    @Column(name = "avatar_version", nullable = false, columnDefinition = "BIGINT NOT NULL DEFAULT 0")
+    private long avatarVersion = 0L;
+
     @Column
     private String phone;
 

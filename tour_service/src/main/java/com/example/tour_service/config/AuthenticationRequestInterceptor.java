@@ -13,6 +13,8 @@ import org.springframework.web.context.request.ServletRequestAttributes;
 public class AuthenticationRequestInterceptor implements RequestInterceptor {
     @Override
     public void apply(RequestTemplate template) {
+        var requestId = org.slf4j.MDC.get("requestId");
+        if (requestId != null) template.header("X-Request-ID", requestId);
         var attributes = RequestContextHolder.getRequestAttributes();
         if (!(attributes instanceof ServletRequestAttributes servletRequestAttributes)) return;
         var authHeader = servletRequestAttributes.getRequest().getHeader("Authorization");

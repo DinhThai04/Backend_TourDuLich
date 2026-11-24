@@ -7,7 +7,7 @@ import com.example.tour_service.entity.Tour;
 import com.example.tour_service.entity.Vehicle;
 import com.example.tour_service.enums.LocationType;
 import com.example.tour_service.repository.LocationRepository;
-import com.example.tour_service.repository.httpClient.FileClient;
+import com.example.tour_service.repository.httpclient.FileClient;
 import jakarta.persistence.EntityManager;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;

@@ -54,8 +54,9 @@ public class ConversationService {
             String message=request.message();
             Integer selected = request.selectedTourId();
             if (selected != null && selected < 1) throw ChatFailure.invalid();
-            return store.turn(request.conversationId(),request.requestId(),message,selected,
-                    state->answerTurn(state,message,selected));
+            Integer departure = request.selectedDepartureId();
+            return store.turn(request.conversationId(),request.requestId(),message,selected,departure,
+                    state->answerTurn(state,message,selected,departure));
         } catch(ModelFailure failure) {
             status=failure.httpStatus();
             outcome=failure.type().name();
@@ -77,13 +78,18 @@ public class ConversationService {
                     trace.promptTokens,trace.completionTokens,trace.totalTokens);
         }
     }
-    private Draft answerTurn(State state,String message,Integer selectedTourId) {
+    private Draft answerTurn(State state,String message,Integer selectedTourId,Integer selectedDepartureId) {
         String stripped=message.strip();
         return execution==null
-                ? responses.answer(process(state,stripped,selectedTourId))
-                : execution.execute(()->responses.answer(process(state,stripped,selectedTourId)));
+                ? responses.answer(process(state,stripped,selectedTourId,selectedDepartureId))
+                : execution.execute(()->responses.answer(process(state,stripped,selectedTourId,selectedDepartureId)));
     }
-    private Draft process(State state,String message,Integer selectedTourId) {
+    private Draft process(State state,String message,Integer selectedTourId,Integer selectedDepartureId) {
+        if (selectedTourId != null && com.example.ai_service.advisor.TourPageQuestion.asksMeetingPoint(message))
+            return advisor.pageMeetingPoint(state, selectedTourId, selectedDepartureId);
+        Integer partySize = com.example.ai_service.advisor.TourPageQuestion.selectedDepartureParty(message);
+        if (selectedTourId != null && partySize != null)
+            return advisor.pageDeparture(state, selectedTourId, selectedDepartureId, partySize);
         var question = com.example.ai_service.advisor.TourPageQuestion.parse(message);
         if (selectedTourId != null && question != null)
             return advisor.pageTour(state, selectedTourId, question);
@@ -114,6 +120,9 @@ public class ConversationService {
         else reply="Tìm thấy "+result.tours().size()+" tour trong lượt này. Giá và số chỗ là thông tin tham khảo tại thời điểm kiểm tra, chưa phải xác nhận giữ chỗ.";
         if(criteria.maxBudgetVnd()!=null) reply+=" Ngân sách tối đa đang dùng: "+String.format(Locale.forLanguageTag("vi-VN"),"%,d",criteria.maxBudgetVnd())
                 +" VND"+(criteria.budgetScope()==BudgetScope.TOTAL_GROUP?" cho cả nhóm.":" cho một người lớn.");
+        if (page == 0 && !result.tours().isEmpty() && criteria.originId() == null && criteria.departureFrom() != null
+                && criteria.budgetScope() == BudgetScope.TOTAL_GROUP)
+            reply += " Bạn muốn khởi hành từ đâu? Tôi có thể lọc lại theo nơi xuất phát.";
         return new Draft(criteria,Hint.NONE,result.tours().stream().map(TourCard::tourId).toList(),page,result.searchSummary().hasMore(),
                 result.tours().isEmpty()?"NO_RESULTS":"RESULTS",reply,result.tours(),null,result.searchSummary(),plan.reset());
     }

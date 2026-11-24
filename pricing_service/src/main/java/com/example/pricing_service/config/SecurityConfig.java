@@ -12,6 +12,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
 import org.springframework.security.oauth2.server.resource.authentication.JwtGrantedAuthoritiesConverter;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration
 @EnableWebSecurity
@@ -25,13 +26,18 @@ public class SecurityConfig {
     };
 
     private final CustomJwtDecoder customJwtDecoder;
-    public SecurityConfig(CustomJwtDecoder customJwtDecoder) {
+    private final InternalPricingAuthenticationFilter internalPricingAuthenticationFilter;
+
+    public SecurityConfig(CustomJwtDecoder customJwtDecoder,
+            InternalPricingAuthenticationFilter internalPricingAuthenticationFilter) {
         this.customJwtDecoder = customJwtDecoder;
+        this.internalPricingAuthenticationFilter = internalPricingAuthenticationFilter;
     }
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity httpSecurity) throws Exception {
         httpSecurity.authorizeHttpRequests(request -> request
+                .requestMatchers("/internal/**").permitAll()
                 .requestMatchers(HttpMethod.GET, PUBLIC_URLS).permitAll()
                 .requestMatchers(HttpMethod.POST, "/prices/batch").permitAll()
                 .requestMatchers(HttpMethod.GET, "/prices").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:PRICE_GET_LIST")
@@ -39,6 +45,7 @@ public class SecurityConfig {
                 .requestMatchers(HttpMethod.PUT, "/prices/**").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:PRICE_UPDATE")
                 .anyRequest()
                 .authenticated());
+        httpSecurity.addFilterBefore(internalPricingAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
         httpSecurity.oauth2ResourceServer(oauth2 -> oauth2.jwt(jwtConfigurer -> jwtConfigurer
                 .decoder(customJwtDecoder)

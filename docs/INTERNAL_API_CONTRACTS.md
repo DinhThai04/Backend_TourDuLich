@@ -1,0 +1,579 @@
+# Internal API Contract Specification
+
+> **File**: `docs/INTERNAL_API_CONTRACTS.md`
+> **Mục đích**: Định nghĩa chi tiết request/response cho các internal endpoint giữa service.
+> **Sử dụng**: Phase 2 implement vertical slices.
+
+---
+
+## Quy tắc chung
+
+- **Base path**: `/internal/{service}/...` (gateway route `/internal` → service tương ứng)
+- **Auth**: Internal service-to-service JWT (shared `JWT_SIGNER_KEY`) hoặc API key header `X-Internal-Key`
+- **Timeout**: 5s connect, 10s read (configurable per endpoint)
+- **Retry**: 3 lần với exponential backoff (100ms, 200ms, 400ms) cho idempotent GET
+- **Error format**: RFC 7807 ProblemDetail
+- **Versioning**: URL không version; breaking change → endpoint mới v2
+
+---
+
+## 1. Tour Service Internal API
+
+### 1.1 POST `/internal/tour/departures/{id}/holds`
+
+**Mục đích**: Giữ ghế cho booking
+
+**Request**:
+```json
+{
+  "seats": 2,
+  "ttlSeconds": 900,
+  "bookingId": 123,
+  "clientKey": "uuid-v4"
+}
+```
+
+**Response 201**:
+```json
+{
+  "holdId": "uuid-v4",
+  "departureId": 456,
+  "seats": 2,
+  "status": "HELD",
+  "expiresAt": "2026-11-20T10:15:00+07:00"
+}
+```
+
+**Error**:
+- `409 CONFLICT` — Hết ghế hoặc `operational_status != OPEN`
+- `404 NOT_FOUND` — Departure không tồn tại
+- `400 BAD_REQUEST` — Seats ≤ 0, TTL ≤ 0
+
+---
+
+### 1.2 DELETE `/internal/tour/departures/{id}/holds/{holdId}`
+
+**Mục đích**: Trả ghế
+
+**Response 204**: No content
+
+**Error**:
+- `404 NOT_FOUND` — Hold không tồn tại hoặc đã RELEASED/EXPIRED
+- `409 CONFLICT` — Hold không thuộc booking này (nếu cung cấp bookingId)
+
+---
+
+### 1.3 GET `/internal/tour/departures/{id}`
+
+**Mục đích**: Lấy thông tin lịch departure
+
+**Response 200**:
+```json
+{
+  "id": 456,
+  "tourId": 12,
+  "tourCode": "MB-SAPA-3N2D-01",
+  "departureDate": "2026-12-20T06:00:00+07:00",
+  "returnDate": "2026-12-22T20:00:00+07:00",
+  "capacity": 36,
+  "availableSeats": 30,
+  "operationalStatus": "OPEN",
+  "version": 5
+}
+```
+
+---
+
+### 1.4 GET `/internal/tour/departures/{id}/capacity`
+
+**Mục đích**: Lấy capacity snapshot cho booking hold
+
+**Response 200**:
+```json
+{
+  "departureId": 456,
+  "capacity": 36,
+  "availableSeats": 30,
+  "heldSeats": 4,
+  "holds": [
+    { "holdId": "uuid", "bookingId": 123, "seats": 2, "expiresAt": "..." }
+  ]
+}
+```
+
+---
+
+### 1.5 GET `/internal/tour/tours/{id}/price`
+
+**Mục đích**: Lấy giá tour theo nhóm tuổi
+
+**Response 200**:
+```json
+{
+  "tourId": 12,
+  "adultPrice": 3550000,
+  "childPrice": 1775000,
+  "toddlerPrice": 0,
+  "infantPrice": 0,
+  "singleSupplementPrice": 500000,
+  "currency": "VND"
+}
+```
+
+---
+
+### 1.6 POST `/internal/tour/tours/{id}/price/quote`
+
+**Mục đích**: Tính tiền cho danh sách khách
+
+**Request**:
+```json
+{
+  "customers": [
+    { "bookingType": "ADULT" },
+    { "bookingType": "CHILD" },
+    { "bookingType": "TODDLER" }
+  ]
+}
+```
+
+**Response 200**:
+```json
+{
+  "totalAmount": 5325000,
+  "breakdown": [
+    { "type": "ADULT", "count": 1, "unitPrice": 3550000, "subtotal": 3550000 },
+    { "type": "CHILD", "count": 1, "unitPrice": 1775000, "subtotal": 1775000 },
+    { "type": "TODDLER", "count": 1, "unitPrice": 0, "subtotal": 0 }
+  ]
+}
+```
+
+---
+
+### 1.7 POST `/internal/tour/departures/bulk`
+
+**Mục đích**: Lấy nhiều lịch một lần (cho search/admin)
+
+**Request**:
+```json
+{
+  "departureIds": [456, 457, 458]
+}
+```
+
+**Response 200**:
+```json
+{
+  "departures": [
+    { "id": 456, "tourId": 12, "departureDate": "...", "availableSeats": 30, "operationalStatus": "OPEN" },
+    { "id": 457, "tourId": 12, "departureDate": "...", "availableSeats": 28, "operationalStatus": "OPEN" }
+  ]
+}
+```
+
+---
+
+## 2. Pricing Service Internal API
+
+### 2.1 GET `/internal/pricing/tours/{id}/price`
+
+**Response 200**: Giá Tour `/price` nhưng nguồn sự từ pricing
+
+---
+
+### 2.2 POST `/internal/pricing/tours/{id}/price/quote`
+
+**Response 200**: Giá Tour `/price/quote` nhưng pricing service là authority
+
+---
+
+## 3. Booking Service Internal API
+
+### 3.1 GET `/internal/booking/bookings/{id}`
+
+**Response 200**:
+```json
+{
+  "id": 123,
+  "accountId": 7,
+  "tourDepartureId": 456,
+  "status": "CONFIRMED",
+  "seats": 2,
+  "totalAmount": 7100000,
+  "createdAt": "2026-11-20T10:00:00+07:00",
+  "confirmedAt": "2026-11-20T10:05:00+07:00",
+  "clientKey": "uuid-v4"
+}
+```
+
+---
+
+### 3.2 GET `/internal/booking/bookings/{id}/summary`
+
+**Response 200**:
+```json
+{
+  "bookingId": 123,
+  "accountId": 7,
+  "tourDepartureId": 456,
+  "status": "CONFIRMED",
+  "seats": 2,
+  "totalAmount": 7100000,
+  "currency": "VND"
+}
+```
+
+---
+
+### 3.3 GET `/internal/booking/bookings/{id}/customers`
+
+**Response 200**:
+```json
+{
+  "bookingId": 123,
+  "customers": [
+    { "id": 1, "bookingType": "ADULT", "fullName": "Nguyen Van A" },
+    { "id": 2, "bookingType": "CHILD", "fullName": "Nguyen Van B" }
+  ]
+}
+```
+
+---
+
+### 3.4 GET `/internal/booking/reservations/{bookingId}`
+
+**Response 200**:
+```json
+{
+  "bookingId": 123,
+  "reservation": {
+    "status": "HELD",
+    "seats": 2,
+    "expiresAt": "2026-11-20T10:15:00+07:00",
+    "holdId": "uuid-v4"
+  }
+}
+```
+
+---
+
+## 4. Payment Service Internal API
+
+### 4.1 GET `/internal/payment/payments/by-booking/{bookingId}`
+
+**Response 200**:
+```json
+{
+  "bookingId": 123,
+  "payments": [
+    {
+      "id": 10,
+      "provider": "VNPAY",
+      "status": "PAID",
+      "amount": 7100000,
+      "txnRef": "VNPAY_123_abc",
+      "paidAt": "2026-11-20T10:10:00+07:00",
+      "vnpayTransactionId": "uuid-v4"
+    }
+  ]
+}
+```
+
+---
+
+## 5. File Service Internal API
+
+### 5.1 POST `/internal/file/files/lock-avatar/{ownerId}`
+
+**Request**:
+```json
+{
+  "fileId": "uuid-v4",
+  "url": "https://cloudinary.com/...",
+  "contentType": "image/webp",
+  "size": 1024000
+}
+```
+
+**Response 201**:
+```json
+{
+  "fileId": "uuid-v4",
+  "avatarOwnerId": "7",
+  "url": "https://cloudinary.com/...",
+  "locked": true
+}
+```
+
+---
+
+### 5.2 GET `/internal/file/files/{fileId}/verify`
+
+**Response 200**:
+```json
+{
+  "fileId": "uuid-v4",
+  "exists": true,
+  "ownerType": "AVATAR",
+  "ownerId": "7",
+  "url": "https://cloudinary.com/...",
+  "canDelete": true
+}
+```
+
+---
+
+### 5.3 DELETE `/internal/file/files/cleanup-refs/{ownerId}`
+
+**Mục đích**: Dọn tham chiếu khi xóa avatar/tour
+
+**Response 204**: No content
+
+### 5.4 DELETE `/internal/file/files/detach-tour-gallery/{tourId}`
+
+**Caller**: Tour outbox publisher, authenticated with `X-Internal-File-Key` and an `X-Event-Id` UUID. The event is `tour.gallery.detach.requested.v1`; the caller retries delivery until File returns success or the event reaches the outbox dead-letter state.
+
+**Behavior**: File inserts the event into `file_inbox` and, in the same local transaction, uses the File-owned `tour_media_lock` to mark the tour deleted, detach its gallery rows, and remove only `TOUR` references for that tour. Gallery writes take the same lock and reject a deleted-tour tombstone, so a delayed request cannot recreate the gallery after detach. Duplicate event delivery is a no-op, physical assets are retained for cleanup, and the endpoint returns success after a previously processed event.
+
+**Schema upgrade**: Apply `data_seed/migrations/V002__file_tour_media_tombstone.sql` to an existing File database before deploying this behavior. Fresh installs already include `tour_media_lock.deleted_at` in `data_seed/microservices/sgu_file.sql`.
+
+**Response 204**: No content
+
+**Dead-letter replay**: After confirming File availability and the event payload/aggregate ID, an operator may requeue a specific row in the Tour database with `UPDATE tour_outbox SET status='PENDING', attempts=0, available_at=NOW(6), last_error=NULL WHERE id=? AND event_type='tour.gallery.detach.requested.v1' AND status='DEAD_LETTER';`. Record the operator, event ID and reason in the incident log before replay. The consumer remains idempotent if the original delivery actually completed but its acknowledgement was lost.
+
+### 5.5 DELETE `/internal/file/files/detach-account-media/{ownerId}`
+
+**Caller**: Auth outbox publisher, authenticated with `X-Internal-File-Key` and `X-Event-Id` UUID. Auth creates `auth.account.deleted.v1` in the same transaction that physically deletes an unused account, then retries delivery until File acknowledges or the event reaches `DEAD_LETTER`.
+
+**Behavior**: File deduplicates the event in `file_inbox`, locks the File-owned `avatar_media_lock`, tombstones the owner, detaches only avatar/generic account media, removes `AVATAR` references, and marks the inbox row processed in one File transaction. Tour and location media are preserved. A repeated event or a separate replay safely returns 204. A tombstoned account cannot create a new avatar link.
+
+**Schema upgrade**: Apply `data_seed/migrations/V003__file_avatar_media_tombstone.sql` to an existing File database before deploying account detach. Fresh installs include `avatar_media_lock.deleted_at` in `data_seed/microservices/sgu_file.sql`.
+
+**Dead-letter replay**: Verify account ID and event ID, then requeue the specific Auth outbox row with `UPDATE auth_outbox SET status='PENDING', attempts=0, available_at=NOW(6), last_error=NULL WHERE id=? AND event_type='auth.account.deleted.v1' AND status='DEAD_LETTER';`. Record operator, event ID, and reason. File inbox deduplication makes replay safe after an uncertain acknowledgement.
+
+### 5.6 Avatar upload revision
+
+File returns `avatarVersion` with the avatar upload URL. It increments this File-owned revision while holding `avatar_media_lock`, in the same transaction that replaces the current avatar. Auth stores `users.avatar` only when the returned revision exceeds `users.avatar_version`; delayed upload responses cannot overwrite a newer profile image. Equal revision with a different URL is a conflict, and older revisions return the current Auth URL.
+
+Apply `data_seed/migrations/V005__file_avatar_revision.sql` before deploying File upload code and `data_seed/migrations/V004__auth_user_avatar_revision.sql` before deploying Auth profile code. Deploy File first so its response contains a revision before Auth requires one. Existing accounts start at revision 0 and advance on their next successful avatar upload; there is no URL backfill or external write during migration.
+
+---
+
+## 6. Auth Service Internal API
+
+### 6.1 GET `/internal/auth/users/{id}/exists`
+
+**Response 200**:
+```json
+{
+  "userId": 7,
+  "exists": true,
+  "status": "ACTIVE"
+}
+```
+
+---
+
+### 6.2 GET `/internal/auth/users/{id}/status`
+
+**Response 200**:
+```json
+{
+  "userId": 7,
+  "status": "ACTIVE",
+  "role": "KHACH_HANG"
+}
+```
+
+---
+
+### 6.3 POST `/internal/auth/sessions/validate`
+
+**Mục đích**: Service khác kiểm tra session mà không đọc `users`, `user_account_event` hoặc `invalidated_token` của Auth.
+
+**Request**: Không có body. Bắt buộc `X-Internal-Auth-Key` và `Authorization: Bearer <access-token>`.
+
+**Response**: `204 No Content` nếu access token còn hợp lệ. Auth resource-server decoder xác minh chữ ký, expiry, loại token, tài khoản ACTIVE, credential version, session epoch và token bị revoke. Trả `401` nếu token không hợp lệ; lỗi Auth/DB trả `5xx`.
+
+**Client behavior**: File forward token đã verify chữ ký các bước, dùng timeout connect/read cấu hình được và fail closed khi Auth lỗi hoặc không cấu hình internal key. Không retry và không cache kết quả để logout/revoke có hiệu lực ngay request tiếp theo.
+
+---
+
+## 7. Reporting Service Internal API
+
+**Auth**: `X-Internal-Reporting-Key` (minimum 32 characters), configured by
+`REPORTING_INTERNAL_KEY` in reporting_service and booking_service.
+
+### 7.1 POST `/internal/reports/audit`
+
+Ghi một audit record vào timeline của reporting read model.
+
+```json
+{
+  "actorId": "7",
+  "action": "BOOKING_CONFIRMED",
+  "entityType": "booking",
+  "entityId": "123",
+  "detail": { "status": "CONFIRMED" },
+  "correlationId": "request-uuid",
+  "causationId": "command-uuid",
+  "occurredAt": "2026-11-20T10:00:00+07:00"
+}
+```
+
+**Response 201**: `{ "id": 1 }`
+
+### 7.2 GET `/internal/reports/audit?page=0`
+
+Trả audit timeline, 20 record/trang, mới nhất trước.
+
+### 7.3 GET `/internal/reports/operations?from=2026-11-01&through=2026-11-30`
+
+Khoảng thời gian tối đa 31 ngày. Chỉ đọc `ops_*` trong `sgu_reporting`, không query DB nguồn.
+
+```json
+{
+  "bookings": 120,
+  "expired": 4,
+  "collected": 350000000,
+  "schedule_refunds": 5000000,
+  "reconciliation_refunds": 1200000,
+  "confirmed_passengers": 240
+}
+```
+
+### 7.4 Projection ingestion
+
+Các endpoint idempotent upsert vào read model, dùng cho event consumer Phase 4 hoặc internal caller trong giai đoạn chuyển đổi:
+
+- `POST /internal/reports/projections/bookings`
+- `POST /internal/reports/projections/payments`
+- `POST /internal/reports/projections/invoices`
+- `POST /internal/reports/projections/tours`
+- `POST /internal/reports/projections/users`
+- `POST /internal/reports/projections/refunds`
+
+**Response 204**: No content.
+
+---
+
+## 8. Notification Service Internal API
+
+**Auth**: `X-Internal-Notification-Key` (minimum 32 characters), configured by
+`NOTIFICATION_INTERNAL_KEY`.
+
+### 8.1 POST `/internal/notifications/mail`
+
+Enqueue mail idempotent theo `eventKey`; producer không ghi trực tiếp `mail_outbox`.
+
+```json
+{
+  "eventKey": "booking:123:created",
+  "eventType": "BOOKING_CREATED",
+  "sourceService": "booking-service",
+  "bookingId": 123,
+  "accountId": 7,
+  "recipient": "user@example.com",
+  "subject": "SGU Tour - Booking created",
+  "html": "<p>...</p>",
+  "text": "...",
+  "scheduledAt": "2026-11-20T10:00:00+07:00"
+}
+```
+
+**Response 202**: `{ "created": true }`; duplicate `eventKey` trả `{ "created": false }`.
+
+### 8.2 GET `/internal/notifications/mail/bookings/{bookingId}`
+
+Trả tối đa 30 delivery gần nhất của booking.
+
+### 8.3 POST `/internal/notifications/mail/bookings/{bookingId}/{id}/retry`
+
+Chỉ retry mail `FAILED` và chưa gửi. **Response 204**.
+
+---
+
+## 9. Error Response Format (RFC 7807)
+
+```json
+{
+  "type": "https://sgu-tour.example.com/errors/insufficient-seats",
+  "title": "Không đủ ghế",
+  "status": 409,
+  "detail": "Chỉ còn 2 ghế trống, yêu cầu 3",
+  "instance": "/internal/tour/departures/456/holds",
+  "errorCode": "INSUFFICIENT_SEATS",
+  "timestamp": "2026-11-20T10:00:00+07:00",
+  "traceId": "uuid-v4"
+}
+```
+
+**Mã lỗi chuẩn**:
+| Code | HTTP | Mục đích |
+|---|---|---|
+| `RESOURCE_NOT_FOUND` | 404 | Entity không tồn tại |
+| `CONFLICT` | 409 | Xung đột trạng thái (hết ghế, version mismatch) |
+| `INSUFFICIENT_SEATS` | 409 | Không đủ ghế trống |
+| `HOLD_EXPIRED` | 410 | Hold đã hết hạn |
+| `INVALID_STATE_TRANSITION` | 409 | Chuyển trạng thái không hợp lệ |
+| `IDEMPOTENCY_CONFLICT` | 409 | `clientKey` trùng với request đang xử lý |
+
+---
+
+## 10. Contract Test Requirement
+
+Mọi internal endpoint **bắt buộc** có contract test (Spring Cloud Contract hoặc Pact):
+
+```java
+// Ví dụ: TourDepartureHoldContractTest
+@Test
+void holdSeats_success() {
+    given()
+        .header("X-Internal-Key", internalKey)
+        .body(holdRequest)
+    .when()
+        .post("/internal/tour/departures/456/holds")
+    .then()
+        .statusCode(201)
+        .body("holdId", notNullValue())
+        .body("status", equalTo("HELD"));
+}
+```
+
+---
+
+## 11. Versioning & Deprecation
+
+- **v1**: URL không version (current)
+- **Breaking change**: Tạo endpoint mới `/internal/tour/v2/...`
+- **Deprecation**: Header `Deprecation: true` + `Sunset: <date>` + `Link: <new-url>; rel="successor-version"`
+- **Support window**: Tối thiểu 2 sprint sau khi deprecate
+
+## 12. Event Contracts
+
+Event gửi qua outbox của các service, được thiết kế idempotent và correlation/causation ID.
+
+### 12.1 `booking.mail.requested.v1` (Booking → Notification)
+
+**Mục đích**: Yêu cầu gửi email liên quan booking; Booking ghi vào `booking_outbox` trong cùng transaction và publisher retry đến DLQ.
+
+**Payload**:
+```json
+{
+  "eventKey": "booking:123:mail:created",
+  "eventType": "BOOKING_MAIL_REQUESTED",
+  "sourceService": "booking-service",
+  "bookingId": 123,
+  "accountId": 7,
+  "recipient": "user@example.com",
+  "subject": "SGU Tour - Booking created",
+  "html": "<p>...</p>",
+  "text": "...",
+  "scheduledAt": "2026-11-20T10:00:00+07:00"
+}
+```
+
+**Consumers**: Notification `POST /internal/notifications/mail` (xem § 8.1), idempotent theo `eventKey`.
+
+**Response**: Notification trả `202` nếu đã gửi mail mới; `202 {created:false}` nếu duplicate `eventKey`.

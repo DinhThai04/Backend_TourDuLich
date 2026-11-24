@@ -13,6 +13,10 @@ import org.springframework.boot.test.context.SpringBootTest;
         "spring.jpa.show-sql=false",
         "vnpay.secret-key=synthetic-test-hash-secret",
         "vnpay.tmn-code=synthetic-test-tmn-code",
+        "AUTH_INTERNAL_KEY=synthetic-auth-internal-key-0123456789",
+        "TOUR_INTERNAL_KEY=synthetic-tour-internal-key-0123456789",
+        "PRICING_INTERNAL_KEY=synthetic-pricing-internal-key-0123456789",
+        "NOTIFICATION_INTERNAL_KEY=synthetic-notification-internal-key-0123456789",
         "jwt.signerKey=synthetic-test-signer-key-012345678901234567890123456789012345678901234567890123"
 })
 class PaymentServiceApplicationTests {
