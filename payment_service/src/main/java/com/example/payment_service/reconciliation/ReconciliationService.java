@@ -1,6 +1,7 @@
 package com.example.payment_service.reconciliation;
 
 import com.example.payment_service.repository.httpclient.AuthInternalClient;
+import com.example.payment_service.repository.httpclient.BookingInternalClient;
 import com.example.payment_service.repository.httpclient.TourInternalClient;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -18,6 +19,7 @@ public class ReconciliationService {
 	private final Clock clock;
 	private final AuthInternalClient authClient;
 	private final TourInternalClient tourClient;
+	private final BookingInternalClient bookingClient;
 	public enum Action { UNPAID_CONFIRMED, PAYMENT_FOUND, REFUND_RECORDED }
 	/** Fixed provider whitelist; table and reference column are never taken from user input. */
 	private enum Provider {
@@ -98,7 +100,8 @@ public class ReconciliationService {
 		// Enrich with user and booking info via internal APIs
 		for (var row : rows) {
 			// Get user info via Auth internal API
-			Long accountId = (Long) row.get("account_id");
+			Object rawAccountId = row.get("account_id");
+			Long accountId = rawAccountId instanceof Number number ? number.longValue() : null;
 			if (accountId != null) {
 				try {
 					Map<String, Object> user = authClient.getUserById(accountId);
@@ -111,12 +114,15 @@ public class ReconciliationService {
 				}
 			}
 			
-			// Get booking status
+			// Get booking status via Booking internal API
 			Integer booking = (Integer) row.get("booking_id");
 			if (booking != null) {
-				var bookingRow = jdbc.queryForMap("SELECT status FROM booking WHERE id=?", booking);
-				if (bookingRow != null) {
-					row.put("booking_status", bookingRow.get("status"));
+				try {
+					Map<String, Object> bookingRow = bookingClient.getBooking(booking);
+					if (bookingRow != null) {
+						row.put("booking_status", bookingRow.get("status"));
+					}
+				} catch (Exception ignored) {
 				}
 			}
 		}
@@ -138,7 +144,8 @@ public class ReconciliationService {
 		
 		// Enrich with user info via Auth internal API
 		for (var row : rows) {
-			Long actorId = (Long) row.get("actor_id");
+			Object rawActorId = row.get("actor_id");
+			Long actorId = rawActorId instanceof Number number ? number.longValue() : null;
 			if (actorId != null) {
 				try {
 					Map<String, Object> user = authClient.getUserById(actorId);
@@ -164,9 +171,15 @@ public class ReconciliationService {
 		require(txnRef.equals(lookup.getFirst().get("txn_ref")),"Mã giao dịch phải đúng chữ hoa/thường như danh sách đối soát");
 		Provider provider=provider(String.valueOf(lookup.getFirst().get("provider")));
 		int booking=((Number)lookup.getFirst().get("booking_id")).intValue();
-		int departure=jdbc.queryForObject("SELECT tour_departure_id FROM booking WHERE id=?",Integer.class,booking);
-		// Same lock order as checkout: departure, then booking. A booking whose schedule no longer
-		// exists is a conflict the operator must see, not an EmptyResultDataAccessException 500.
+		Map<String, Object> b;
+		try {
+			b = bookingClient.getBooking(booking);
+		} catch (Exception e) {
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Không tìm thấy booking");
+		}
+		if (b == null || b.get("tour_departure_id") == null)
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Không tìm thấy booking");
+		int departure = ((Number) b.get("tour_departure_id")).intValue();
 		try {
 			Map<String, Object> departureInfo = tourClient.getDeparture(departure);
 			if (departureInfo == null || departureInfo.isEmpty())
@@ -174,8 +187,6 @@ public class ReconciliationService {
 		} catch (Exception e) {
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "Lịch khởi hành không còn tồn tại");
 		}
-		var b=jdbc.queryForMap("SELECT * FROM booking WHERE id=? FOR UPDATE",booking);
-		require(((Number)b.get("tour_departure_id")).intValue()==departure,"Booking đã đổi lịch; hãy tải lại");
 		var tx=lock(provider,txnRef);
 		var cases=jdbc.queryForList("SELECT * FROM payment_reconciliation WHERE txn_ref=? FOR UPDATE",txnRef);
 		
@@ -227,7 +238,7 @@ public class ReconciliationService {
 			jdbc.update("INSERT INTO payment_reconciliation_event(txn_ref,booking_id,actor_id,action,amount_vnd,reference,note,created_at) VALUES (?,?,?,?,?,?,?,?)",
 					txnRef,booking,actor,input.action().name(),amount,input.reference(),input.note(),now());
 		}catch(org.springframework.dao.DuplicateKeyException duplicate){throw new ResponseStatusException(HttpStatus.CONFLICT,"Tham chiếu vừa được sử dụng; hãy tải lại",duplicate);}
-		jdbc.update("UPDATE tour_departure SET version=version+1 WHERE id=?",departure);
+		try { tourClient.incrementVersion(departure); } catch (Exception ignored) {}
 		return response(provider,txnRef);
 	}
 	/** Reads the locked row from the whitelisted provider table and exposes a common key set. */

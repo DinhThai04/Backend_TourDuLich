@@ -1,5 +1,7 @@
 package com.example.payment_service.service;
 
+import com.example.payment_service.outbox.OutboxPublisher;
+import com.example.payment_service.repository.httpclient.BookingInternalClient;
 import com.example.payment_service.repository.httpclient.TourInternalClient;
 import com.example.payment_service.repository.httpclient.PricingInternalClient;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +24,8 @@ public class VnPayOrderService {
 	private final Clock clock;
 	private final TourInternalClient tourClient;
 	private final PricingInternalClient pricingClient;
+	private final BookingInternalClient bookingClient;
+	private final OutboxPublisher outboxPublisher;
 	public record Order(String txnRef, long amountVnd, LocalDateTime createdAt, LocalDateTime expiresAt) {}
 
 	public record Quote(long amountVnd, Map<String, String> unitPrices, String singleSupplementPrice) {}
@@ -40,10 +44,15 @@ public class VnPayOrderService {
 	 *                 đúng những lý do mà checkout của nhà cung cấp đó sẽ từ chối.
 	 */
 	public Quote quote(int bookingId, int accountId, String provider) {
-		var rows = jdbc.queryForList(
-				"SELECT account_id,status,tour_departure_id FROM booking WHERE id=?", bookingId);
-		if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy booking");
-		var booking = rows.getFirst();
+		Map<String, Object> booking;
+		try {
+			booking = bookingClient.getBooking(bookingId);
+		} catch (feign.FeignException.NotFound e) {
+			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy booking");
+		} catch (Exception e) {
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể kết nối booking-service");
+		}
+		if (booking == null || booking.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy booking");
 		if (((Number) booking.get("account_id")).intValue() != accountId)
 			throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Booking không thuộc tài khoản đăng nhập");
 		if (!payable(booking.get("status"))) throw new IllegalArgumentException("Booking đã bị hủy hoặc hết hạn");
@@ -78,8 +87,8 @@ public class VnPayOrderService {
 			throw new ResponseStatusException(HttpStatus.CONFLICT,
 					"Booking đang có giao dịch thanh toán khác chờ xử lý; hãy hoàn tất hoặc chờ hết hạn");
 
-		var customers = jdbc.queryForList("SELECT booking_type FROM customer WHERE booking_id=?", bookingId);
-		if (customers.isEmpty()) throw new IllegalArgumentException("Booking chưa có hành khách");
+		var customers = bookingClient.getBookingCustomers(bookingId);
+		if (customers == null || customers.isEmpty()) throw new IllegalArgumentException("Booking chưa có hành khách");
 		// The quote must fail for the same reasons checkout would, otherwise the client shows a
 		// payable invoice that the pay button immediately rejects.
 		var hold = reservation(bookingId);
@@ -132,8 +141,12 @@ public class VnPayOrderService {
 
 	/** Snapshot is written when the booking is created; legacy bookings fall back to the live price. */
 	private Map<String, Object> snapshot(int bookingId) {
-		var rows = jdbc.queryForList("SELECT * FROM booking_price_snapshot WHERE booking_id=?", bookingId);
-		return rows.isEmpty() ? null : rows.getFirst();
+		try {
+			Map<String, Object> s = bookingClient.getBookingPriceSnapshot(bookingId);
+			return (s == null || s.isEmpty()) ? null : s;
+		} catch (feign.FeignException.NotFound ignored) {
+			return null;
+		}
 	}
 
 	private static long snapshotAmount(Map<String, Object> snapshot) {
@@ -161,11 +174,17 @@ public class VnPayOrderService {
 	}
 
 	private Map<String, Object> booking(int id) {
-		var lookup = jdbc.queryForList("SELECT tour_departure_id FROM booking WHERE id=?", id);
-		if (lookup.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy booking");
-		Object departureId = lookup.getFirst().get("tour_departure_id");
-		// Locking the departure is the checkout lock order; a legacy row pointing at a deleted
-		// schedule answers the same 409 departureOf() uses instead of an EmptyResultDataAccessException 500.
+		Map<String, Object> b;
+		try {
+			b = bookingClient.getBooking(id);
+		} catch (feign.FeignException.NotFound e) {
+			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy booking");
+		} catch (Exception e) {
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể kết nối booking-service");
+		}
+		if (b == null || b.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy booking");
+		Object departureId = b.get("tour_departure_id");
+		if (departureId == null) throw new ResponseStatusException(HttpStatus.CONFLICT, "Lịch khởi hành không còn tồn tại");
 		try {
 			Map<String, Object> departure = tourClient.getDeparture(((Number) departureId).intValue());
 			if (departure == null || departure.isEmpty())
@@ -173,11 +192,7 @@ public class VnPayOrderService {
 		} catch (Exception e) {
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "Lịch khởi hành không còn tồn tại");
 		}
-		var rows = jdbc.queryForList("SELECT * FROM booking WHERE id=? FOR UPDATE", id);
-		if (rows.isEmpty()) throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy booking");
-		if (!departureId.equals(rows.getFirst().get("tour_departure_id")))
-			throw new IllegalArgumentException("Booking đã thay đổi, vui lòng tải lại");
-		return rows.getFirst();
+		return b;
 	}
 
 	public static long calculateAmount(List<Map<String, Object>> customers, Map<String, Object> price) {
@@ -219,7 +234,7 @@ public class VnPayOrderService {
 		}
 		String ref = UUID.randomUUID().toString().replace("-", "");
 		jdbc.update("INSERT INTO vnpay_transaction (txn_ref,booking_id,account_id,amount_vnd,status,created_at,expires_at) VALUES (?,?,?,?,'PENDING',?,?)", ref, bookingId, accountId, c.amountVnd(), c.now(), c.expires());
-		jdbc.update("UPDATE tour_departure SET version=version+1 WHERE id=?", c.departureId());
+		try { tourClient.incrementVersion(c.departureId()); } catch (Exception ignored) {}
 		return new Order(ref, c.amountVnd(), c.now(), c.expires());
 	}
 
@@ -255,7 +270,7 @@ public class VnPayOrderService {
 		LocalDateTime departureDate = depDate instanceof LocalDateTime ? (LocalDateTime) depDate : ((java.sql.Timestamp) depDate).toLocalDateTime();
 		if (!departureDate.isAfter(now))
 			throw new IllegalArgumentException("Chuyến đi đã khởi hành");
-		var customers = jdbc.queryForList("SELECT booking_type FROM customer WHERE booking_id=?", bookingId);
+		var customers = bookingClient.getBookingCustomers(bookingId);
 		var hold = reservation(bookingId);
 		if (hold != null) {
 			validateHold(hold, b, customers.size(), now);
@@ -309,15 +324,18 @@ public class VnPayOrderService {
 					 + (SELECT COUNT(*) FROM momo_transaction WHERE booking_id=? AND status='PENDING' AND expires_at>?)
 				""", Integer.class, bookingId, grace, bookingId, grace) > 0;
 	}
-	private boolean paid(int bookingId) {		
-		return jdbc.queryForObject("SELECT COUNT(*) FROM invoice WHERE booking_id=? AND status='PAID'", Integer.class, bookingId) > 0
-				|| jdbc.queryForObject("SELECT COUNT(*) FROM payment WHERE booking_id=? AND status='PAID'", Integer.class, bookingId) > 0
+	private boolean paid(int bookingId) {
+		return jdbc.queryForObject("SELECT COUNT(*) FROM payment WHERE booking_id=? AND status='PAID'", Integer.class, bookingId) > 0
 				|| jdbc.queryForObject("SELECT COUNT(*) FROM vnpay_transaction WHERE booking_id=? AND status='PAID'",Integer.class,bookingId)>0
 				|| jdbc.queryForObject("SELECT COUNT(*) FROM momo_transaction WHERE booking_id=? AND status='PAID'",Integer.class,bookingId)>0;
 	}
 	private Map<String,Object> reservation(int bookingId) {
-		var rows = jdbc.queryForList("SELECT * FROM booking_reservation WHERE booking_id=? FOR UPDATE", bookingId);
-		return rows.isEmpty() ? null : rows.getFirst(); // legacy bookings were never held
+		try {
+			Map<String, Object> r = bookingClient.getBookingReservation(bookingId);
+			return (r == null || r.isEmpty()) ? null : r;
+		} catch (feign.FeignException.NotFound ignored) {
+			return null;
+		}
 	}
 	private void validateHold(Map<String,Object> hold, Map<String,Object> b, int people, LocalDateTime now) {
 		Object holdExp = hold.get("expires_at");
@@ -332,13 +350,18 @@ public class VnPayOrderService {
 		if (jdbc.queryForObject("SELECT COUNT(*) FROM payment_reconciliation WHERE txn_ref=?", Integer.class, ref) == 0) {
 			jdbc.update("INSERT INTO payment_reconciliation (txn_ref,booking_id,reason,provider_paid_at,amount_vnd,created_at) VALUES (?,?,?,?,?,?)",
 					ref, bookingId, reason, paidAt, amount, LocalDateTime.now(clock));
-			jdbc.update("UPDATE tour_departure SET version=version+1 WHERE id=(SELECT tour_departure_id FROM booking WHERE id=?)",bookingId);
+			try {
+				Map<String, Object> b = bookingClient.getBooking(bookingId);
+				if (b != null && b.get("tour_departure_id") instanceof Number depId) {
+					tourClient.incrementVersion(depId.intValue());
+				}
+			} catch (Exception ignored) {
+			}
 		}
 		return "reconciliation";
 	}
 	public void releaseCheckout(int bookingId, Map<String,Object> hold) {
 		if (hold == null || !"CHECKOUT".equals(hold.get("status"))) return;
-		// A stale failure must not expire the hold while another checkout is still payable.
 		if (paymentInFlight(bookingId)) return;
 		Integer departureId = (Integer) hold.get("departure_id");
 		if (departureId != null) {
@@ -351,20 +374,13 @@ public class VnPayOrderService {
 			if (departure != null && java.util.List.of("SUSPENDED","CANCELLED").contains(String.valueOf(departure.get("operational_status")))) return;
 		}
 		if(paid(bookingId) || jdbc.queryForObject("SELECT COUNT(*) FROM payment_reconciliation WHERE booking_id=? AND status='OPEN'",Integer.class,bookingId)>0) return;
-		int seats=((Number)hold.get("seats")).intValue();
 		LocalDateTime now = LocalDateTime.now(clock);
-		// A failed checkout must always close the hold. The hold decremented available_seats by
-		// exactly `seats`, so credit that same amount back even when passenger rows disagree;
-		// refusing to release would leak capacity forever while an IPN could still be rejected.
-		if (seats<=0) {
-			log.warn("Checkout release found no held seats for booking {}: held={}", bookingId, seats);
-		} else if (departureId != null) {
-			// available_seats is SMALLINT, so legacy rows without capacity cap at 32767.
-			jdbc.update("UPDATE tour_departure SET available_seats=LEAST(COALESCE(capacity,32767),available_seats+?),version=version+1 WHERE id=?", seats, departureId);
+		try {
+			bookingClient.expireCheckout(bookingId);
+			mail.expired(bookingId, now);
+		} catch (Exception e) {
+			log.warn("Failed to expire checkout via Booking internal API for booking {}: {}", bookingId, e.getMessage());
 		}
-		int changed = jdbc.update("UPDATE booking SET status='EXPIRED' WHERE id=? AND status IN ('PENDING_PAYMENT','CONFIRMED')", bookingId);
-		jdbc.update("UPDATE booking_reservation SET status='EXPIRED',cancel_reason='CHECKOUT_FAILED',updated_at=? WHERE booking_id=? AND status='CHECKOUT'", now, bookingId);
-		if (changed == 1) mail.expired(bookingId, now);
 	}
 
 	public record Settlement(int bookingId, String status) {}
@@ -470,16 +486,14 @@ public class VnPayOrderService {
 		if (departure == null || departure.isEmpty() || java.util.List.of("SUSPENDED","CANCELLED").contains(String.valueOf(departure.get("operational_status"))))
 			return reconcile(txnRef, bookingId, amountVnd, paidAt, "DEPARTURE_SUSPENDED");
 		
-		int people = jdbc.queryForObject("SELECT COUNT(*) FROM customer WHERE booking_id=?", Integer.class, bookingId);
+		var customerRows = bookingClient.getBookingCustomers(bookingId);
+		int people = customerRows != null ? customerRows.size() : 0;
 		LocalDateTime now = LocalDateTime.now(clock).withNano(0);
 		Object depDate = departure.get("departure_date");
 		LocalDateTime departureDate = depDate instanceof LocalDateTime ? (LocalDateTime) depDate : ((java.sql.Timestamp) depDate).toLocalDateTime();
 		if (!departureDate.isAfter(now))
 			return reconcile(txnRef, bookingId, amountVnd, paidAt, "TOUR_ALREADY_DEPARTED");
 		if (hold != null) {
-			// The provider says the customer paid inside the checkout window, even if the IPN
-			// arrived after it; validate the hold against paidAt so a timely payment is not
-			// reconciled away after its seats were already released.
 			try { validateHold(hold, b, people, paidAt); }
 			catch (IllegalArgumentException invalid) { return reconcile(txnRef, bookingId, amountVnd, paidAt, "RESERVATION_NO_LONGER_VALID"); }
 			Object holdDepDate = hold.get("departure_at");
@@ -489,13 +503,11 @@ public class VnPayOrderService {
 		} else {
 			if (people <= 0 || ((Number)departure.get("available_seats")).intValue() < people)
 				return reconcile(txnRef, bookingId, amountVnd, paidAt, "INSUFFICIENT_SEATS");
-			jdbc.update("UPDATE tour_departure SET available_seats=available_seats-?,version=version+1 WHERE id=?", people, departureId);
-		}
-		var invoices = jdbc.queryForList("SELECT id FROM invoice WHERE booking_id=?", bookingId);
-		if (invoices.isEmpty()) {
-			jdbc.update("INSERT INTO invoice (account_id,booking_id,day_of_pay,pay_method_id,status,total_booking_tour_expense) VALUES (?,?,?,?,'PAID',?)", accountId, bookingId, paidAt, payMethodId, amountVnd);
-		} else {
-			jdbc.update("UPDATE invoice SET day_of_pay=?,pay_method_id=?,status='PAID',total_booking_tour_expense=? WHERE booking_id=?", paidAt, payMethodId, amountVnd, bookingId);
+			try {
+				tourClient.holdSeats(departureId, new TourInternalClient.HoldSeatsRequest(people, String.valueOf(bookingId), now));
+			} catch (Exception e) {
+				return reconcile(txnRef, bookingId, amountVnd, paidAt, "INSUFFICIENT_SEATS");
+			}
 		}
 		var payments = jdbc.queryForList("SELECT id FROM payment WHERE booking_id=?", bookingId);
 		if (payments.isEmpty()) {
@@ -503,10 +515,25 @@ public class VnPayOrderService {
 		} else {
 			jdbc.update("UPDATE payment SET day_of_pay=?,pay_method_id=?,status='PAID',total_booking_tour_expense=? WHERE booking_id=?", paidAt, payMethodId, amountVnd, bookingId);
 		}
-		jdbc.update("UPDATE booking SET status='CONFIRMED' WHERE id=? AND status='PENDING_PAYMENT'", bookingId);
+		// Publish payment.settled.v1 to outbox so invoice_service creates/updates the PAID invoice asynchronously.
+		if (outboxPublisher != null) {
+			outboxPublisher.writeToOutbox("payment.settled.v1", "Payment", String.valueOf(bookingId), txnRef, txnRef, Map.of(
+					"bookingId", bookingId,
+					"accountId", accountId,
+					"amountVnd", amountVnd,
+					"payMethodId", payMethodId,
+					"paidAt", paidAt.toString(),
+					"transactionRef", txnRef,
+					"provider", provider
+			));
+		}
+		try {
+			bookingClient.markBookingPaid(bookingId);
+		} catch (Exception e) {
+			log.warn("Failed to mark booking {} paid via Booking internal API: {}", bookingId, e.getMessage());
+		}
 		if (hold != null) {
-			jdbc.update("UPDATE booking_reservation SET status='PAID',updated_at=? WHERE booking_id=?", now, bookingId);
-			jdbc.update("UPDATE tour_departure SET version=version+1 WHERE id=?",departureId);
+			try { tourClient.incrementVersion(departureId); } catch (Exception ignored) {}
 		}
 		mail.receipt(bookingId, txnRef, amountVnd, paidAt, now, provider);
 		return "success";

@@ -8,6 +8,10 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.*;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
+import com.example.payment_service.TestServiceClients;
+import com.example.payment_service.repository.httpclient.AuthInternalClient;
+import com.example.payment_service.repository.httpclient.TourInternalClient;
+import com.example.payment_service.repository.httpclient.PricingInternalClient;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import javax.sql.DataSource;
 import java.sql.*;
@@ -44,7 +48,12 @@ class ReconciliationTransactionTest {
         context.registerBean(JdbcTemplate.class,()->jdbc);
         context.registerBean(PlatformTransactionManager.class,()->new DataSourceTransactionManager(source));
         context.registerBean(Clock.class,()->Clock.fixed(fixture.time.atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant(),ZoneId.of("Asia/Ho_Chi_Minh")));
-        context.registerBean(com.example.payment_service.notification.PaymentMailOutboxWriter.class,()->new com.example.payment_service.notification.PaymentMailOutboxWriter(jdbc,new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()));
+        context.registerBean(AuthInternalClient.class,()->TestServiceClients.auth(jdbc));
+        context.registerBean(TourInternalClient.class,()->TestServiceClients.tour(jdbc));
+        context.registerBean(PricingInternalClient.class,()->TestServiceClients.pricing(jdbc));
+        context.registerBean(com.example.payment_service.repository.httpclient.BookingInternalClient.class,()->TestServiceClients.booking(jdbc));
+        context.registerBean(com.example.payment_service.outbox.OutboxPublisher.class,()->TestServiceClients.outbox(jdbc));
+        context.registerBean(com.example.payment_service.notification.PaymentMailOutboxWriter.class,()->TestServiceClients.mailWriter(jdbc,new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()));
         context.registerBean(com.example.payment_service.service.VnPayOrderService.class);
         context.registerBean(ReconciliationService.class);context.registerBean(ReconciliationAttempts.class);context.refresh();
         attempts=context.getBean(ReconciliationAttempts.class);
@@ -88,7 +97,7 @@ class ReconciliationTransactionTest {
     }
 
     @Test void concurrentPrepareReusesTheSameCurrentTransactionOnARepeatableReadPool() throws Exception {
-        var orders=orderFixture();jdbc.prefix="SELECT tour_departure_id FROM booking WHERE id=?";jdbc.gate=new CyclicBarrier(2);
+        var orders=orderFixture();jdbc.prefix="SELECT id FROM booking WHERE id=?";jdbc.gate=new CyclicBarrier(2);
         var pool=Executors.newFixedThreadPool(2);
         try {
             List<Future<com.example.payment_service.service.VnPayOrderService.Order>> results=new ArrayList<>();
@@ -114,7 +123,8 @@ class ReconciliationTransactionTest {
             }));
             var statuses=new HashSet<String>();for(var result:results)statuses.add(result.get(20,TimeUnit.SECONDS));
             assertEquals(Set.of("success","reconciliation"),statuses);
-            assertEquals(1,fixture.db.count("invoice"));assertEquals(1,fixture.db.count("payment"));assertEquals(9,fixture.db.seats());
+            assertEquals(1,fixture.db.jdbc.queryForObject("SELECT COUNT(*) FROM payment_outbox WHERE event_type='payment.settled.v1'",Integer.class));
+            assertEquals(1,fixture.db.count("payment"));assertEquals(9,fixture.db.seats());
             assertEquals(1,fixture.db.count("payment_reconciliation"));
             assertEquals(List.of(Connection.TRANSACTION_READ_COMMITTED,Connection.TRANSACTION_READ_COMMITTED),jdbc.isolations);
         }finally{pool.shutdownNow();}

@@ -20,6 +20,11 @@ spring:
       connection-timeout: ${DB_POOL_TIMEOUT_MS:10000}
       idle-timeout: 300000
       max-lifetime: 1800000
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
   jpa:
     # DTOs are mapped inside the service layer; do not keep a connection while rendering JSON.
     open-in-view: false

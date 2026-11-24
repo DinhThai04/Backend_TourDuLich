@@ -1,6 +1,8 @@
 package com.example.payment_service.outbox;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.amqp.core.Message;
@@ -8,6 +10,7 @@ import org.springframework.amqp.core.MessageProperties;
 import org.springframework.amqp.rabbit.connection.CorrelationData;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -15,6 +18,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -28,6 +32,7 @@ public class OutboxPublisher {
     private static final String EXCHANGE = "sgu.events";
     private static final int BATCH_SIZE = 100;
 
+    @Scheduled(fixedDelayString = "${app.payment.outbox.poll-interval-ms:1000}")
     @Transactional
     public void publishPendingEvents() {
         List<Map<String, Object>> events = jdbc.queryForList("""
@@ -58,7 +63,7 @@ public class OutboxPublisher {
         }
     }
 
-    private void publishEvent(Map<String, Object> event) {
+    private void publishEvent(Map<String, Object> event) throws Exception {
         String eventId = (String) event.get("event_id");
         String eventType = (String) event.get("event_type");
         String payload = (String) event.get("payload");
@@ -82,13 +87,33 @@ public class OutboxPublisher {
         CorrelationData correlationData = new CorrelationData(eventId);
 
         rabbitTemplate.convertAndSend(EXCHANGE, eventType, message, correlationData);
+        CorrelationData.Confirm confirmation = correlationData.getFuture().get(5, TimeUnit.SECONDS);
+        if (!confirmation.isAck() || correlationData.getReturned() != null) {
+            throw new IllegalStateException("RabbitMQ did not confirm event " + eventId);
+        }
     }
 
     public void writeToOutbox(String eventType, String aggregateType, String aggregateId, 
                               String correlationId, String causationId, Object payload) {
         try {
-            String eventId = UUID.randomUUID().toString();
-            String jsonPayload = objectMapper.writeValueAsString(payload);
+            JsonNode encodedPayload = objectMapper.valueToTree(payload);
+            if (encodedPayload == null || !encodedPayload.isObject()) {
+                throw new IllegalArgumentException("Outbox event payload must be a JSON object");
+            }
+            ObjectNode eventPayload = (ObjectNode) encodedPayload;
+            String eventId = eventPayload.path("eventId").asText(null);
+            if (eventId == null || eventId.isBlank()) {
+                eventId = UUID.randomUUID().toString();
+            }
+            eventPayload.put("eventId", eventId);
+            eventPayload.put("eventType", eventType);
+            if (!eventPayload.hasNonNull("producer")) {
+                eventPayload.put("producer", "payment-service");
+            }
+            if (!eventPayload.hasNonNull("occurredAt")) {
+                eventPayload.put("occurredAt", LocalDateTime.now().toString());
+            }
+            String jsonPayload = objectMapper.writeValueAsString(eventPayload);
 
             jdbc.update("""
                 INSERT INTO payment_outbox (event_id, event_type, aggregate_type, aggregate_id, aggregate_version, correlation_id, causation_id, payload, status, attempts, available_at, created_at)

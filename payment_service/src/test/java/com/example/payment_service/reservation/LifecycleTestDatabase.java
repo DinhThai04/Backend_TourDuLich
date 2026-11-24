@@ -26,6 +26,26 @@ public final class LifecycleTestDatabase {
         run("db/001_mail_outbox.sql", mysql);
         run("db/003_booking_reservation.sql", mysql);
         jdbc.execute("CREATE TABLE IF NOT EXISTS momo_transaction (order_id VARCHAR(32) PRIMARY KEY, request_id VARCHAR(32), booking_id INT, account_id INT, amount_vnd BIGINT, status VARCHAR(16), created_at DATETIME(6), expires_at DATETIME(6), trans_id BIGINT, result_code INT)");
+        jdbc.execute("DROP TABLE IF EXISTS payment_outbox");
+        jdbc.execute("""
+                CREATE TABLE payment_outbox (
+                    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+                    event_id VARCHAR(36) NOT NULL,
+                    event_type VARCHAR(120) NOT NULL,
+                    aggregate_type VARCHAR(80) NOT NULL,
+                    aggregate_id VARCHAR(80) NOT NULL,
+                    aggregate_version INT NOT NULL,
+                    correlation_id VARCHAR(64),
+                    causation_id VARCHAR(64),
+                    payload CLOB NOT NULL,
+                    status VARCHAR(20) NOT NULL,
+                    attempts INT NOT NULL,
+                    available_at DATETIME(6) NOT NULL,
+                    published_at DATETIME(6),
+                    last_error VARCHAR(1000),
+                    created_at DATETIME(6) NOT NULL
+                )
+                """);
         jdbc.update("INSERT INTO users (id,username,email) VALUES (7,'Danh','tester@example.com'),(8,'Other','other@example.com')");
         jdbc.update("INSERT INTO prices VALUES (1,3350000,2000000,0,500,1500000)");
         jdbc.update("INSERT INTO tour VALUES (1,1,'Đà Nẵng – Hội An')");

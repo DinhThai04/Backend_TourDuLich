@@ -12,8 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 /** Both gateways take an integer VND amount; a bad price table must reach the client as a 400, never an ArithmeticException 500. */
 class VnPayAmountGuardTest {
     private static Map<String, Object> price(String adult, String child, String toddler, String infant) {
-        return Map.of("adult_price", new BigDecimal(adult), "child_price", new BigDecimal(child),
-                "toddler_price", new BigDecimal(toddler), "infant_price", new BigDecimal(infant));
+        return Map.of("adultPrice", new BigDecimal(adult), "childPrice", new BigDecimal(child),
+                "toddlerPrice", new BigDecimal(toddler), "infantPrice", new BigDecimal(infant));
     }
 
     private static List<Map<String, Object>> passengers(String... types) {

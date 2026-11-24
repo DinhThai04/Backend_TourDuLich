@@ -3,6 +3,7 @@ package com.example.payment_service.reservation;
 import com.example.payment_service.service.*;
 import com.example.payment_service.notification.PaymentMailOutboxWriter;
 import com.example.payment_service.config.VnPayConfig;
+import com.example.payment_service.TestServiceClients;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,7 +24,7 @@ class ReservedVnPayTest {
     VnPayService service;
     @BeforeEach void setup() throws Exception {
         db = new LifecycleTestDatabase(); clock = new LifecycleTestDatabase.MutableClock(LocalDateTime.of(2026,11,1,10,0));
-        orders = new VnPayOrderService(db.jdbc, new PaymentMailOutboxWriter(db.jdbc, JsonMapper.builder().findAndAddModules().build()), clock);
+        orders = TestServiceClients.vnpay(db.jdbc, clock, JsonMapper.builder().findAndAddModules().build());
         service = new VnPayService(orders, config);
         db.jdbc.update("INSERT INTO booking VALUES (1,7,1,'CONFIRMED',?)", LocalDateTime.now(clock));
         db.jdbc.update("INSERT INTO customer (booking_id,booking_type) VALUES (1,'ADULT')");
@@ -67,8 +68,10 @@ class ReservedVnPayTest {
     }
     @Test void paidHeldBookingDoesNotDeductSeatsTwiceAndEmailsOnce() {
         var fields = callback(prepare(),true); assertEquals("success",settle(fields)); assertEquals("success",settle(fields));
-        assertEquals(9,db.seats()); assertEquals("PAID",holdStatus()); assertEquals(1,db.count("invoice")); assertEquals(1,db.count("mail_outbox"));
-        assertTrue(db.jdbc.queryForObject("SELECT payload FROM mail_outbox",String.class).contains("3350000"));
+        assertEquals(9,db.seats()); assertEquals("PAID",holdStatus());
+        assertEquals(1,db.jdbc.queryForObject("SELECT COUNT(*) FROM payment_outbox WHERE event_type='payment.settled.v1'",Integer.class));
+        assertEquals(1,db.jdbc.queryForObject("SELECT COUNT(*) FROM payment_outbox WHERE event_type='notification.mail.v1'",Integer.class));
+        assertTrue(db.jdbc.queryForObject("SELECT payload FROM payment_outbox WHERE event_type='notification.mail.v1'",String.class).contains("3350000"));
     }
     @Test void heldLastSeatCanBePaidEvenWhenNoUnreservedSeatsRemain() {
         db.jdbc.update("UPDATE tour_departure SET available_seats=0");
@@ -81,7 +84,8 @@ class ReservedVnPayTest {
     @Test void immediateFailedPaymentCancelsTemporaryBookingAndReturnsSeatOnce() {
         db.jdbc.update("UPDATE booking_reservation SET status='CHECKOUT',expires_at=?",LocalDateTime.now(clock).plusMinutes(15));
         var fields=callback(prepare(),false); settle(fields); settle(fields);
-        assertEquals(10,db.seats()); assertEquals("EXPIRED",holdStatus()); assertEquals(1,db.count("mail_outbox"));
+        assertEquals(10,db.seats()); assertEquals("EXPIRED",holdStatus());
+        assertEquals(1,db.jdbc.queryForObject("SELECT COUNT(*) FROM payment_outbox WHERE event_type='notification.mail.v1'",Integer.class));
         assertEquals("EXPIRED",db.jdbc.queryForObject("SELECT status FROM booking",String.class));
     }
     @Test void paymentWindowNeverExtendsBookingDeadline() {
@@ -102,7 +106,8 @@ class ReservedVnPayTest {
         // The provider says the customer paid inside the checkout window and the unpaid hold was
         // never released, so the payment must complete instead of being reconciled away.
         assertEquals("success",settle(callback(order,true)));
-        assertEquals("PAID",holdStatus()); assertEquals(1,db.count("invoice"));
+        assertEquals("PAID",holdStatus());
+        assertEquals(1,db.jdbc.queryForObject("SELECT COUNT(*) FROM payment_outbox WHERE event_type='payment.settled.v1'",Integer.class));
     }
     @Test void callbackAfterCancellationDoesNotRestoreBookingOrConsumeSeats() {
         var fields=callback(prepare(),true);
@@ -116,9 +121,9 @@ class ReservedVnPayTest {
     }
     @Test void mailFailureRollsBackPaymentAndKeepsHold() {
         var fields=callback(prepare(),true);
-        db.jdbc.execute("ALTER TABLE mail_outbox ADD CONSTRAINT reject_receipt CHECK(event_type='TEST_MAIL')");
+        db.jdbc.execute("ALTER TABLE payment_outbox ADD CONSTRAINT reject_receipt CHECK(event_type='TEST_MAIL')");
         assertThrows(RuntimeException.class,()->settle(fields)); assertEquals("HELD",holdStatus()); assertEquals(0,db.count("payment"));
-        assertEquals(0,db.count("invoice")); assertEquals(9,db.seats());
+        assertEquals(0,db.count("payment_outbox")); assertEquals(9,db.seats());
         assertEquals("PENDING",db.jdbc.queryForObject("SELECT status FROM vnpay_transaction",String.class));
     }
     @Test void concurrentCallbacksProduceOnlyOneReceipt() throws Exception {
@@ -127,7 +132,8 @@ class ReservedVnPayTest {
             var a=pool.submit(()->settle(fields)); var b=pool.submit(()->settle(fields));
             assertEquals("success",a.get(10,TimeUnit.SECONDS)); assertEquals("success",b.get(10,TimeUnit.SECONDS));
         }
-        assertEquals(1,db.count("mail_outbox")); assertEquals(1,db.count("payment")); assertEquals(9,db.seats());
+        assertEquals(1,db.jdbc.queryForObject("SELECT COUNT(*) FROM payment_outbox WHERE event_type='notification.mail.v1'",Integer.class));
+        assertEquals(1,db.count("payment")); assertEquals(9,db.seats());
     }
     @Test void changedDepartureDoesNotSilentlyChargeAnotherTrip() {
         var fields=callback(prepare(),true); db.jdbc.update("UPDATE tour_departure SET departure_date=?",LocalDateTime.of(2026,11,21,6,0));

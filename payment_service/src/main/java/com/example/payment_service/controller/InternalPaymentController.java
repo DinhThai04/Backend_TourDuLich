@@ -69,11 +69,10 @@ public class InternalPaymentController {
                 return ResponseEntity.badRequest().body(Map.of("error", "No paid payment found for booking"));
             }
 
-            // Update payment status to refunded
+            // Update payment status to refunded (invoice_service reacts via payment.refunded.v1 event)
             jdbc.update("UPDATE payment SET status = 'REFUNDED' WHERE booking_id = ? AND status = 'PAID'", bookingId);
-            
-            // Also update invoice if exists
-            jdbc.update("UPDATE invoice SET status = 'REFUNDED' WHERE booking_id = ? AND status = 'PAID'", bookingId);
+            jdbc.update("UPDATE vnpay_transaction SET status = 'REFUNDED' WHERE booking_id = ? AND status = 'PAID'", bookingId);
+            jdbc.update("UPDATE momo_transaction SET status = 'REFUNDED' WHERE booking_id = ? AND status = 'PAID'", bookingId);
             
             // Publish refund event
             paymentInvoiceSaga.handleInvoiceCreationFailed(java.util.UUID.randomUUID().toString(), "REFUND_REQUESTED: " + reference);
@@ -88,10 +87,76 @@ public class InternalPaymentController {
     public ResponseEntity<Map<String, Object>> getOpenReconciliationCount(@PathVariable Long accountId) {
         Integer count = jdbc.queryForObject("""
             SELECT COUNT(*) FROM payment_reconciliation pr
-            JOIN booking b ON b.id = pr.booking_id
-            WHERE b.account_id = ? AND pr.status = 'OPEN'
-            """, Integer.class, accountId);
+            WHERE pr.status = 'OPEN'
+              AND (
+                EXISTS (SELECT 1 FROM vnpay_transaction v WHERE v.txn_ref = pr.txn_ref AND v.account_id = ?)
+                OR EXISTS (SELECT 1 FROM momo_transaction m WHERE m.order_id = pr.txn_ref AND m.account_id = ?)
+                OR EXISTS (SELECT 1 FROM payment p WHERE p.booking_id = pr.booking_id AND p.account_id = ?)
+              )
+            """, Integer.class, accountId, accountId, accountId);
         return ResponseEntity.ok(Map.of("count", count != null ? count : 0));
+    }
+
+    @GetMapping("/users/{accountId}/pending-transactions")
+    public ResponseEntity<Map<String, Object>> getPendingTransactions(@PathVariable Long accountId) {
+        LocalDateTime current = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
+        Integer vnpayPending = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM vnpay_transaction WHERE account_id = ? AND status = 'PENDING' AND expires_at > ?",
+                Integer.class, accountId, current);
+        Integer momoPending = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM momo_transaction WHERE account_id = ? AND status = 'PENDING' AND expires_at > ?",
+                Integer.class, accountId, current);
+        return ResponseEntity.ok(Map.of(
+                "vnpayPending", vnpayPending != null ? vnpayPending : 0,
+                "momoPending", momoPending != null ? momoPending : 0));
+    }
+
+    @GetMapping("/users/{accountId}/has-history")
+    public ResponseEntity<Map<String, Object>> hasUserHistory(@PathVariable Long accountId) {
+        Integer payments = jdbc.queryForObject("SELECT COUNT(*) FROM payment WHERE account_id = ?", Integer.class, accountId);
+        Integer reconEvents = jdbc.queryForObject("SELECT COUNT(*) FROM payment_reconciliation_event WHERE actor_id = ?", Integer.class, accountId);
+        boolean hasHistory = (payments != null && payments > 0) || (reconEvents != null && reconEvents > 0);
+        return ResponseEntity.ok(Map.of("hasHistory", hasHistory));
+    }
+
+    @GetMapping("/bookings/{bookingId}/evidence")
+    public ResponseEntity<Map<String, Object>> getBookingPaymentEvidence(@PathVariable Integer bookingId) {
+        LocalDateTime now = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
+        LocalDateTime grace = now.minusMinutes(5);
+        int paidPayment = countSql("SELECT COUNT(*) FROM payment WHERE booking_id = ? AND status = 'PAID'", bookingId);
+        int paidVnpay = countSql("SELECT COUNT(*) FROM vnpay_transaction WHERE booking_id = ? AND status = 'PAID'", bookingId);
+        int paidMomo = countSql("SELECT COUNT(*) FROM momo_transaction WHERE booking_id = ? AND status = 'PAID'", bookingId);
+        int openRecon = countSql("SELECT COUNT(*) FROM payment_reconciliation WHERE booking_id = ? AND status = 'OPEN'", bookingId);
+        int pendingVnpay = countSql("SELECT COUNT(*) FROM vnpay_transaction WHERE booking_id = ? AND status = 'PENDING' AND expires_at > ?", bookingId, grace);
+        int pendingMomo = countSql("SELECT COUNT(*) FROM momo_transaction WHERE booking_id = ? AND status = 'PENDING' AND expires_at > ?", bookingId, grace);
+        boolean paidEvidence = paidPayment > 0 || paidVnpay > 0 || paidMomo > 0 || openRecon > 0;
+        boolean inFlight = pendingVnpay > 0 || pendingMomo > 0;
+        return ResponseEntity.ok(Map.of(
+                "paidPayment", paidPayment > 0,
+                "paidProvider", (paidVnpay + paidMomo) > 0,
+                "openReconciliation", openRecon > 0,
+                "inFlight", inFlight,
+                "paidEvidence", paidEvidence,
+                "evidenceCount", paidPayment + paidVnpay + paidMomo + openRecon + pendingVnpay + pendingMomo
+        ));
+    }
+
+    @GetMapping("/bookings/{bookingId}/settled-ref")
+    public ResponseEntity<Map<String, Object>> hasSettledReference(
+            @PathVariable Integer bookingId,
+            @RequestParam Long accountId,
+            @RequestParam String transactionRef,
+            @RequestParam Long amountVnd) {
+        int vnpay = countSql("SELECT COUNT(*) FROM vnpay_transaction WHERE booking_id = ? AND account_id = ? AND txn_ref = ? AND status = 'PAID' AND amount_vnd = ?",
+                bookingId, accountId, transactionRef, amountVnd);
+        int momo = countSql("SELECT COUNT(*) FROM momo_transaction WHERE booking_id = ? AND account_id = ? AND order_id = ? AND status = 'PAID' AND amount_vnd = ?",
+                bookingId, accountId, transactionRef, amountVnd);
+        return ResponseEntity.ok(Map.of("settled", (vnpay + momo) == 1));
+    }
+
+    private int countSql(String sql, Object... args) {
+        Integer n = jdbc.queryForObject(sql, Integer.class, args);
+        return n != null ? n : 0;
     }
 
     private InternalPaymentResponse toInternalResponse(Payment payment) {

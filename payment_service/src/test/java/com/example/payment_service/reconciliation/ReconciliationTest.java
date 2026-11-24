@@ -1,6 +1,7 @@
 package com.example.payment_service.reconciliation;
 
 import com.example.payment_service.reservation.LifecycleTestDatabase;
+import com.example.payment_service.TestServiceClients;
 import com.example.payment_service.service.VnPayOrderService;
 import com.example.payment_service.notification.PaymentMailOutboxWriter;
 import org.junit.jupiter.api.*;
@@ -27,8 +28,8 @@ class ReconciliationTest {
         int start=ddl.indexOf("CREATE TABLE IF NOT EXISTS payment_reconciliation_event");
         db.jdbc.execute(ddl.substring(start,ddl.indexOf(';',start)).replace("ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci","").replace("CHARACTER SET ascii COLLATE ascii_bin",""));
         var clock=Clock.fixed(time.atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant(),ZoneId.of("Asia/Ho_Chi_Minh"));
-        service=new ReconciliationService(db.jdbc,clock);
-        orders=new VnPayOrderService(db.jdbc,new PaymentMailOutboxWriter(db.jdbc,new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules()),clock);
+        service=new ReconciliationService(db.jdbc,clock,TestServiceClients.auth(db.jdbc),TestServiceClients.tour(db.jdbc),TestServiceClients.booking(db.jdbc));
+        orders=TestServiceClients.vnpay(db.jdbc,clock,new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules());
         db.jdbc.update("INSERT INTO booking(id,account_id,tour_departure_id,status,created_at) VALUES(1,7,1,'CONFIRMED',?)",time.minusDays(1));
         pending("transaction1");login(true);
     }

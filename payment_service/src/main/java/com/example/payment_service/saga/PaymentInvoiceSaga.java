@@ -152,9 +152,8 @@ public class PaymentInvoiceSaga {
             )
         );
         
-        // Update payment records to refunded
+        // Update payment records to refunded (invoice_service reacts via payment.refunded.v1 event)
         jdbc.update("UPDATE payment SET status = 'REFUNDED' WHERE booking_id = ? AND status = 'PAID'", bookingId);
-        jdbc.update("UPDATE invoice SET status = 'REFUNDED' WHERE booking_id = ? AND status = 'PAID'", bookingId);
         
         jdbc.update("UPDATE payment_saga SET status = 'COMPENSATED', current_step = 'COMPENSATED', updated_at = ? WHERE id = ?", LocalDateTime.now(), sagaId);
         
@@ -178,19 +177,8 @@ public class PaymentInvoiceSaga {
             String status = (String) saga.get("status");
             
             if ("PAYMENT_SETTLED".equals(status) || "INVOICE_CREATING".equals(status)) {
-                // Check if invoice was created
-                String aggregateId = (String) saga.get("aggregate_id");
-                int bookingId = Integer.parseInt(aggregateId);
-                
-                Integer invoiceCount = jdbc.queryForObject("SELECT COUNT(*) FROM invoice WHERE booking_id = ? AND status = 'PAID'", Integer.class, bookingId);
-                
-                if (invoiceCount != null && invoiceCount > 0) {
-                    // Invoice exists, complete saga
-                    handleInvoiceCreated((String) saga.get("correlation_id"));
-                } else {
-                    // Invoice not created yet, trigger compensation
-                    handleInvoiceCreationFailed((String) saga.get("correlation_id"), "TIMEOUT: Invoice not created within 10 minutes");
-                }
+                // Trigger compensation on timeout (invoice_service owns invoice table)
+                handleInvoiceCreationFailed((String) saga.get("correlation_id"), "TIMEOUT: Invoice not created within 10 minutes");
             }
         }
     }
