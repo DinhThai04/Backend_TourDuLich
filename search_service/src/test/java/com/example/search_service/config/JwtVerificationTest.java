@@ -9,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class JwtVerificationTest {
     private static final String KEY = "k".repeat(64);
     private String token(String key, long expiry) throws Exception {
-        var jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS512), new JWTClaimsSet.Builder()
+        var jwt = new SignedJWT(new JWSHeader(JWSAlgorithm.HS256), new JWTClaimsSet.Builder()
             .subject("2").issueTime(new Date(System.currentTimeMillis()-120000))
             .expirationTime(new Date(expiry)).claim("scope", "SGU_SUPER_ADMIN").build());
         jwt.sign(new MACSigner(key)); return jwt.serialize();

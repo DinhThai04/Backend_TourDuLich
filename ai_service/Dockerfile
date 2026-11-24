@@ -2,7 +2,7 @@
 FROM maven:3.9-eclipse-temurin-21-alpine AS build
 WORKDIR /app
 COPY . .
-RUN mvn clean package -DskipTests
+RUN mvn clean package -Dmaven.test.skip=true
 
 # --- Giai đoạn 2: Chạy ứng dụng ---
 FROM eclipse-temurin:21-jre-alpine

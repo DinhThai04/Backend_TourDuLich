@@ -24,6 +24,11 @@ spring:
       maximum-pool-size: ${DB_POOL_MAX:5}
       minimum-idle: ${DB_POOL_MIN:1}
       connection-timeout: ${DB_POOL_TIMEOUT_MS:10000}
+  rabbitmq:
+    publisher-confirm-type: correlated
+    publisher-returns: true
+    template:
+      mandatory: true
   jpa:
     open-in-view: false
     hibernate:
@@ -35,3 +40,5 @@ spring:
 app:
   reporting:
     internal-key: ${REPORTING_INTERNAL_KEY}
+    consumer:
+      max-attempts: ${REPORTING_EVENT_MAX_ATTEMPTS:5}

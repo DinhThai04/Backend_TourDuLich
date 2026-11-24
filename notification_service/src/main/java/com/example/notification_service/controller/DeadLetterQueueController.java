@@ -4,6 +4,8 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
+import com.example.notification_service.service.NotificationDeadLetterService;
+import org.springframework.dao.EmptyResultDataAccessException;
 
 import java.util.List;
 import java.util.Map;
@@ -14,48 +16,42 @@ import java.util.Map;
 public class DeadLetterQueueController {
 
     private final JdbcTemplate jdbc;
+    private final NotificationDeadLetterService deadLetters;
 
     @GetMapping
     public ResponseEntity<List<Map<String, Object>>> listDeadLetters() {
-        var deadLetters = jdbc.queryForList("SELECT * FROM notification_dead_letter ORDER BY created_at DESC LIMIT 100");
+        var deadLetters = jdbc.queryForList("""
+                SELECT message_id,event_type,error,attempts,created_at
+                FROM notification_dead_letter ORDER BY created_at DESC LIMIT 100
+                """);
         return ResponseEntity.ok(deadLetters);
     }
 
     @GetMapping("/{messageId}")
     public ResponseEntity<Map<String, Object>> getDeadLetter(@PathVariable String messageId) {
-        var deadLetter = jdbc.queryForMap("SELECT * FROM notification_dead_letter WHERE message_id = ?", messageId);
-        if (deadLetter == null) {
+        try {
+            return ResponseEntity.ok(jdbc.queryForMap(
+                    "SELECT message_id,event_type,error,attempts,created_at FROM notification_dead_letter WHERE message_id = ?", messageId));
+        } catch (EmptyResultDataAccessException missing) {
             return ResponseEntity.notFound().build();
         }
-        return ResponseEntity.ok(deadLetter);
     }
 
     @PostMapping("/{messageId}/retry")
     public ResponseEntity<Map<String, Object>> retryDeadLetter(@PathVariable String messageId) {
         try {
-            var deadLetter = jdbc.queryForMap("SELECT * FROM notification_dead_letter WHERE message_id = ?", messageId);
-            if (deadLetter == null) {
+            if (!deadLetters.retry(messageId)) {
                 return ResponseEntity.notFound().build();
             }
-            
-            // Re-process the event by re-inserting into inbox for processing
-            String eventType = (String) deadLetter.get("event_type");
-            String payload = (String) deadLetter.get("payload");
-            
-            // This would trigger the consumer to process it again
-            // For now, just delete from DLQ and let the consumer handle it
-            jdbc.update("DELETE FROM notification_dead_letter WHERE message_id = ?", messageId);
-            
             return ResponseEntity.ok(Map.of("success", true, "messageId", messageId));
         } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+            return ResponseEntity.internalServerError().body(Map.of("error", "Could not queue the dead-letter retry"));
         }
     }
 
     @PostMapping("/{messageId}/discard")
     public ResponseEntity<Map<String, Object>> discardDeadLetter(@PathVariable String messageId) {
-        int deleted = jdbc.update("DELETE FROM notification_dead_letter WHERE message_id = ?", messageId);
-        if (deleted > 0) {
+        if (deadLetters.discard(messageId)) {
             return ResponseEntity.ok(Map.of("success", true, "messageId", messageId));
         }
         return ResponseEntity.notFound().build();

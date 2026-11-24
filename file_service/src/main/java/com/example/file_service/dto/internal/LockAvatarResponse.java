@@ -12,5 +12,6 @@ public class LockAvatarResponse {
     private UUID fileId;
     private String avatarOwnerId;
     private String url;
+    private Long avatarVersion;
     private boolean locked;
 }

@@ -6,7 +6,8 @@ import java.util.Set;
 
 /** Loopback hosts for native runs, plus the compose service names used inside the Docker network. */
 public final class LocalServiceUrl {
-    private static final Set<String> LOCAL_HOSTS = Set.of("127.0.0.1", "localhost", "api_gateway", "booking_service");
+    private static final Set<String> LOCAL_HOSTS = Set.of(
+            "127.0.0.1", "localhost", "api_gateway", "api-gateway", "booking_service", "booking-service");
 
     private LocalServiceUrl() {}
 

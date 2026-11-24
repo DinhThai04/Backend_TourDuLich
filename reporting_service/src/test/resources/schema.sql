@@ -1,3 +1,4 @@
+DROP TABLE IF EXISTS reporting_inbox;
 DROP TABLE IF EXISTS operation_audit;
 DROP TABLE IF EXISTS ops_refund;
 DROP TABLE IF EXISTS ops_booking;
@@ -91,4 +92,13 @@ CREATE TABLE ops_user (
   total_bookings INT DEFAULT 0,
   total_spent BIGINT DEFAULT 0,
   last_active DATETIME(6)
+);
+
+CREATE TABLE reporting_inbox (
+  consumer VARCHAR(120) NOT NULL,
+  event_id VARCHAR(36) NOT NULL,
+  event_type VARCHAR(120) NOT NULL,
+  received_at TIMESTAMP NOT NULL,
+  processed_at TIMESTAMP,
+  PRIMARY KEY (consumer, event_id)
 );

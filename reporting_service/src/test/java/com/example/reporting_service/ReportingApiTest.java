@@ -30,7 +30,7 @@ class ReportingApiTest {
 
     @BeforeEach
     void clean() {
-        for (String table : java.util.List.of("operation_audit", "ops_refund", "ops_booking", "ops_payment",
+        for (String table : java.util.List.of("reporting_inbox", "operation_audit", "ops_refund", "ops_booking", "ops_payment",
                 "ops_invoice", "ops_tour", "ops_user")) {
             jdbc.update("DELETE FROM " + table);
         }

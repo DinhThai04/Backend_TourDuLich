@@ -9,9 +9,10 @@ import com.example.file_service.entity.FileMgmt;
 @Mapper(componentModel = "spring")
 public interface FileMgmtMapper {
 
-//   FileMgmt  toUserResponse(FileMgmt user);
     @Mapping(target = "id", ignore = true)
+    @Mapping(target = "ownerId", ignore = true)
+    @Mapping(target = "avatarOwnerId", ignore = true)
+    @Mapping(target = "tourId", ignore = true)
+    @Mapping(target = "locationId", ignore = true)
     FileMgmt toFileMgmt(FileInfo fileInfo);
-
-    
 }

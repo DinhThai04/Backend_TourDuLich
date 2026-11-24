@@ -3,6 +3,7 @@ package com.example.file_service;
 import com.example.file_service.entity.FileMgmt;
 import com.example.file_service.mapper.FileMgmtMapper;
 import com.example.file_service.repository.FileMgmtRepository;
+import com.example.file_service.repository.FileReferenceRepository;
 import com.example.file_service.repository.FileRepository;
 import com.example.file_service.service.FileService;
 import org.junit.jupiter.api.Test;
@@ -13,7 +14,7 @@ import static org.mockito.Mockito.*;
 
 class TourMediaLookupTest {
     FileMgmtRepository repository=mock(FileMgmtRepository.class);
-    FileService service=new FileService(mock(FileRepository.class),repository,mock(FileMgmtMapper.class),mock(org.springframework.jdbc.core.JdbcTemplate.class),new TestTransactionTemplate(org.springframework.transaction.support.TransactionSynchronization.STATUS_COMMITTED),mock(com.example.file_service.service.AvatarWritePolicy.class));
+    FileService service=new FileService(mock(FileRepository.class),repository,mock(FileReferenceRepository.class),mock(FileMgmtMapper.class),mock(org.springframework.jdbc.core.JdbcTemplate.class),new TestTransactionTemplate(org.springframework.transaction.support.TransactionSynchronization.STATUS_COMMITTED),mock(com.example.file_service.service.AvatarWritePolicy.class));
     @Test void filteredLookupIsBoundedNormalizesIdsAndDoesNotReadAllAssets() {
         when(repository.findByTourIdInOrderByIdAsc(List.of("1","2"))).thenReturn(List.of(
                 FileMgmt.builder().id("a").tourId("2").url("https://res.cloudinary.com/demo/image/upload/a.jpg").build()));

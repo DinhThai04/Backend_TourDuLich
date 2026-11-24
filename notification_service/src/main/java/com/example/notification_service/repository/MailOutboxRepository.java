@@ -108,4 +108,9 @@ public class MailOutboxRepository {
                 WHERE id=? AND booking_id=? AND status='FAILED' AND sent_at IS NULL
                 """, now, now, id, bookingId) == 1;
     }
+
+    public boolean hasAccountHistory(long accountId) {
+        Integer count = jdbc.queryForObject("SELECT COUNT(*) FROM mail_outbox WHERE account_id=?", Integer.class, accountId);
+        return count != null && count > 0;
+    }
 }

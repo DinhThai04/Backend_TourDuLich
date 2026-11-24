@@ -54,11 +54,15 @@ class NotificationApiTest {
     @BeforeEach
     void clean() {
         jdbc.update("DELETE FROM mail_outbox");
+        jdbc.update("DELETE FROM notification_inbox");
+        jdbc.update("DELETE FROM notification_dead_letter");
     }
 
     @Test
     void internalApiRequiresKey() throws Exception {
         mvc.perform(get("/internal/notifications/mail/bookings/100"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(get("/internal/notification/dlq"))
                 .andExpect(status().isUnauthorized());
     }
 

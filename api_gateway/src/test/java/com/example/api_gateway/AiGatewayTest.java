@@ -19,7 +19,7 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.reactive.server.WebTestClient;
 import static org.junit.jupiter.api.Assertions.*;
 
-@SpringBootTest(webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(webEnvironment=SpringBootTest.WebEnvironment.RANDOM_PORT, properties={"MAIL_INTERNAL_API_KEY=test-mail-key"})
 class AiGatewayTest {
     static final AtomicReference<String> received = new AtomicReference<>();
     static final AtomicReference<String> authorization = new AtomicReference<>();
@@ -43,7 +43,7 @@ class AiGatewayTest {
         } catch(Exception error) { throw new ExceptionInInitializerError(error); }
     }
     @DynamicPropertySource static void config(DynamicPropertyRegistry properties) {
-        properties.add("app.ai.base-url",()->"http://127.0.0.1:"+upstream.getAddress().getPort());
+        properties.add("AI_BASE_URL",()->"http://127.0.0.1:"+upstream.getAddress().getPort());
     }
     @Autowired WebTestClient client;
     @MockBean IdentityService identity;

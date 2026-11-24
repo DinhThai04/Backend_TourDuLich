@@ -32,6 +32,7 @@ import java.util.List;
 @Slf4j
 @RequiredArgsConstructor(access = AccessLevel.PUBLIC)
 @FieldDefaults(level = AccessLevel.PACKAGE, makeFinal = true)
+@Component
 public class AuthenticationFilter implements GlobalFilter, Ordered {
      /** What introspection concluded; the routed call itself is outside this decision. */
      private enum AuthDecision { ACCEPT, REJECT, UNAVAILABLE }
@@ -40,6 +41,8 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
      ObjectMapper objectMapper;
      AuthCircuitBreaker authCircuitBreaker;
      IntrospectionCache introspectionCache;
+
+
 
      // Token introspection stays behind authentication at the edge: the gateway and search service
      // call auth directly, so publishing it would expose an unthrottled validity oracle for any token.
@@ -59,13 +62,8 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
              "/tour/tours/[0-9]+",
              "/tour/tours/list",
              "/tour/tours/random-3",
-              "/tour/tours/search",
-              "/tour/tours/search-snapshot",
-              "/tour/tours/.*",
-              "/api/v1/tour/tours/search-snapshot",
-              ".*search-snapshot",
-              ".*",
-              "/tour/locations/all",
+             "/tour/tours/search",
+             "/tour/locations/all",
              "/tour/locations/departures",
              "/tour/locations/destinations",
              "/tour/locations/departures/search",
@@ -94,7 +92,6 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
 
     @Override
     public Mono<Void> filter(ServerWebExchange exchange, GatewayFilterChain chain) {
-        log.info("AUTH_FILTER: filter called, path={}, method={}", exchange.getRequest().getURI().getPath(), exchange.getRequest().getMethod());
         if ((apiPrefix + "/booking/internal/mail/reminders/dispatch").equals(exchange.getRequest().getURI().getPath())) {
             String supplied=exchange.getRequest().getHeaders().getFirst("X-Internal-Mail-Key");
             if(internalMailKey==null || internalMailKey.length()<32) {
@@ -195,7 +192,6 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
 
     private boolean isPublicEndpoint(ServerHttpRequest request) {
         String path = request.getURI().getPath();
-        System.out.println("GATEWAY_DEBUG: path=" + path + " apiPrefix=" + apiPrefix);
         if(HttpMethod.GET.equals(request.getMethod()) && (apiPrefix+"/ai/policies").equals(path)) return true;
         // Anonymous questions receive a login prompt. Supplied credentials must pass introspection,
         // then booking_service verifies the JWT again and applies its own strict owner predicate.

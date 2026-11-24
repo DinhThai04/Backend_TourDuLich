@@ -15,6 +15,7 @@ public class NotificationSecurityConfig {
         FilterRegistrationBean<InternalNotificationAuthenticationFilter> registration = new FilterRegistrationBean<>();
         registration.setFilter(new InternalNotificationAuthenticationFilter(key));
         registration.addUrlPatterns("/internal/notifications/*");
+        registration.addUrlPatterns("/internal/notification/dlq/*");
         registration.setName("internalNotificationAuthenticationFilter");
         registration.setOrder(1);
         return registration;

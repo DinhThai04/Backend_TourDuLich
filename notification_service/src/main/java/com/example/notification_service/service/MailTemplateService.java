@@ -11,6 +11,7 @@ import java.time.LocalDateTime;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
+import org.springframework.web.util.HtmlUtils;
 
 @Service
 @RequiredArgsConstructor
@@ -82,19 +83,25 @@ public class MailTemplateService {
             String variablesJson
     ) {
         public MailPayload render(Map<String, Object> variables) {
-            String subject = renderString(this.subject, variables);
-            String html = renderString(this.bodyHtml, variables);
-            String text = this.bodyText != null ? renderString(this.bodyText, variables) : null;
+            String subject = renderString(this.subject, variables, false);
+            if (subject.length() > 200 || subject.contains("\r") || subject.contains("\n")) {
+                throw new IllegalArgumentException("Rendered mail subject is invalid");
+            }
+            String html = renderString(this.bodyHtml, variables, true);
+            String text = this.bodyText != null ? renderString(this.bodyText, variables, false) : null;
             return new MailPayload(1, subject, html, text);
         }
 
-        private String renderString(String template, Map<String, Object> variables) {
+        private String renderString(String template, Map<String, Object> variables, boolean htmlContext) {
             if (template == null) return null;
             String result = template;
             if (variables != null) {
                 for (Map.Entry<String, Object> entry : variables.entrySet()) {
                     String key = "{{" + entry.getKey() + "}}";
                     String value = entry.getValue() != null ? entry.getValue().toString() : "";
+                    if (htmlContext) {
+                        value = HtmlUtils.htmlEscape(value);
+                    }
                     result = result.replace(key, value);
                 }
             }

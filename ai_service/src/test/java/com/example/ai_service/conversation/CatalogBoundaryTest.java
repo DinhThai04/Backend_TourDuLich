@@ -66,6 +66,8 @@ class CatalogBoundaryTest {
     }
     @Test void configurationAcceptsComposeServiceHosts() {
         assertThatCode(()->new CatalogConfiguration().catalogReader("http://api_gateway:8888/api/v1/tour",json)).doesNotThrowAnyException();
+        assertThatCode(()->new CatalogConfiguration().catalogReader("http://api-gateway:8888/api/v1/tour",json)).doesNotThrowAnyException();
         assertThatCode(()->new com.example.ai_service.account.HttpBookingReader("http://booking_service:8081/booking",json)).doesNotThrowAnyException();
+        assertThatCode(()->new com.example.ai_service.account.HttpBookingReader("http://booking-service:8081/booking",json)).doesNotThrowAnyException();
     }
 }

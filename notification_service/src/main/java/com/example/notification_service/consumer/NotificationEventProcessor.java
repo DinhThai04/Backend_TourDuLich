@@ -77,11 +77,7 @@ public class NotificationEventProcessor {
         }
 
         JsonNode data = root.path("payload").isObject() ? root.path("payload") : root;
-        String templateCode = resolveTemplateCode(eventType);
         String recipient = firstNonBlank(text(data, "recipient"), text(data, "email"));
-        if (templateCode == null) {
-            throw new InvalidNotificationEventException("No mail template is mapped to this event type");
-        }
         if (recipient == null) {
             throw new InvalidNotificationEventException("Notification event has no recipient");
         }
@@ -91,18 +87,26 @@ public class NotificationEventProcessor {
             throw new InvalidNotificationEventException("Notification recipient is invalid", exception);
         }
 
-        Map<String, Object> variables = objectMapper.convertValue(data,
-                objectMapper.getTypeFactory().constructMapType(HashMap.class, String.class, Object.class));
-        variables.put("eventId", eventId);
-        variables.put("eventType", eventType);
-        variables.put("timestamp", now.toString());
-        MailTemplateService.MailTemplate template = templates.getTemplate(templateCode)
-                .orElseThrow(() -> new IllegalStateException("Required notification template is unavailable"));
         MailPayload mail;
-        try {
-            mail = template.render(variables);
-        } catch (IllegalArgumentException invalidTemplateData) {
-            throw new InvalidNotificationEventException("Notification template data is invalid", invalidTemplateData);
+        if ("notification.mail.v1".equals(eventType)) {
+            mail = directMail(eventType, data);
+        } else {
+            String templateCode = resolveTemplateCode(eventType);
+            if (templateCode == null) {
+                throw new InvalidNotificationEventException("No mail template is mapped to this event type");
+            }
+            Map<String, Object> variables = objectMapper.convertValue(data,
+                    objectMapper.getTypeFactory().constructMapType(HashMap.class, String.class, Object.class));
+            variables.put("eventId", eventId);
+            variables.put("eventType", eventType);
+            variables.put("timestamp", now.toString());
+            MailTemplateService.MailTemplate template = templates.getTemplate(templateCode)
+                    .orElseThrow(() -> new IllegalStateException("Required notification template is unavailable"));
+            try {
+                mail = template.render(variables);
+            } catch (IllegalArgumentException invalidTemplateData) {
+                throw new InvalidNotificationEventException("Notification template data is invalid", invalidTemplateData);
+            }
         }
 
         String sourceService = firstNonBlank(header(properties, "source-service"), text(root, "producer"), "unknown");
@@ -111,9 +115,13 @@ public class NotificationEventProcessor {
         }
         Integer bookingId = number(data, "bookingId");
         Integer accountId = number(data, "accountId");
+        String eventKey = firstNonBlank(text(data, "eventKey"), eventId + ":" + eventType);
+        if (eventKey.length() > 191) {
+            throw new InvalidNotificationEventException("Notification event key exceeds 191 characters");
+        }
         try {
             String payload = objectMapper.writeValueAsString(mail);
-            outbox.insert(eventId + ":" + eventType, eventType, sourceService, bookingId, accountId,
+            outbox.insert(eventKey, eventType, sourceService, bookingId, accountId,
                     recipient, payload, now, now);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Could not encode notification mail payload", exception);
@@ -127,6 +135,26 @@ public class NotificationEventProcessor {
             throw new IllegalStateException("Could not complete the notification inbox receipt");
         }
         return true;
+    }
+
+    /** Producer-rendered mail keeps reporting/notification independent of producer templates. */
+    private MailPayload directMail(String eventType, JsonNode data) {
+        String subject = text(data, "subject");
+        String html = text(data, "html");
+        String text = text(data, "text");
+        if (subject == null || subject.isBlank() || subject.length() > 200
+                || subject.contains("\r") || subject.contains("\n")) {
+            throw new InvalidNotificationEventException("Notification mail subject is invalid");
+        }
+        if (html == null || html.isBlank()) {
+            throw new InvalidNotificationEventException("Notification mail html body is missing");
+        }
+        try {
+            return new MailPayload(1, subject, html, text);
+        } catch (IllegalArgumentException invalidMail) {
+            throw new InvalidNotificationEventException("Notification mail payload is invalid for " + eventType,
+                    invalidMail);
+        }
     }
 
     private JsonNode readBody(Message message) {

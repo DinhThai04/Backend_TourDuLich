@@ -15,16 +15,18 @@ import static org.mockito.Mockito.*;
 class AvatarCleanupTest {
     FileRepository storage=mock(FileRepository.class);
     FileMgmtRepository records=mock(FileMgmtRepository.class);
+    FileReferenceRepository references=mock(FileReferenceRepository.class);
     FileMgmtMapper mapper=mock(FileMgmtMapper.class);
     FileMgmt fresh=FileMgmt.builder().path("public-id").url("https://example.test/avatar").build();
 
     @BeforeEach void setup() throws Exception {
         when(storage.store(any())).thenReturn(FileInfo.builder().url(fresh.getUrl()).path(fresh.getPath()).build());
         when(mapper.toFileMgmt(any())).thenReturn(fresh);
+        when(records.saveAndFlush(any())).thenAnswer(call -> call.getArgument(0));
     }
 
     private FileService service(int completionStatus) {
-        return new FileService(storage,records,mapper,mock(JdbcTemplate.class),new TestTransactionTemplate(completionStatus),mock(com.example.file_service.service.AvatarWritePolicy.class));
+        return new FileService(storage,records,references,mapper,mock(JdbcTemplate.class),new TestTransactionTemplate(completionStatus),mock(com.example.file_service.service.AvatarWritePolicy.class));
     }
 
     @Test void uncertainCommitDoesNotDeleteAnAssetThatMayHaveBeenCommitted() throws Exception {

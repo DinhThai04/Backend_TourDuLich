@@ -106,7 +106,6 @@ spring:
             - Path=${app.api-prefix}/tour/**
           filters:
             - StripPrefix=2
-            - AddRequestHeader=X-Catalog-Key, sgu-tour-local-catalog-internal-key-2026
         - id: file-service
           uri: ${FILE_BASE_URL:http://file-service:8087}
           predicates:

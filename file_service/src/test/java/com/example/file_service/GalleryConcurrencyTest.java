@@ -35,6 +35,7 @@ class GalleryConcurrencyTest {
     @org.junit.jupiter.api.BeforeEach void existingTour() {
         jdbc.execute("CREATE TABLE IF NOT EXISTS tour (id INT PRIMARY KEY)");
         jdbc.update("MERGE INTO tour (id) KEY(id) VALUES (1)");
+        jdbc.update("DELETE FROM tour_media_lock WHERE tour_id='1'");
     }
     @Test void twoConcurrentUploadsCannotExceedTenImages() throws Exception {
         for(int i=0;i<8;i++)records.save(FileMgmt.builder().tourId("1").ownerId("").url("old"+i).build());
@@ -42,11 +43,15 @@ class GalleryConcurrencyTest {
         when(storage.store(any())).thenAnswer(call->{int number=calls.incrementAndGet();if(number==1){entered.countDown();assertTrue(release.await(15,TimeUnit.SECONDS));}if(number==2)secondStarted.countDown();return FileInfo.builder().url("new"+number).path("public"+number).build();});
         var pool=Executors.newFixedThreadPool(2);
         try {
-            var first=pool.submit(()->attempt(List.of(png(1),png(2))));assertTrue(entered.await(15,TimeUnit.SECONDS));
+            var first=pool.submit(()->attempt(List.of(png(1),png(2))));
+            if (!entered.await(15,TimeUnit.SECONDS)) first.get(1, TimeUnit.SECONDS);
             var second=pool.submit(()->attempt(List.of(png(3),png(4))));
             assertTrue(secondStarted.await(5,TimeUnit.SECONDS));release.countDown();
             // Both requests upload outside the lock; only one may link its images, the loser cleans up.
-            assertTrue(first.get(20,TimeUnit.SECONDS)^second.get(20,TimeUnit.SECONDS));
+            boolean firstSucceeded = first.get(20,TimeUnit.SECONDS);
+            boolean secondSucceeded = second.get(20,TimeUnit.SECONDS);
+            assertNotEquals(firstSucceeded, secondSucceeded,
+                    "Exactly one concurrent gallery update should commit");
             assertEquals(10,records.findByTourId("1").size());assertEquals(4,calls.get());
             verify(storage,times(2)).delete(any());
         }finally{release.countDown();pool.shutdownNow();}
@@ -65,6 +70,7 @@ class GalleryConcurrencyTest {
             try {
                 assertTrue(entered.await(10, TimeUnit.SECONDS));
                 jdbc.update("DELETE FROM tour WHERE id=1");
+                service.detachTourGallery("1");
             } finally { released.countDown(); }
             assertEquals(404, upload.get(20, TimeUnit.SECONDS).getStatusCode().value());
             assertTrue(records.findByTourId("1").stream().noneMatch(image -> "deleted-tour.jpg".equals(image.getUrl())));

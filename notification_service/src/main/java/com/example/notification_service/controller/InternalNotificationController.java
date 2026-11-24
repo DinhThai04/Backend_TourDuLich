@@ -50,4 +50,9 @@ public class InternalNotificationController {
             throw new IllegalStateException("Only failed, unsent mail can be retried");
         return ResponseEntity.noContent().build();
     }
+
+    @GetMapping("/users/{accountId}/has-history")
+    public ResponseEntity<Map<String, Object>> hasUserHistory(@PathVariable long accountId) {
+        return ResponseEntity.ok(Map.of("hasHistory", repository.hasAccountHistory(accountId)));
+    }
 }

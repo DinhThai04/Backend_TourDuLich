@@ -26,6 +26,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class MediaAccessTest {
     @Autowired MockMvc mvc;
     @MockBean CustomJwtDecoder decoder;
+    @MockBean FileInternalSecurityProperties internalFileSecurityProperties;
     @MockBean FileService files;
     @Test void customerCannotReplaceOtherAvatarOrTourImages() throws Exception {
         mvc.perform(multipart("/media/uploadAvt/3").file(new MockMultipartFile("file", "x.png", "image/png", new byte[]{1}))
@@ -70,6 +71,27 @@ class MediaAccessTest {
         mvc.perform(multipart("/media/tour/7/initial").file(image())
                 .header("X-Tour-Gallery-Proof", proof("initial", 7, 42)).with(creator))
                 .andExpect(status().isOk());
+        verify(files).uploadImageTour(eq("7"), anyList());
+    }
+
+    @Test void editAndRetryRoutesRequireTourIssuedProof() throws Exception {
+        var editor = jwt().jwt(token -> token.subject("42"))
+                .authorities(new SimpleGrantedAuthority("PERM:TOURS_UPDATE"));
+        mvc.perform(multipart("/media/tour/7/edit").file(changes()).with(editor))
+                .andExpect(status().isForbidden());
+        mvc.perform(multipart("/media/tour/8/edit").file(changes())
+                .header("X-Tour-Gallery-Proof", proof("edit", 7, 42)).with(editor))
+                .andExpect(status().isForbidden());
+        mvc.perform(multipart("/media/tour/7/edit").file(changes())
+                .header("X-Tour-Gallery-Proof", proof("edit", 7, 42)).with(editor))
+                .andExpect(status().isOk());
+
+        mvc.perform(multipart("/media/uploadTour/7").file(image()).with(editor))
+                .andExpect(status().isForbidden());
+        mvc.perform(multipart("/media/uploadTour/7").file(image())
+                .header("X-Tour-Gallery-Proof", proof("retry", 7, 42)).with(editor))
+                .andExpect(status().isOk());
+        verify(files).editTourImages(eq("7"), anyList(), isNull());
         verify(files).uploadImageTour(eq("7"), anyList());
     }
 

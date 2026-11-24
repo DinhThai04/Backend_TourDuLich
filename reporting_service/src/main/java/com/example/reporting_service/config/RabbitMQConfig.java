@@ -13,6 +13,7 @@ public class RabbitMQConfig {
 
     public static final String EVENT_EXCHANGE = "sgu.events";
     public static final String REPORTING_EVENTS_QUEUE = "reporting.events";
+    public static final String REPORTING_RETRY_QUEUE = "reporting.events.retry";
     public static final String REPORTING_DLQ = "reporting.events.dlq";
 
     @Bean
@@ -31,6 +32,14 @@ public class RabbitMQConfig {
     @Bean
     Queue reportingDLQ() {
         return QueueBuilder.durable(REPORTING_DLQ).build();
+    }
+
+    @Bean
+    Queue reportingRetryQueue() {
+        return QueueBuilder.durable(REPORTING_RETRY_QUEUE)
+                .withArgument("x-dead-letter-exchange", "")
+                .withArgument("x-dead-letter-routing-key", REPORTING_EVENTS_QUEUE)
+                .build();
     }
 
     @Bean
