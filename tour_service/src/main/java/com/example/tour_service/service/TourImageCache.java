@@ -2,7 +2,7 @@ package com.example.tour_service.service;
 
 import com.example.tour_service.dto.response.TourFileResponse;
 import com.example.tour_service.repository.TourRepository;
-import com.example.tour_service.repository.httpClient.FileClient;
+import com.example.tour_service.repository.httpclient.FileClient;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;

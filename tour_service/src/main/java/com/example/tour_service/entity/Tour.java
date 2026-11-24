@@ -56,11 +56,6 @@ public class Tour {
     @Column(nullable = false, name = "price_id")
     private Long tourPriceId;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "price_id", insertable = false, updatable = false,
-            foreignKey = @ForeignKey(ConstraintMode.NO_CONSTRAINT))
-    private TourPriceView priceView;
-
     @OneToMany(mappedBy = "tour", cascade = CascadeType.ALL, orphanRemoval = true)
     private List<TourDeparture> tourDepartures;
 

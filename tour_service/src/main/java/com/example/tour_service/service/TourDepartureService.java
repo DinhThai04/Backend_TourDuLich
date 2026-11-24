@@ -1,6 +1,6 @@
 package com.example.tour_service.service;
 
-import com.example.tour_service.repository.httpClient.PricingClient;
+import com.example.tour_service.repository.httpclient.PricingClient;
 import com.example.tour_service.dto.request.TourDepartureRequest;
 import com.example.tour_service.dto.response.TourDepartureResponse;
 import com.example.tour_service.dto.response.TourPriceResponse;

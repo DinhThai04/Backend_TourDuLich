@@ -1,6 +1,6 @@
 package com.example.tour_service;
 
-import com.example.tour_service.repository.httpClient.FileClient;
+import com.example.tour_service.repository.httpclient.FileClient;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import feign.Feign;
@@ -45,12 +45,13 @@ class FileGalleryFeignTest {
         }
     }
 
-    @Test void multipartGalleryChangesReachFileServiceWithAndWithoutNewUploads() throws Exception {
-        var body=new AtomicReference<String>();var contentType=new AtomicReference<String>();
+    @Test void multipartGalleryChangesReachFileServiceWithProofAndWithOrWithoutNewUploads() throws Exception {
+        var body=new AtomicReference<String>();var contentType=new AtomicReference<String>();var proof=new AtomicReference<String>();
         var server=HttpServer.create(new InetSocketAddress("127.0.0.1",0),0);
         server.createContext("/file/media/tour/1/edit",exchange->{
             body.set(new String(exchange.getRequestBody().readAllBytes(),StandardCharsets.UTF_8));
             contentType.set(exchange.getRequestHeaders().getFirst("Content-Type"));
+            proof.set(exchange.getRequestHeaders().getFirst("X-Tour-Gallery-Proof"));
             byte[] response="[{\"tourId\":\"1\",\"url\":\"new.jpg\"}]".getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type","application/json");exchange.sendResponseHeaders(200,response.length);
             try(var output=exchange.getResponseBody()){output.write(response);}
@@ -61,11 +62,13 @@ class FileGalleryFeignTest {
                     .decoder((response,type)->json.readValue(response.body().asInputStream(),json.constructType(type)))
                     .target(FileClient.class,"http://127.0.0.1:"+server.getAddress().getPort());
             var file=new MockMultipartFile("files","new.png","image/png","image-fixture".getBytes(StandardCharsets.UTF_8));
-            assertEquals("new.jpg",client.editTourImages("1","[\"old.jpg\"]",List.of(file)).getFirst().getUrl());
+            assertEquals("new.jpg",client.editTourImages("1","[\"old.jpg\"]","edit-proof",List.of(file)).getFirst().getUrl());
+            assertEquals("edit-proof",proof.get());
             assertTrue(contentType.get().startsWith("multipart/form-data;"));
             assertTrue(body.get().contains("name=\"changes\""));assertTrue(body.get().contains("[\"old.jpg\"]"));
             assertTrue(body.get().contains("filename=\"new.png\""));assertTrue(body.get().contains("image-fixture"));
-            client.editTourImages("1","[\"old.jpg\"]",null);
+            client.editTourImages("1","[\"old.jpg\"]","retry-proof",null);
+            assertEquals("retry-proof",proof.get());
             assertTrue(body.get().contains("[\"old.jpg\"]"));assertFalse(body.get().contains("filename="));
         } finally {server.stop(0);}
     }

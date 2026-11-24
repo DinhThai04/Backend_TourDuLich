@@ -1,14 +1,13 @@
-spring:
-  autoconfigure:
-    exclude:
-      - org.springframework.boot.autoconfigure.security.oauth2.server.servlet.OAuth2ResourceServerAutoConfiguration
-      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
 server:
   port: 8086
   servlet:
     context-path: /tour
 
 spring:
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.security.oauth2.server.servlet.OAuth2ResourceServerAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration
   config:
     import: "optional:file:./.local/tour_service.properties,optional:file:../.local/tour_service.properties,optional:file:./Backend_TourDuLich/.local/tour_service.properties"
   application:
@@ -61,16 +60,13 @@ spring:
         jdbc.lob.non_contextual_creation: true
 jwt:
   signerKey: ${JWT_SIGNER_KEY}
-  spring:
-    security:
-      oauth2:
-        resourceserver:
-jwt:
-  signerKey: ${JWT_SIGNER_KEY}
 app:
   tour:
     internal:
       internal-key: ${TOUR_INTERNAL_KEY}
+    outbox:
+      enabled: ${TOUR_OUTBOX_ENABLED:true}
+      poll-interval-ms: ${TOUR_OUTBOX_POLL_INTERVAL_MS:1000}
   pricing:
     internal:
       internal-key: ${PRICING_INTERNAL_KEY}

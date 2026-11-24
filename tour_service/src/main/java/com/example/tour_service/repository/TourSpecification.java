@@ -102,7 +102,7 @@ public class TourSpecification {
             // 5. Lọc theo Giá thấp nhất (basePrice >= minPrice)
             if (request.getMinP() != null) {
                 predicates.add(criteriaBuilder.greaterThanOrEqualTo(
-                        root.join("priceView").get("adultPrice"),
+                        root.get("basePrice"),
                         request.getMinP()
                 ));
             }
@@ -110,7 +110,7 @@ public class TourSpecification {
             // 6. Lọc theo Giá cao nhất (basePrice <= maxPrice)
             if (request.getMaxP() != null) {
                 predicates.add(criteriaBuilder.lessThanOrEqualTo(
-                        root.join("priceView").get("adultPrice"),
+                        root.get("basePrice"),
                         request.getMaxP()
                 ));
             }

@@ -5,9 +5,11 @@ import com.example.tour_service.dto.request.ApiResponse;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -28,7 +30,14 @@ import java.util.stream.Collectors;
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
+@EnableConfigurationProperties(TourInternalSecurityProperties.class)
 public class SecurityConfig {
+
+    private final InternalTourAuthenticationFilter internalTourAuthenticationFilter;
+
+    public SecurityConfig(InternalTourAuthenticationFilter internalTourAuthenticationFilter) {
+        this.internalTourAuthenticationFilter = internalTourAuthenticationFilter;
+    }
 
     // Only the catalogue reads the storefront needs are anonymous; admin listings stay authenticated.
     private static final String[] PUBLIC_URLS = {
@@ -36,8 +45,6 @@ public class SecurityConfig {
             "/tours/random-3",
             "/tours/search",
             "/tours/search-snapshot",
-            "/tour/tours/search-snapshot",
-            "/tour/tours/**",
             "/tours/{id:[0-9]+}",
             "/vehicles/list",
             "/locations/all",
@@ -53,7 +60,6 @@ public class SecurityConfig {
 
         @Bean
         public SecurityFilterChain filterChain(HttpSecurity httpSecurity) throws Exception {
-            System.out.println("TOUR_SECURITY: Building filter chain, PUBLIC_URLS=" + java.util.Arrays.toString(PUBLIC_URLS));
             httpSecurity.authorizeHttpRequests(request -> request
                     .requestMatchers("/internal/**").permitAll()
                     .requestMatchers(HttpMethod.POST, "/advice/search").permitAll()
@@ -85,6 +91,7 @@ public class SecurityConfig {
                     .jwtAuthenticationConverter(jwtAuthenticationConverter()))
                     .authenticationEntryPoint(new JwtAuthenticationEntryPoint()));
             httpSecurity.csrf(AbstractHttpConfigurer::disable);
+            httpSecurity.addFilterBefore(internalTourAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
 
             return httpSecurity.build();
         }

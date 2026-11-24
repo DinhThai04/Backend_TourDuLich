@@ -6,7 +6,7 @@ import com.example.tour_service.dto.request.*;
 import com.example.tour_service.dto.request.ApiResponse;
 import com.example.tour_service.dto.response.*;
 import com.example.tour_service.repository.*;
-import com.example.tour_service.repository.httpClient.*;
+import com.example.tour_service.repository.httpclient.*;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.*;
 import org.junit.jupiter.api.io.TempDir;
@@ -35,6 +35,8 @@ class TourMutationTest {
         imageCache=new TourImageCache(files,tours,new ObjectMapper(),tempDir.resolve("tour-images.json").toString());
         var galleryProof = mock(TourGalleryProof.class);
         lenient().when(galleryProof.issue("initial", 1)).thenReturn("service-proof");
+        lenient().when(galleryProof.issue("edit", 1)).thenReturn("edit-proof");
+        lenient().when(galleryProof.issue("retry", 1)).thenReturn("retry-proof");
         service=new TourService(tours,itineraries,locations,vehicles,prices,files,imageCache,departures,
                 new TransactionTemplate(mock(PlatformTransactionManager.class)),mock(org.springframework.jdbc.core.JdbcTemplate.class), galleryProof);
         var location=Location.builder().id(1).city("City").type(com.example.tour_service.enums.LocationType.DEPARTURE).build(); var vehicle=Vehicle.builder().id("BUS").vehicleType("Bus").build();
@@ -57,9 +59,9 @@ class TourMutationTest {
     }
     @Test void newFilesAndRemovedLinksAreForwardedTogetherAndReturnedGalleryIsFresh() {
         request.setUrl(List.of("old.jpg"));var file=new MockMultipartFile("files","new.png","image/png",validPng());request.setFiles(List.of(file));
-        when(files.editTourImages("1","[\"old.jpg\"]",request.getFiles())).thenReturn(List.of(new TourFileResponse("1","new.jpg")));
+        when(files.editTourImages("1","[\"old.jpg\"]","edit-proof",request.getFiles())).thenReturn(List.of(new TourFileResponse("1","new.jpg")));
         assertEquals(List.of("new.jpg"),service.updateTour(1,request).getImageIds());
-        verify(files).editTourImages("1","[\"old.jpg\"]",request.getFiles());
+        verify(files).editTourImages("1","[\"old.jpg\"]","edit-proof",request.getFiles());
     }
     @Test void creatingTourReturnsUploadedGalleryOrPendingTourIdForSafeRetry() {
         var file=new MockMultipartFile("files","new.png","image/png",validPng());
@@ -70,7 +72,7 @@ class TourMutationTest {
         when(files.uploadInitialTourImages("1","service-proof",List.of(file))).thenThrow(new IllegalStateException("fixture"));
         var pending=service.createTour(create);assertEquals("PENDING",pending.getImageUploadStatus());assertEquals(1,pending.getId());
         clearInvocations(tours);
-        doReturn(List.of(new FileResponse("x.png","new.jpg"))).when(files).uploadMultipleFiles("1",List.of(file));
+        doReturn(List.of(new FileResponse("x.png","new.jpg"))).when(files).uploadMultipleFiles("1","retry-proof",List.of(file));
         assertEquals("COMPLETE",service.retryTourImages(1,List.of(file)).getImageUploadStatus());
         verify(tours,never()).save(any());
     }

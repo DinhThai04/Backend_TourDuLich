@@ -4,7 +4,7 @@ import com.example.tour_service.dto.request.TourPriceBatchRequest;
 import com.example.tour_service.dto.request.UpdateTourRequest;
 import com.example.tour_service.dto.response.*;
 import com.example.tour_service.repository.TourSpecification;
-import com.example.tour_service.repository.httpClient.PricingClient;
+import com.example.tour_service.repository.httpclient.PricingClient;
 import com.example.tour_service.dto.request.TourRequest;
 import com.example.tour_service.dto.request.TourSearchRequest;
 import com.example.tour_service.entity.Location;
@@ -16,7 +16,7 @@ import com.example.tour_service.repository.ItineraryRepository;
 import com.example.tour_service.repository.LocationRepository;
 import com.example.tour_service.repository.TourRepository;
 import com.example.tour_service.repository.VehicleRepository;
-import com.example.tour_service.repository.httpClient.FileClient;
+import com.example.tour_service.repository.httpclient.FileClient;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -145,7 +145,7 @@ public class TourService {
         if (files == null || files.isEmpty()) throw new IllegalArgumentException("Vui lòng chọn ảnh để thử lại");
         var tour = tourRepository.findById(id).orElseThrow(() -> new AppException(ErrorCode.TOUR_NOT_FOUND));
         var response = toResponse(tour);
-        var images = fileClient.uploadMultipleFiles(String.valueOf(id), files);
+        var images = fileClient.uploadMultipleFiles(String.valueOf(id), galleryProof.issue("retry", id), files);
         List<String> urls = images.stream().map(FileResponse::url).toList();
         tourImageCache.update(String.valueOf(id), urls);
         response.setImageIds(urls);
@@ -234,7 +234,7 @@ public class TourService {
         } catch (JsonProcessingException invalid) {
             throw new IllegalArgumentException("Danh sách ảnh không hợp lệ", invalid);
         }
-        return fileClient.editTourImages(String.valueOf(id), changes,
+        return fileClient.editTourImages(String.valueOf(id), changes, galleryProof.issue("edit", id),
                         request.getFiles() == null || request.getFiles().isEmpty() ? null : request.getFiles())
                 .stream()
                 .filter(image -> String.valueOf(id).equals(image.getTourId()))
@@ -266,9 +266,16 @@ public class TourService {
             itineraryRepository.deleteByTourId(id);
             // Legacy join table has no cascade and no entity mapping, so it must be cleared explicitly.
             jdbc.update("DELETE FROM tour_image_ids WHERE tour_id=?", id);
-            // File-service takes the same tour row lock before committing gallery changes.
-            // Move every gallery link into its detached-image queue in the deletion transaction.
-            jdbc.update("UPDATE file_mgmt SET tour_id='null',owner_id='' WHERE tour_id=?", String.valueOf(id));
+            // File owns gallery metadata. Persist a delivery request atomically with this deletion;
+            // the outbox publisher retries the File API after the Tour transaction commits.
+            String eventId = java.util.UUID.randomUUID().toString();
+            String payload = "{\"tourId\":" + id + "}";
+            jdbc.update("""
+                    INSERT INTO tour_outbox (
+                        event_id, event_type, aggregate_type, aggregate_id, aggregate_version,
+                        payload, status, attempts, available_at, created_at
+                    ) VALUES (?, 'tour.gallery.detach.requested.v1', 'TOUR', ?, 1, ?, 'PENDING', 0, NOW(6), NOW(6))
+                    """, eventId, String.valueOf(id), payload);
             tourRepository.delete(tour);
             // The rows disappear only at commit; clearing the cache earlier would hide a still-existing tour.
             AfterCommit.run(() -> tourImageCache.update(String.valueOf(id), List.of()),
@@ -299,11 +306,11 @@ public class TourService {
 
             switch (sortRequest) {
                 case "priceLow":
-                    sortField = "priceView.adultPrice";
+                    sortField = "basePrice";
                     direction = Sort.Direction.ASC;
                     break;
                 case "priceHigh":
-                    sortField = "priceView.adultPrice";
+                    sortField = "basePrice";
                     direction = Sort.Direction.DESC;
                     break;
                 case "newest":

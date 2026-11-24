@@ -6,7 +6,7 @@ import com.example.tour_service.exception.AppException;
 import com.example.tour_service.exception.ErrorCode;
 import com.example.tour_service.repository.TourDepartureRepository;
 import com.example.tour_service.repository.TourRepository;
-import com.example.tour_service.repository.httpClient.PricingClient;
+import com.example.tour_service.repository.httpclient.PricingClient;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;

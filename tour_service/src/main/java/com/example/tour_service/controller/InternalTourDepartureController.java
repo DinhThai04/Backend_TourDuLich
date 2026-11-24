@@ -180,6 +180,80 @@ public class InternalTourDepartureController {
                 .build());
     }
 
+    @GetMapping("/users/{userId}/has-history")
+    public ResponseEntity<Map<String, Object>> hasUserHistory(@PathVariable Long userId) {
+        boolean hasHistory = tourDepartureRepository.countReviewsByUserId(userId) > 0;
+        return ResponseEntity.ok(Map.of("hasHistory", hasHistory));
+    }
+
+    @GetMapping("/by-tour/{tourId}")
+    public ResponseEntity<List<Map<String, Object>>> getDeparturesByTour(@PathVariable Integer tourId) {
+        List<Map<String, Object>> result = tourDepartureRepository.findByTourId(tourId).stream()
+                .map(d -> Map.<String, Object>of(
+                        "id", d.getId(),
+                        "tour_id", d.getTour().getId(),
+                        "tour_code", d.getTourCode(),
+                        "departure_date", d.getDepartureDate(),
+                        "return_date", d.getReturnDate(),
+                        "capacity", d.getCapacity() != null ? d.getCapacity() : 0,
+                        "available_seats", d.getAvailableSeats(),
+                        "operational_status", d.getOperationalStatus(),
+                        "version", d.getVersion()
+                ))
+                .toList();
+        return ResponseEntity.ok(result);
+    }
+
+    @PostMapping("/{id}/operational-status")
+    @Transactional
+    public ResponseEntity<Void> updateOperationalStatus(
+            @PathVariable Integer id,
+            @RequestParam String status) {
+        Optional<TourDeparture> departureOpt = tourDepartureRepository.lockById(id);
+        if (departureOpt.isEmpty()) {
+            return ResponseEntity.notFound().build();
+        }
+        TourDeparture departure = departureOpt.get();
+        departure.setOperationalStatus(status);
+        departure.setVersion(departure.getVersion() + 1);
+        tourDepartureRepository.saveAndFlush(departure);
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/replacement")
+    @Transactional
+    public ResponseEntity<Map<String, Object>> createReplacement(@RequestBody Map<String, Object> req) {
+        int tourId = ((Number) req.get("tourId")).intValue();
+        String tourCode = String.valueOf(req.get("tourCode"));
+        LocalDateTime departureDate = LocalDateTime.parse(String.valueOf(req.get("departureDate")));
+        LocalDateTime returnDate = LocalDateTime.parse(String.valueOf(req.get("returnDate")));
+        int capacity = ((Number) req.get("capacity")).intValue();
+        var tour = tourDepartureRepository.findByTourId(tourId).stream()
+                .map(TourDeparture::getTour)
+                .findFirst()
+                .orElseThrow(() -> new IllegalArgumentException("Tour not found: " + tourId));
+        var created = tourDepartureRepository.saveAndFlush(TourDeparture.builder()
+                .tour(tour)
+                .tourCode(tourCode)
+                .departureDate(departureDate)
+                .returnDate(returnDate)
+                .availableSeats((short) capacity)
+                .capacity(capacity)
+                .operationalStatus("REPLACEMENT_ONLY")
+                .build());
+        return ResponseEntity.ok(Map.of(
+                "id", created.getId(),
+                "tour_id", tourId,
+                "tour_code", created.getTourCode(),
+                "departure_date", created.getDepartureDate(),
+                "return_date", created.getReturnDate(),
+                "capacity", created.getCapacity(),
+                "available_seats", created.getAvailableSeats(),
+                "operational_status", created.getOperationalStatus(),
+                "version", created.getVersion()
+        ));
+    }
+
     @PostMapping("/{id}/increment-version")
     @Transactional
     public ResponseEntity<Void> incrementVersion(@PathVariable Integer id) {
