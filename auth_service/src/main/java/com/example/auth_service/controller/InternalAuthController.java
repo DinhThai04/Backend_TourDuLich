@@ -19,6 +19,7 @@ public class InternalAuthController {
 
     private final UserRepository userRepository;
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     @GetMapping("/{id}")
     public ResponseEntity<InternalUserResponse> getUserById(@PathVariable Long id) {
         return userRepository.findById(id)
@@ -39,6 +40,7 @@ public class InternalAuthController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     @PostMapping("/batch")
     public ResponseEntity<List<InternalUserResponse>> getUsersBatch(@RequestBody List<Long> ids) {
         if (ids == null || ids.isEmpty() || ids.size() > 100 || ids.stream().anyMatch(id -> id == null || id < 1)) {
@@ -64,7 +66,7 @@ public class InternalAuthController {
     }
 
     @org.springframework.transaction.annotation.Transactional
-    @PostMapping("/users/{ownerId}/avatar-write-permission")
+    @PostMapping("/{ownerId}/avatar-write-permission")
     public ResponseEntity<Void> checkAvatarWritePermission(
             @PathVariable Long ownerId,
             @RequestParam(defaultValue = "false") boolean lockTarget,

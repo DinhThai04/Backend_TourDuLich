@@ -20,15 +20,15 @@ import java.util.Optional;
 public class PaymentEventProcessor {
 
     private final InvoiceRepository invoiceRepository;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     private static final ZoneId VIETNAM_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     @Transactional
     public void process(String messageId, String eventType, String payload) {
-        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         PaymentSettlementEvent event;
         try {
-            event = mapper.readValue(payload, PaymentSettlementEvent.class);
+            event = objectMapper.readValue(payload, PaymentSettlementEvent.class);
         } catch (Exception e) {
             log.error("Failed to parse payment event payload: {}", e.getMessage());
             throw new RuntimeException("Failed to parse payment event payload", e);

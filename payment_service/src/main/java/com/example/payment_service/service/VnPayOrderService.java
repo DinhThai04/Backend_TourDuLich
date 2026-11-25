@@ -73,8 +73,7 @@ public class VnPayOrderService {
 		if (List.of("SUSPENDED", "CANCELLED").contains(String.valueOf(departure.get("operational_status"))))
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "Chuyến đang dừng do sự cố; vui lòng xem đề xuất dời lịch");
 		LocalDateTime now = LocalDateTime.now(clock).withNano(0);
-		Object depDate = departure.get("departure_date");
-		LocalDateTime departureDate = depDate instanceof LocalDateTime ? (LocalDateTime) depDate : ((java.sql.Timestamp) depDate).toLocalDateTime();
+		LocalDateTime departureDate = databaseDateTime(departure.get("departure_date"));
 		if (!departureDate.isAfter(now))
 			throw new IllegalArgumentException("Chuyến đi đã khởi hành");
 		if (jdbc.queryForObject("SELECT COUNT(*) FROM payment_reconciliation WHERE booking_id=? AND status='OPEN'", Integer.class, bookingId) > 0)
@@ -94,8 +93,7 @@ public class VnPayOrderService {
 		var hold = reservation(bookingId);
 		if (hold != null) {
 			validateHold(hold, booking, customers.size(), now);
-			Object holdDepDate = hold.get("departure_at");
-			LocalDateTime holdDepartureDate = holdDepDate instanceof LocalDateTime ? (LocalDateTime) holdDepDate : ((java.sql.Timestamp) holdDepDate).toLocalDateTime();
+			LocalDateTime holdDepartureDate = databaseDateTime(hold.get("departure_at"));
 			if (!holdDepartureDate.equals(departureDate))
 				throw new IllegalArgumentException("Lịch khởi hành đã thay đổi; vui lòng liên hệ để cập nhật booking");
 		} else if (((Number) departure.get("available_seats")).intValue() < customers.size()) {
@@ -266,16 +264,14 @@ public class VnPayOrderService {
 		if (java.util.List.of("SUSPENDED","CANCELLED").contains(String.valueOf(departure.get("operational_status"))))
 			throw new ResponseStatusException(HttpStatus.CONFLICT,"Chuyến đang dừng do sự cố; vui lòng xem đề xuất dời lịch");
 		LocalDateTime now = LocalDateTime.now(clock).withNano(0);
-		Object depDate = departure.get("departure_date");
-		LocalDateTime departureDate = depDate instanceof LocalDateTime ? (LocalDateTime) depDate : ((java.sql.Timestamp) depDate).toLocalDateTime();
+		LocalDateTime departureDate = databaseDateTime(departure.get("departure_date"));
 		if (!departureDate.isAfter(now))
 			throw new IllegalArgumentException("Chuyến đi đã khởi hành");
 		var customers = bookingClient.getBookingCustomers(bookingId);
 		var hold = reservation(bookingId);
 		if (hold != null) {
 			validateHold(hold, b, customers.size(), now);
-			Object holdDepDate = hold.get("departure_at");
-			LocalDateTime holdDepartureDate = holdDepDate instanceof LocalDateTime ? (LocalDateTime) holdDepDate : ((java.sql.Timestamp) holdDepDate).toLocalDateTime();
+			LocalDateTime holdDepartureDate = databaseDateTime(hold.get("departure_at"));
 			if (!holdDepartureDate.equals(departureDate))
 				throw new IllegalArgumentException("Lịch khởi hành đã thay đổi; vui lòng liên hệ để cập nhật booking");
 		}
@@ -299,8 +295,7 @@ public class VnPayOrderService {
 		}
 		LocalDateTime expires = now.plusMinutes(15);
 		if (hold != null) {
-			Object holdExp = hold.get("expires_at");
-			LocalDateTime holdExpiresAt = holdExp instanceof LocalDateTime ? (LocalDateTime) holdExp : ((java.sql.Timestamp) holdExp).toLocalDateTime();
+			LocalDateTime holdExpiresAt = databaseDateTime(hold.get("expires_at"));
 			if (holdExpiresAt.isBefore(expires)) expires = holdExpiresAt;
 		}
 		if (departureDate.isBefore(expires)) expires = departureDate;
@@ -310,6 +305,18 @@ public class VnPayOrderService {
 	static LocalDateTime databaseDateTime(Object value) {
 		if (value instanceof LocalDateTime date) return date;
 		if (value instanceof java.sql.Timestamp date) return date.toLocalDateTime();
+		if (value instanceof String s && !s.isBlank()) {
+			return LocalDateTime.parse(s.contains(" ") && !s.contains("T") ? s.replace(' ', 'T') : s);
+		}
+		if (value instanceof List<?> list && list.size() >= 5) {
+			int year = ((Number) list.get(0)).intValue();
+			int month = ((Number) list.get(1)).intValue();
+			int day = ((Number) list.get(2)).intValue();
+			int hour = ((Number) list.get(3)).intValue();
+			int minute = ((Number) list.get(4)).intValue();
+			int second = list.size() > 5 ? ((Number) list.get(5)).intValue() : 0;
+			return LocalDateTime.of(year, month, day, hour, minute, second);
+		}
 		throw new IllegalStateException("Unexpected database date type: " + (value == null ? "null" : value.getClass().getName()));
 	}
 
@@ -338,8 +345,7 @@ public class VnPayOrderService {
 		}
 	}
 	private void validateHold(Map<String,Object> hold, Map<String,Object> b, int people, LocalDateTime now) {
-		Object holdExp = hold.get("expires_at");
-		LocalDateTime holdExpiresAt = holdExp instanceof LocalDateTime ? (LocalDateTime) holdExp : ((java.sql.Timestamp) holdExp).toLocalDateTime();
+		LocalDateTime holdExpiresAt = databaseDateTime(hold.get("expires_at"));
 		if (!List.of("HELD","CHECKOUT").contains(hold.get("status")) || !holdExpiresAt.isAfter(now))
 			throw new IllegalArgumentException("Booking đã hết hạn giữ chỗ; vui lòng đặt lại");
 		if (((Number)hold.get("seats")).intValue() != people || !hold.get("departure_id").equals(b.get("tour_departure_id")))
@@ -489,15 +495,13 @@ public class VnPayOrderService {
 		var customerRows = bookingClient.getBookingCustomers(bookingId);
 		int people = customerRows != null ? customerRows.size() : 0;
 		LocalDateTime now = LocalDateTime.now(clock).withNano(0);
-		Object depDate = departure.get("departure_date");
-		LocalDateTime departureDate = depDate instanceof LocalDateTime ? (LocalDateTime) depDate : ((java.sql.Timestamp) depDate).toLocalDateTime();
+		LocalDateTime departureDate = databaseDateTime(departure.get("departure_date"));
 		if (!departureDate.isAfter(now))
 			return reconcile(txnRef, bookingId, amountVnd, paidAt, "TOUR_ALREADY_DEPARTED");
 		if (hold != null) {
 			try { validateHold(hold, b, people, paidAt); }
 			catch (IllegalArgumentException invalid) { return reconcile(txnRef, bookingId, amountVnd, paidAt, "RESERVATION_NO_LONGER_VALID"); }
-			Object holdDepDate = hold.get("departure_at");
-			LocalDateTime holdDepartureDate = holdDepDate instanceof LocalDateTime ? (LocalDateTime) holdDepDate : ((java.sql.Timestamp) holdDepDate).toLocalDateTime();
+			LocalDateTime holdDepartureDate = databaseDateTime(hold.get("departure_at"));
 			if (!holdDepartureDate.equals(departureDate))
 				return reconcile(txnRef, bookingId, amountVnd, paidAt, "DEPARTURE_CHANGED");
 		} else {

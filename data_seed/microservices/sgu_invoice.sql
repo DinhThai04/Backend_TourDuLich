@@ -70,3 +70,14 @@ CREATE TABLE `invoice_inbox` (
 -- SEED DATA (reference tables only)
 -- ============================================================
 SET FOREIGN_KEY_CHECKS = 1;
+
+CREATE TABLE IF NOT EXISTS `invoice_dead_letter` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `message_id` varchar(100) NOT NULL,
+  `event_type` varchar(100) NOT NULL,
+  `payload` longtext,
+  `error` text,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_invoice_dlq_msg` (`message_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

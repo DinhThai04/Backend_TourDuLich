@@ -147,20 +147,18 @@ public class BookingHoldSaga {
 		int seats = ((Number) payload.get("seats")).intValue();
 
 		try {
-			// Release seats
-			releaseSeats(departureId, seats);
-			
-			// Update booking status
-			jdbc.update("UPDATE booking SET status = 'EXPIRED' WHERE id = ? AND status IN ('PENDING_PAYMENT', 'CONFIRMED')", bookingId);
-			
-			// Update reservation
-			jdbc.update("UPDATE booking_reservation SET status = 'EXPIRED', cancel_reason = 'PAYMENT_FAILED', updated_at = ? WHERE booking_id = ?", LocalDateTime.now(), bookingId);
-			
-			// Send notification
-			sendMail(bookingId, "BOOKING_EXPIRED");
-			
+			// Update booking status only if still PENDING_PAYMENT (never overwrite CONFIRMED)
+			int updated = jdbc.update("UPDATE booking SET status = 'EXPIRED' WHERE id = ? AND status = 'PENDING_PAYMENT'", bookingId);
+			if (updated > 0) {
+				// Release seats
+				releaseSeats(departureId, seats);
+				// Update reservation
+				jdbc.update("UPDATE booking_reservation SET status = 'EXPIRED', cancel_reason = 'PAYMENT_FAILED', updated_at = ? WHERE booking_id = ?", LocalDateTime.now(), bookingId);
+				// Send notification
+				sendMail(bookingId, "BOOKING_EXPIRED");
+			}
 			jdbc.update("UPDATE booking_saga SET status = 'COMPENSATED', current_step = 'COMPENSATED', updated_at = ? WHERE id = ?", LocalDateTime.now(), sagaId);
-			log.info("Compensation completed for saga {}", sagaId);
+			log.info("Compensation completed for saga {} (bookingUpdated={})", sagaId, updated);
 		} catch (Exception e) {
 			log.error("Compensation failed for saga {}: {}", sagaId, e.getMessage(), e);
 			jdbc.update("UPDATE booking_saga SET status = 'FAILED', current_step = 'COMPENSATION_FAILED', last_error = ?, updated_at = ? WHERE id = ?", e.getMessage(), LocalDateTime.now(), sagaId);

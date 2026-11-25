@@ -151,15 +151,24 @@ if (departure == null || departure.isEmpty()) {
             } catch (Exception e) {
                 throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể giữ chỗ tại tour-service");
             }
-            jdbc.update("""
-                INSERT INTO booking_reservation (booking_id,departure_id,departure_at,seats,status,expires_at,
-                  reminder_one_at,reminder_two_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)
-                """, bookingId, departureId, departure.get("departure_date"), seats, plan.immediate() ? "CHECKOUT" : "HELD",
-                    plan.deadline(), plan.reminderOne(), plan.reminderTwo(), now, now);
-            if (!plan.immediate()) events.enqueue(bookingId, MailEventType.BOOKING_CREATED, plan.deadline());
-            var result = response(bookingId);
-            result.setMessage(plan.immediate() ? "Vui lòng thanh toán ngay để hoàn tất đặt tour" : "Đã giữ chỗ đến hạn thanh toán");
-            return result;
+            try {
+                jdbc.update("""
+                    INSERT INTO booking_reservation (booking_id,departure_id,departure_at,seats,status,expires_at,
+                      reminder_one_at,reminder_two_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)
+                    """, bookingId, departureId, BookingMailEvents.date(departure.get("departure_date")), seats, plan.immediate() ? "CHECKOUT" : "HELD",
+                        plan.deadline(), plan.reminderOne(), plan.reminderTwo(), now, now);
+                if (!plan.immediate()) events.enqueue(bookingId, MailEventType.BOOKING_CREATED, plan.deadline());
+                var result = response(bookingId);
+                result.setMessage(plan.immediate() ? "Vui lòng thanh toán ngay để hoàn tất đặt tour" : "Đã giữ chỗ đến hạn thanh toán");
+                return result;
+            } catch (RuntimeException ex) {
+                try {
+                    tourClient.releaseHold(departureId, seats);
+                } catch (Exception releaseEx) {
+                    // Best-effort seat compensation when local DB transaction fails after remote hold.
+                }
+                throw ex;
+            }
     }
     private BookingResponse replay(int account, int departureId, String clientKey, List<Passenger> passengers) {
         var rows = jdbc.queryForList("""
@@ -328,7 +337,7 @@ if (departure == null || departure.isEmpty()) {
     }
 
     public record HistoryRow(BookingResponse booking, String tourCode, String tourTitle,
-                             String departureDate, String returnDate, String invoiceStatus) {}
+                             String departureDate, String returnDate, String invoiceStatus, Long totalAmount) {}
     public record HistoryPage(List<HistoryRow> items, boolean hasNext) {}
 
     public HistoryPage ownHistory(int page, Long bookingId, String status, LocalDate from, LocalDate to) {
@@ -357,21 +366,26 @@ if (departure == null || departure.isEmpty()) {
         args.add(bookingId == null ? page * limit : 0);
         var rows = jdbc.queryForList(sql + clauses + " ORDER BY b.id DESC LIMIT ? OFFSET ?", args.toArray());
         
-        // Enrich with tour and invoice data via Feign clients
+        // Enrich with tour, price snapshot, and invoice data
         List<HistoryRow> items = new ArrayList<>();
         for (var row : rows.stream().limit(limit).toList()) {
             BookingResponse bookingResp = toResponse(row);
             String tourCode = null, tourTitle = null, departureDate = null, returnDate = null, invoiceStatus = null;
-            
-            // Get tour info via Tour internal API
-            Integer departureId = (Integer) row.get("hold_departure_id");
+            Long totalAmount = null;
+
+            Object depObj = row.get("hold_departure_id") != null ? row.get("hold_departure_id") : row.get("tour_departure_id");
+            Integer departureId = depObj instanceof Number n ? n.intValue() : null;
             if (departureId != null) {
                 try {
                     Map<String, Object> departure = tourClient.getDeparture(departureId);
                     if (departure != null) {
-                        tourCode = (String) departure.get("tour_code");
-                        tourTitle = (String) departure.get("tour_id") != null ? 
-                            "Tour #" + departure.get("tour_id") : null; // Would need another call for full title
+                        tourCode = departure.get("tour_code") != null ? String.valueOf(departure.get("tour_code")) : null;
+                        Object titleObj = departure.get("tour_title");
+                        if (titleObj != null && !String.valueOf(titleObj).isBlank()) {
+                            tourTitle = String.valueOf(titleObj);
+                        } else if (departure.get("tour_id") != null) {
+                            tourTitle = "Tour #" + departure.get("tour_id");
+                        }
                         Object depDate = departure.get("departure_date");
                         Object retDate = departure.get("return_date");
                         departureDate = depDate != null ? BookingMailEvents.date(depDate).toString() : null;
@@ -381,19 +395,28 @@ if (departure == null || departure.isEmpty()) {
                     // Tour service unavailable, continue without tour info
                 }
             }
-            
-            // Get invoice status via Invoice internal API
+
             Integer bookingIdInt = ((Number) row.get("id")).intValue();
+            try {
+                var snap = jdbc.queryForList("SELECT total_amount FROM booking_price_snapshot WHERE booking_id=?", bookingIdInt);
+                if (!snap.isEmpty() && snap.get(0).get("total_amount") instanceof Number amt) {
+                    totalAmount = amt.longValue();
+                }
+            } catch (Exception ignored) {}
+
             try {
                 Map<String, Object> invoice = invoiceClient.getInvoiceByBookingId(bookingIdInt);
                 if (invoice != null) {
-                    invoiceStatus = (String) invoice.get("status");
+                    invoiceStatus = invoice.get("status") != null ? String.valueOf(invoice.get("status")) : null;
+                    if (totalAmount == null && invoice.get("totalBookingTourExpense") instanceof Number invAmt) {
+                        totalAmount = invAmt.longValue();
+                    }
                 }
             } catch (Exception ignored) {
                 // Invoice service unavailable, continue without invoice info
             }
             
-            items.add(new HistoryRow(bookingResp, tourCode, tourTitle, departureDate, returnDate, invoiceStatus));
+            items.add(new HistoryRow(bookingResp, tourCode, tourTitle, departureDate, returnDate, invoiceStatus, totalAmount));
         }
         return new HistoryPage(items, rows.size() > limit);
     }

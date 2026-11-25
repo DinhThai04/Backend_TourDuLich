@@ -43,7 +43,4 @@ public interface TourDepartureRepository extends JpaRepository<TourDeparture, In
             """)
     List<TourDeparture> findOpenFutureByTourIds(@Param("tourIds") List<Integer> tourIds,
                                                 @Param("now") LocalDateTime now);
-
-    @Query(value = "SELECT COUNT(*) FROM reviews WHERE user_id = :userId", nativeQuery = true)
-    long countReviewsByUserId(@Param("userId") Long userId);
 }

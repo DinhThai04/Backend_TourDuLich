@@ -47,9 +47,9 @@ public class BookingMailEvents {
         LocalDateTime departureDate;
         try {
             Map<String, Object> departure = tourClient.getDeparture(departureId);
-            tourTitle = tourIdLabel(departure.get("tour_id"));
-            Object depDate = departure.get("departure_date");
-            departureDate = depDate instanceof LocalDateTime ? (LocalDateTime) depDate : ((java.sql.Timestamp) depDate).toLocalDateTime();
+            Object titleObj = departure.get("tour_title");
+            tourTitle = (titleObj instanceof String s && !s.isBlank()) ? s : tourIdLabel(departure.get("tour_id"));
+            departureDate = date(departure.get("departure_date"));
         } catch (Exception e) {
             throw new IllegalStateException("Cannot fetch tour info for booking " + bookingId, e);
         }
@@ -94,7 +94,21 @@ public class BookingMailEvents {
 
     static LocalDateTime date(Object value) {
         if (value == null) return null;
-        return value instanceof LocalDateTime date ? date : ((java.sql.Timestamp) value).toLocalDateTime();
+        if (value instanceof LocalDateTime date) return date;
+        if (value instanceof java.sql.Timestamp ts) return ts.toLocalDateTime();
+        if (value instanceof String s && !s.isBlank()) {
+            return LocalDateTime.parse(s.contains(" ") && !s.contains("T") ? s.replace(' ', 'T') : s);
+        }
+        if (value instanceof java.util.List<?> list && list.size() >= 5) {
+            int y = ((Number) list.get(0)).intValue();
+            int m = ((Number) list.get(1)).intValue();
+            int d = ((Number) list.get(2)).intValue();
+            int h = ((Number) list.get(3)).intValue();
+            int min = ((Number) list.get(4)).intValue();
+            int sec = list.size() > 5 ? ((Number) list.get(5)).intValue() : 0;
+            return LocalDateTime.of(y, m, d, h, min, sec);
+        }
+        throw new IllegalStateException("Unexpected date value: " + value.getClass().getName());
     }
 
     static String tourIdLabel(Object value) {

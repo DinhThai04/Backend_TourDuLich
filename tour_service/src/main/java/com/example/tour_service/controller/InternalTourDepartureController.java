@@ -26,6 +26,7 @@ public class InternalTourDepartureController {
 
     private final TourDepartureRepository tourDepartureRepository;
     private final DepartureCapacityReader capacityReader;
+    private final org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     @GetMapping("/{id}/capacity")
     public ResponseEntity<InternalDepartureCapacityResponse> getCapacity(@PathVariable Integer id) {
@@ -68,17 +69,18 @@ public class InternalTourDepartureController {
             return ResponseEntity.notFound().build();
         }
         TourDeparture d = departure.get();
-        return ResponseEntity.ok(Map.of(
-                "id", d.getId(),
-                "tour_id", d.getTour().getId(),
-                "tour_code", d.getTourCode(),
-                "departure_date", d.getDepartureDate(),
-                "return_date", d.getReturnDate(),
-                "capacity", d.getCapacity(),
-                "available_seats", d.getAvailableSeats(),
-                "operational_status", d.getOperationalStatus(),
-                "version", d.getVersion()
-        ));
+        Map<String, Object> payload = new java.util.LinkedHashMap<>();
+        payload.put("id", d.getId());
+        payload.put("tour_id", d.getTour().getId());
+        payload.put("tour_title", d.getTour().getTourTitle() != null ? d.getTour().getTourTitle() : "");
+        payload.put("tour_code", d.getTourCode() != null ? d.getTourCode() : "");
+        payload.put("departure_date", d.getDepartureDate());
+        payload.put("return_date", d.getReturnDate() != null ? d.getReturnDate() : d.getDepartureDate());
+        payload.put("capacity", d.getCapacity() != null ? d.getCapacity() : 0);
+        payload.put("available_seats", d.getAvailableSeats() != null ? d.getAvailableSeats() : 0);
+        payload.put("operational_status", d.getOperationalStatus() != null ? d.getOperationalStatus() : "OPEN");
+        payload.put("version", d.getVersion());
+        return ResponseEntity.ok(payload);
     }
 
     @PostMapping("/{id}/hold")
@@ -131,6 +133,17 @@ public class InternalTourDepartureController {
         departure.setAvailableSeats((short) (departure.getAvailableSeats() - requestedSeats));
         departure.setVersion(departure.getVersion() + 1);
         TourDeparture saved = tourDepartureRepository.saveAndFlush(departure);
+
+        int parsedBookingId = 0;
+        if (request.getBookingId() != null) {
+            try { parsedBookingId = Integer.parseInt(request.getBookingId().trim()); } catch (NumberFormatException ignored) {}
+        }
+        LocalDateTime holdNow = LocalDateTime.now();
+        LocalDateTime holdExpires = request.getExpiresAt() != null ? request.getExpiresAt() : holdNow.plusMinutes(15);
+        jdbc.update("""
+                INSERT INTO departure_hold (hold_id, departure_id, booking_id, seats, status, expires_at, version, created_at)
+                VALUES (?, ?, ?, ?, 'HELD', ?, 0, ?)
+                """, java.util.UUID.randomUUID().toString(), id, parsedBookingId, requestedSeats, holdExpires, holdNow);
         
         return ResponseEntity.ok(HoldSeatsResponse.builder()
                 .departureId(id)
@@ -146,7 +159,8 @@ public class InternalTourDepartureController {
     @Transactional
     public ResponseEntity<ReleaseHoldResponse> releaseHold(
             @PathVariable Integer id,
-            @RequestParam Integer seats) {
+            @RequestParam Integer seats,
+            @RequestParam(required = false) Integer bookingId) {
         
         Optional<TourDeparture> departureOpt = tourDepartureRepository.lockById(id);
         if (departureOpt.isEmpty()) {
@@ -161,6 +175,22 @@ public class InternalTourDepartureController {
                     .success(false)
                     .message("Số chỗ giải phóng phải lớn hơn 0")
                     .build());
+        }
+
+        if (bookingId != null && bookingId > 0) {
+            int released = jdbc.update(
+                    "UPDATE departure_hold SET status = 'RELEASED', version = version + 1 WHERE departure_id = ? AND booking_id = ? AND status IN ('HELD', 'CHECKOUT')",
+                    id, bookingId);
+            if (released == 0) {
+                return ResponseEntity.ok(ReleaseHoldResponse.builder()
+                        .departureId(id)
+                        .seatsReleased(0)
+                        .availableSeatsAfterRelease(departure.getAvailableSeats())
+                        .version((int) departure.getVersion())
+                        .success(true)
+                        .message("Giữ chỗ đã được giải phóng trước đó (idempotent)")
+                        .build());
+            }
         }
         
         Integer capacity = departure.getCapacity() != null ? departure.getCapacity() : 32767;
@@ -182,8 +212,8 @@ public class InternalTourDepartureController {
 
     @GetMapping("/users/{userId}/has-history")
     public ResponseEntity<Map<String, Object>> hasUserHistory(@PathVariable Long userId) {
-        boolean hasHistory = tourDepartureRepository.countReviewsByUserId(userId) > 0;
-        return ResponseEntity.ok(Map.of("hasHistory", hasHistory));
+        // Reviews are owned by auth_service (sgu_auth); sgu_tour holds no user-owned history rows.
+        return ResponseEntity.ok(Map.of("hasHistory", false));
     }
 
     @GetMapping("/by-tour/{tourId}")

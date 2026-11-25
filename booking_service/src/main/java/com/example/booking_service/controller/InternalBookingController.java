@@ -147,11 +147,13 @@ public class InternalBookingController {
 
 	@GetMapping("/bookings/{id}/price-snapshot")
 	public ResponseEntity<Map<String, Object>> getBookingPriceSnapshot(@PathVariable Integer id) {
-		var snapshot = jdbc.queryForMap("SELECT total_amount FROM booking_price_snapshot WHERE booking_id = ?", id);
-		if (snapshot == null || snapshot.isEmpty()) {
+		var rows = jdbc.queryForList(
+				"SELECT total_amount, adult_price AS adultPrice, child_price AS childPrice, toddler_price AS toddlerPrice, infant_price AS infantPrice, single_supplement_price AS singleSupplementPrice FROM booking_price_snapshot WHERE booking_id = ?",
+				id);
+		if (rows.isEmpty()) {
 			return ResponseEntity.notFound().build();
 		}
-		return ResponseEntity.ok(snapshot);
+		return ResponseEntity.ok(rows.get(0));
 	}
 
 	@GetMapping("/bookings/{id}/payment-evidence")

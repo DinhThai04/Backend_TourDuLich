@@ -84,7 +84,16 @@ public class MeetingPointController {
 		
 		String operationalStatus = (String) departure.get("operational_status");
 		Object depDate = departure.get("departure_date");
-		LocalDateTime departureDate = depDate instanceof LocalDateTime ? (LocalDateTime) depDate : ((java.sql.Timestamp) depDate).toLocalDateTime();
+		LocalDateTime departureDate;
+		if (depDate instanceof LocalDateTime ldt) {
+			departureDate = ldt;
+		} else if (depDate instanceof java.sql.Timestamp ts) {
+			departureDate = ts.toLocalDateTime();
+		} else if (depDate instanceof String s && !s.isBlank()) {
+			departureDate = LocalDateTime.parse(s.contains(" ") && !s.contains("T") ? s.replace(' ', 'T') : s);
+		} else {
+			return null;
+		}
 		Integer departureTourId = (Integer) departure.get("tour_id");
 		
 		var now = LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh"));

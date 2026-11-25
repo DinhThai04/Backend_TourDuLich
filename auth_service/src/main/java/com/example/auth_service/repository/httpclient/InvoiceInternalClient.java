@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 import java.util.Map;
 
-@FeignClient(name = "invoice-service-internal", url = "${app.services.invoice-base-url:http://localhost:8084/invoice}", configuration = InvoiceFeignConfiguration.class)
+@FeignClient(name = "invoice-service-internal", url = "${app.services.invoice-base-url:http://localhost:8090/invoice}", configuration = InvoiceFeignConfiguration.class)
 public interface InvoiceInternalClient {
 
     @GetMapping("/internal/invoice/users/{accountId}/has-history")

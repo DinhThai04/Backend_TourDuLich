@@ -38,7 +38,7 @@ spring:
   datasource:
     url: "${DB_URL:jdbc:mysql://localhost:3306/dbtour_v2}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
-    username: root
+    username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD}
     hikari:
       # One shared MySQL box: 7 services x 10 stays under max_connections (151 by default).

@@ -210,3 +210,29 @@ CREATE TABLE `booking_inbox` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+CREATE TABLE IF NOT EXISTS `operation_audit` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `entity_type` varchar(50) NOT NULL,
+  `entity_id` varchar(64) NOT NULL,
+  `action` varchar(64) NOT NULL,
+  `actor_id` int DEFAULT NULL,
+  `reason` text,
+  `before_json` longtext,
+  `after_json` longtext,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_op_audit_entity` (`entity_type`, `entity_id`),
+  KEY `ix_op_audit_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `booking_dead_letter` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `message_id` varchar(100) NOT NULL,
+  `event_type` varchar(100) NOT NULL,
+  `payload` longtext,
+  `error` text,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_booking_dlq_msg` (`message_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
