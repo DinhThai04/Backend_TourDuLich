@@ -38,7 +38,7 @@ public class ReconciliationService {
 			""";
 	public record Decision(Action action,java.math.BigDecimal amountVnd,String reference,String note,
 						   LocalDateTime providerPaidAt,boolean confirmed) {}
-	public record Page(List<Map<String,Object>> items,boolean hasNext) {}
+	public record Page(List<Map<String,Object>> items,boolean hasNext,long total) {}
 	private LocalDateTime now(){return LocalDateTime.now(clock).withNano(0);}
 	private void require(boolean ok,String message){if(!ok)throw new ResponseStatusException(HttpStatus.CONFLICT,message);}
 	private void invalid(String message){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,message);}
@@ -59,7 +59,7 @@ public class ReconciliationService {
 
 	public Page list(int page, String view, String txnRef, int size, Integer bookingId, java.time.LocalDate day) {
 		actor("RECONCILIATION_READ");
-		if(page<0 || page>100000 || size < 1 || size > 25 || !List.of("ACTIONABLE","HISTORY","ALL").contains(view) || ("ALL".equals(view) && txnRef == null))invalid("Bộ lọc đối soát không hợp lệ");
+		if(page<0 || page>100000 || size < 1 || size > 100 || !List.of("ACTIONABLE","HISTORY","ALL").contains(view) || ("ALL".equals(view) && txnRef == null && bookingId == null))invalid("Bộ lọc đối soát không hợp lệ");
 		if (txnRef != null) ref(txnRef);
 		String filter = switch (view) {
 			case "HISTORY" -> "EXISTS(SELECT 1 FROM payment_reconciliation_event e WHERE e.txn_ref=t.txn_ref)";
@@ -93,7 +93,10 @@ public class ReconciliationService {
 			WHERE %s%s
 			ORDER BY CASE WHEN r.status='OPEN' THEN 0 ELSE 1 END,t.created_at DESC,t.txn_ref LIMIT ? OFFSET ?
 			""".formatted(TRANSACTIONS, filter, scope);
-		arguments.add(size + 1);
+		String countSql = "SELECT COUNT(*) FROM (%s) t LEFT JOIN payment_reconciliation r ON r.txn_ref=t.txn_ref WHERE %s%s"
+				.formatted(TRANSACTIONS, filter, scope);
+		Long total = jdbc.queryForObject(countSql, Long.class, arguments.toArray());
+		arguments.add(size);
 		arguments.add((long) page * size);
 		var rows = jdbc.queryForList(sql, arguments.toArray());
 		
@@ -133,7 +136,7 @@ public class ReconciliationService {
 			Object transId=row.remove("provider_trans_id");
 			if(row.get("transaction_no")==null && transId!=null)row.put("transaction_no",String.valueOf(transId));
 		});
-		return new Page(rows.stream().limit(size).toList(),rows.size()>size);
+		return new Page(rows, total != null && total > ((long) page + 1) * size, total == null ? 0 : total);
 	}
 	public List<Map<String,Object>> history(String txnRef) {
 		actor("RECONCILIATION_HISTORY");ref(txnRef);

@@ -4,13 +4,18 @@ import com.example.payment_service.dto.internal.InternalPaymentResponse;
 import com.example.payment_service.dto.internal.InternalPaymentSettlementEvent;
 import com.example.payment_service.entity.Payment;
 import com.example.payment_service.repository.PaymentRepository;
-import com.example.payment_service.saga.PaymentInvoiceSaga;
+import com.example.payment_service.outbox.OutboxPublisher;
+import org.springframework.transaction.annotation.Transactional;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -23,7 +28,7 @@ public class InternalPaymentController {
 
     private final PaymentRepository paymentRepository;
     private final JdbcTemplate jdbc;
-    private final PaymentInvoiceSaga paymentInvoiceSaga;
+    private final OutboxPublisher outbox;
 
     @GetMapping("/{id}")
     public ResponseEntity<InternalPaymentResponse> getPaymentById(@PathVariable Integer id) {
@@ -53,6 +58,39 @@ public class InternalPaymentController {
         return ResponseEntity.ok(responses);
     }
 
+    @GetMapping("/operations/amounts")
+    public List<Map<String, Object>> reportAmounts(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate through) {
+        if (from.isAfter(through) || through.isAfter(from.plusYears(1).minusDays(1))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Khoảng báo cáo tối đa một năm");
+        }
+        var start = from.atStartOfDay();
+        var until = through.plusDays(1).atStartOfDay();
+        return jdbc.queryForList("""
+                SELECT booking_id, DATE_FORMAT(day_of_pay,'%Y-%m-%d') AS day,
+                    SUM(total_booking_tour_expense) AS amount, 'collected' AS metric
+                FROM payment WHERE status IN ('PAID','REFUNDED') AND day_of_pay>=? AND day_of_pay<?
+                GROUP BY booking_id, DATE_FORMAT(day_of_pay,'%Y-%m-%d')
+                UNION ALL
+                SELECT booking_id, DATE_FORMAT(created_at,'%Y-%m-%d'),
+                    SUM(amount_vnd), 'reconciliation_refunds'
+                FROM payment_reconciliation_event WHERE action='REFUND_RECORDED' AND created_at>=? AND created_at<?
+                GROUP BY booking_id, DATE_FORMAT(created_at,'%Y-%m-%d')
+                """, start, until, start, until);
+    }
+
+    @GetMapping("/operations/transactions/{bookingId}")
+    public List<Map<String, Object>> invoiceTransactions(@PathVariable int bookingId) {
+        return jdbc.queryForList("""
+                SELECT 'VNPAY' AS provider, txn_ref AS reference, CAST(transaction_no AS CHAR) AS provider_reference, status
+                FROM vnpay_transaction WHERE booking_id=? AND status IN ('PAID','REFUNDED')
+                UNION ALL
+                SELECT 'MOMO', order_id, CAST(trans_id AS CHAR), status
+                FROM momo_transaction WHERE booking_id=? AND status IN ('PAID','REFUNDED')
+                """, bookingId, bookingId);
+    }
+
     @GetMapping("/settlements/events/{eventId}")
     public ResponseEntity<InternalPaymentSettlementEvent> getSettlementEvent(@PathVariable String eventId) {
         // This would typically read from an outbox table
@@ -61,26 +99,40 @@ public class InternalPaymentController {
     }
 
     @PostMapping("/refund")
+    @Transactional
     public ResponseEntity<Map<String, Object>> refund(@RequestParam Integer bookingId, @RequestParam Long amountVnd, @RequestParam String reference) {
-        try {
-            // Check if payment exists and is paid
-            var payment = jdbc.queryForList("SELECT * FROM payment WHERE booking_id = ? AND status = 'PAID'", bookingId);
-            if (payment.isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("error", "No paid payment found for booking"));
-            }
-
-            // Update payment status to refunded (invoice_service reacts via payment.refunded.v1 event)
-            jdbc.update("UPDATE payment SET status = 'REFUNDED' WHERE booking_id = ? AND status = 'PAID'", bookingId);
-            jdbc.update("UPDATE vnpay_transaction SET status = 'REFUNDED' WHERE booking_id = ? AND status = 'PAID'", bookingId);
-            jdbc.update("UPDATE momo_transaction SET status = 'REFUNDED' WHERE booking_id = ? AND status = 'PAID'", bookingId);
-            
-            // Publish refund event
-            paymentInvoiceSaga.handleInvoiceCreationFailed(java.util.UUID.randomUUID().toString(), "REFUND_REQUESTED: " + reference);
-            
-            return ResponseEntity.ok(Map.of("success", true, "bookingId", bookingId, "amountVnd", amountVnd));
-        } catch (Exception e) {
-            return ResponseEntity.internalServerError().body(Map.of("error", e.getMessage()));
+        if (amountVnd <= 0 || reference.isBlank() || reference.length() > 191)
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Chứng từ hoàn tiền không hợp lệ");
+        var payments = jdbc.queryForList("""
+                SELECT account_id,status,total_booking_tour_expense,day_of_pay,pay_method_id
+                FROM payment WHERE booking_id=? AND status IN ('PAID','REFUNDED') FOR UPDATE
+                """, bookingId);
+        if (payments.size() != 1)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Cần đúng một khoản thanh toán để ghi nhận hoàn toàn bộ");
+        var payment = payments.getFirst();
+        if (new java.math.BigDecimal(payment.get("total_booking_tour_expense").toString()).compareTo(java.math.BigDecimal.valueOf(amountVnd)) != 0)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Số tiền hoàn không khớp khoản đã thu");
+        String aggregate = String.valueOf(bookingId);
+        if ("REFUNDED".equals(payment.get("status"))) {
+            Integer repeats = jdbc.queryForObject("""
+                    SELECT COUNT(*) FROM payment_outbox WHERE aggregate_id=? AND event_type='payment.refunded.v1'
+                    AND JSON_UNQUOTE(JSON_EXTRACT(payload,'$.refundReference'))=?
+                    """, Integer.class, aggregate, reference);
+            if (repeats == null || repeats == 0)
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Khoản thanh toán đã có hồ sơ hoàn khác");
+        } else {
+            jdbc.update("UPDATE payment SET status='REFUNDED' WHERE booking_id=? AND status='PAID'", bookingId);
+            jdbc.update("UPDATE vnpay_transaction SET status='REFUNDED' WHERE booking_id=? AND status='PAID'", bookingId);
+            jdbc.update("UPDATE momo_transaction SET status='REFUNDED' WHERE booking_id=? AND status='PAID'", bookingId);
+            Object paidAt = payment.get("day_of_pay");
+            LocalDateTime paidTime = paidAt instanceof java.sql.Timestamp timestamp
+                    ? timestamp.toLocalDateTime() : (LocalDateTime) paidAt;
+            outbox.writeToOutbox("payment.refunded.v1", "Payment", aggregate, aggregate, aggregate, Map.of(
+                    "bookingId", bookingId, "accountId", payment.get("account_id"), "amountVnd", amountVnd,
+                    "payMethodId", payment.get("pay_method_id"), "paidAt", paidTime.toString(),
+                    "refundReference", reference, "status", "REFUNDED"));
         }
+        return ResponseEntity.ok(Map.of("success", true, "bookingId", bookingId, "amountVnd", amountVnd));
     }
 
     @GetMapping("/reconciliation/open-count/{accountId}")

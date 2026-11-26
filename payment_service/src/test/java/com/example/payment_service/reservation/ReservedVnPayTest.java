@@ -68,7 +68,9 @@ class ReservedVnPayTest {
     }
     @Test void paidHeldBookingDoesNotDeductSeatsTwiceAndEmailsOnce() {
         var fields = callback(prepare(),true); assertEquals("success",settle(fields)); assertEquals("success",settle(fields));
-        assertEquals(9,db.seats()); assertEquals("PAID",holdStatus());
+        assertEquals(9,db.seats()); // Booking owns reservation updates and consumes the settlement event asynchronously.
+        assertEquals("HELD",holdStatus());
+        assertEquals("PAID", db.jdbc.queryForObject("SELECT status FROM payment WHERE booking_id=1", String.class));
         assertEquals(1,db.jdbc.queryForObject("SELECT COUNT(*) FROM payment_outbox WHERE event_type='payment.settled.v1'",Integer.class));
         assertEquals(1,db.jdbc.queryForObject("SELECT COUNT(*) FROM payment_outbox WHERE event_type='notification.mail.v1'",Integer.class));
         assertTrue(db.jdbc.queryForObject("SELECT payload FROM payment_outbox WHERE event_type='notification.mail.v1'",String.class).contains("3350000"));
@@ -106,7 +108,9 @@ class ReservedVnPayTest {
         // The provider says the customer paid inside the checkout window and the unpaid hold was
         // never released, so the payment must complete instead of being reconciled away.
         assertEquals("success",settle(callback(order,true)));
-        assertEquals("PAID",holdStatus());
+        // Booking owns reservation updates and consumes the settlement event asynchronously.
+        assertEquals("HELD",holdStatus());
+        assertEquals("PAID", db.jdbc.queryForObject("SELECT status FROM payment WHERE booking_id=1", String.class));
         assertEquals(1,db.jdbc.queryForObject("SELECT COUNT(*) FROM payment_outbox WHERE event_type='payment.settled.v1'",Integer.class));
     }
     @Test void callbackAfterCancellationDoesNotRestoreBookingOrConsumeSeats() {

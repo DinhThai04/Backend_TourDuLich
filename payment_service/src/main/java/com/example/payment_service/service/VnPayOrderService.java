@@ -26,6 +26,9 @@ public class VnPayOrderService {
 	private final PricingInternalClient pricingClient;
 	private final BookingInternalClient bookingClient;
 	private final OutboxPublisher outboxPublisher;
+	@org.springframework.beans.factory.annotation.Value("${app.booking.sales-cutoff:PT4H}")
+	private java.time.Duration salesCutoff = java.time.Duration.ofHours(4);
+
 	public record Order(String txnRef, long amountVnd, LocalDateTime createdAt, LocalDateTime expiresAt) {}
 
 	public record Quote(long amountVnd, Map<String, String> unitPrices, String singleSupplementPrice) {}
@@ -265,8 +268,9 @@ public class VnPayOrderService {
 			throw new ResponseStatusException(HttpStatus.CONFLICT,"Chuyến đang dừng do sự cố; vui lòng xem đề xuất dời lịch");
 		LocalDateTime now = LocalDateTime.now(clock).withNano(0);
 		LocalDateTime departureDate = databaseDateTime(departure.get("departure_date"));
-		if (!departureDate.isAfter(now))
-			throw new IllegalArgumentException("Chuyến đi đã khởi hành");
+		LocalDateTime checkoutCutoff = departureDate.minus(salesCutoff);
+		if (!now.isBefore(checkoutCutoff))
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Đã đóng thanh toán cho chuyến này; vui lòng liên hệ hỗ trợ");
 		var customers = bookingClient.getBookingCustomers(bookingId);
 		var hold = reservation(bookingId);
 		if (hold != null) {
@@ -298,7 +302,7 @@ public class VnPayOrderService {
 			LocalDateTime holdExpiresAt = databaseDateTime(hold.get("expires_at"));
 			if (holdExpiresAt.isBefore(expires)) expires = holdExpiresAt;
 		}
-		if (departureDate.isBefore(expires)) expires = departureDate;
+		if (checkoutCutoff.isBefore(expires)) expires = checkoutCutoff;
 		return new Checkout(bookingId, departureId, amount, now, expires);
 	}
 
@@ -531,14 +535,8 @@ public class VnPayOrderService {
 					"provider", provider
 			));
 		}
-		try {
-			bookingClient.markBookingPaid(bookingId);
-		} catch (Exception e) {
-			log.warn("Failed to mark booking {} paid via Booking internal API: {}", bookingId, e.getMessage());
-		}
-		if (hold != null) {
-			try { tourClient.incrementVersion(departureId); } catch (Exception ignored) {}
-		}
+		// Production Booking confirmation consumes the committed settlement from the outbox.
+		if (outboxPublisher == null) bookingClient.markBookingPaid(bookingId);
 		mail.receipt(bookingId, txnRef, amountVnd, paidAt, now, provider);
 		return "success";
 	}

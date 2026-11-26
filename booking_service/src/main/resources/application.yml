@@ -4,6 +4,17 @@ server:
     context-path: /booking
 
 spring:
+  rabbitmq:
+    listener:
+      simple:
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 6
+          initial-interval: 2000
+          multiplier: 2
+          max-interval: 30000
+
   config:
     import: "optional:file:./.local/booking_service.properties,optional:file:../.local/booking_service.properties,optional:file:./Backend_TourDuLich/.local/booking_service.properties"
   mail:

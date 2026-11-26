@@ -129,35 +129,11 @@ public class PaymentInvoiceSaga {
         }
         
         String sagaId = (String) saga.getFirst().get("id");
-        String aggregateId = (String) saga.getFirst().get("aggregate_id");
-        int bookingId = Integer.parseInt(aggregateId);
-        
-        // Start compensation - refund the payment
-        jdbc.update("UPDATE payment_saga SET status = 'COMPENSATING_REFUND', current_step = 'COMPENSATING_REFUND', last_error = ?, updated_at = ? WHERE id = ?", error, LocalDateTime.now(), sagaId);
-        
-        // Publish payment.refunded event
-        outboxPublisher.writeToOutbox(
-            "payment.refunded.v1",
-            "Payment",
-            String.valueOf(bookingId),
-            sagaId,
-            sagaId,
-            Map.of(
-                "eventId", java.util.UUID.randomUUID().toString(),
-                "eventType", "payment.refunded.v1",
-                "occurredAt", LocalDateTime.now().toString(),
-                "bookingId", bookingId,
-                "reason", "INVOICE_CREATION_FAILED: " + error,
-                "status", "REFUNDED"
-            )
-        );
-        
-        // Update payment records to refunded (invoice_service reacts via payment.refunded.v1 event)
-        jdbc.update("UPDATE payment SET status = 'REFUNDED' WHERE booking_id = ? AND status = 'PAID'", bookingId);
-        
-        jdbc.update("UPDATE payment_saga SET status = 'COMPENSATED', current_step = 'COMPENSATED', updated_at = ? WHERE id = ?", LocalDateTime.now(), sagaId);
-        
-        log.info("Compensation completed for booking {}, saga {}", bookingId, sagaId);
+        // An invoice failure does not prove that any money was returned by the provider.
+        jdbc.update("UPDATE payment_saga SET status='FAILED',current_step='FAILED',last_error=?,updated_at=? WHERE id=?",
+                error, LocalDateTime.now(), sagaId);
+        log.error("Settlement saga {} requires invoice recovery; payment was not refunded", sagaId);
+
     }
 
     @Scheduled(fixedDelay = 300000) // Check every 5 minutes

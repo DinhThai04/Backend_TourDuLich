@@ -168,7 +168,8 @@ class VnPayBookingPaymentTest {
         assertThrows(IllegalArgumentException.class, () -> prepare("8490000"));
         jdbc.update("UPDATE booking SET status='CONFIRMED'");
         jdbc.update("UPDATE tour_departure SET departure_date=?", LocalDateTime.now(VIETNAM_ZONE).minusDays(1));
-        assertThrows(IllegalArgumentException.class, () -> prepare("8490000"));
+        assertEquals(org.springframework.http.HttpStatus.CONFLICT,
+                assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> prepare("8490000")).getStatusCode());
         jdbc.update("UPDATE tour_departure SET departure_date=?,available_seats=0", LocalDateTime.now(VIETNAM_ZONE).plusDays(2));
         assertThrows(IllegalArgumentException.class, () -> prepare("8490000"));
     }

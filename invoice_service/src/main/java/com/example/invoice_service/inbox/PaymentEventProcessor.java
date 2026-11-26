@@ -53,7 +53,7 @@ public class PaymentEventProcessor {
         Optional<Invoice> existing = invoiceRepository.findByBookingId(bookingId);
         if (existing.isPresent()) {
             Invoice invoice = existing.get();
-            if (InvoiceStatus.PAID.equals(invoice.getStatus())) {
+            if (InvoiceStatus.PAID.equals(invoice.getStatus()) || InvoiceStatus.REFUNDED.equals(invoice.getStatus())) {
                 log.debug("Invoice already exists and is PAID for booking {}", bookingId);
                 return;
             }
@@ -82,10 +82,16 @@ public class PaymentEventProcessor {
         if (bookingId == null) return;
 
         Optional<Invoice> existing = invoiceRepository.findByBookingId(bookingId);
-        existing.ifPresent(invoice -> {
+        if (existing.isPresent()) {
+            Invoice invoice = existing.get();
             invoice.setStatus(InvoiceStatus.REFUNDED);
             invoiceRepository.save(invoice);
-            log.info("Marked invoice as REFUNDED for booking {} from payment event", bookingId);
-        });
+        } else if (event.getAccountId() != null && event.getAmountVnd() != null && event.getPaidAt() != null && event.getPayMethodId() != null) {
+            invoiceRepository.save(Invoice.builder().bookingId(bookingId).accountId(event.getAccountId())
+                    .dayOfPay(event.getPaidAt()).paymentMethodId(event.getPayMethodId()).status(InvoiceStatus.REFUNDED)
+                    .totalBookingTourExpense(BigDecimal.valueOf(event.getAmountVnd())).build());
+        } else {
+            throw new IllegalArgumentException("Missing settlement data for refund without invoice: " + bookingId);
+        }
     }
 }
