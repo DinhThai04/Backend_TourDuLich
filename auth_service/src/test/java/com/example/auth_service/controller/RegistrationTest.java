@@ -30,7 +30,7 @@ class RegistrationTest {
     LocalValidatorFactoryBean validator;
     final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder(10);
     final String valid = """
-        {"username":"  traveler01  ","email":"  traveler@example.com  ",
+        {"username":"  Traveler  ","email":"  traveler@example.com  ",
          "phone":"0900000000","address":"Ha Noi","password":"Password123!"}
         """;
 
@@ -63,7 +63,7 @@ class RegistrationTest {
     @Test void validRegistrationUsesExistingCustomerRoleAndHashesPassword() throws Exception {
         mvc.perform(post("/users/register").contentType("application/json").content(valid))
             .andExpect(status().isOk()).andExpect(jsonPath("$.code").value(1000))
-            .andExpect(jsonPath("$.result.username").value("traveler01"))
+            .andExpect(jsonPath("$.result.username").value("Traveler"))
             .andExpect(jsonPath("$.result.phone").value("0900000000"))
             .andExpect(jsonPath("$.result.address").value("Ha Noi"));
         var captor = org.mockito.ArgumentCaptor.forClass(User.class);
@@ -102,7 +102,7 @@ class RegistrationTest {
         verify(users, never()).save(any());
     }
     @Test void duplicateUsernameReportsGenericConflictWithoutRevealingField() throws Exception {
-        when(users.existsByUsername("traveler01")).thenReturn(true);
+        when(users.existsByUsername("Traveler")).thenReturn(true);
         mvc.perform(post("/users/register").contentType("application/json").content(valid))
             .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value(1021))
             .andExpect(jsonPath("$.message").value("Email hoặc tên tài khoản đã được sử dụng"));
@@ -110,11 +110,11 @@ class RegistrationTest {
     }
     @Test void invalidFieldsAreRejectedWithTheirValidationMessages() throws Exception {
         for (var example : List.of(
-            Map.entry(valid.replace("Ha Noi", "  "), "Địa chỉ không được để trống"),
-            Map.entry(valid.replace("Password123!", "123"), "Mật khẩu phải từ 8 đến 72 ký tự"),
-            Map.entry(valid.replace("0900000000", "abc"), "Số điện thoại phải có từ 9 đến 11 chữ số"),
-            Map.entry(valid.replace("traveler@example.com", "not-an-email"), "Email không hợp lệ"),
-            Map.entry(valid.replace("traveler01", "a"), "Tên tài khoản phải từ 3 đến 50 ký tự"))) {
+            Map.entry(valid.replace("\"Ha Noi\"", "null"), "Địa chỉ không được để trống"),
+            Map.entry(valid.replace("Password123!", "password1"), "Mật khẩu cần chữ hoa, chữ thường, số và ký tự đặc biệt"),
+            Map.entry(valid.replace("0900000000", "abc"), "Số điện thoại bắt đầu bằng 0 và gồm 10–11 chữ số"),
+            Map.entry(valid.replace("traveler@example.com", "traveler@localhost"), "Email cần tên miền hợp lệ"),
+            Map.entry(valid.replace("Traveler", "a"), "Tên tài khoản phải từ 2 đến 50 ký tự"))) {
             mvc.perform(post("/users/register").contentType("application/json").content(example.getKey()))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value(example.getValue()));
         }

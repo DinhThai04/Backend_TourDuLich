@@ -18,6 +18,7 @@ public class AuthenticationRequest {
 
     @NotBlank(message = "EMAIL_IS_REQUIRED")
     @Email(message = "Email không hợp lệ")
+    @jakarta.validation.constraints.Size(max = 254)
     private String email;
 
     @NotBlank(message = "Mật khẩu không được để trống")
