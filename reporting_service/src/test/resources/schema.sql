@@ -16,6 +16,16 @@ CREATE TABLE operation_audit (
   detail JSON,
   correlation_id VARCHAR(80),
   causation_id VARCHAR(80),
+  actor_type VARCHAR(16),
+  actor_name VARCHAR(160),
+  actor_role VARCHAR(100),
+  action_group VARCHAR(24),
+  target_label VARCHAR(160),
+  summary VARCHAR(240),
+  reason VARCHAR(1000),
+  before_json JSON,
+  after_json JSON,
+  created_at DATETIME(6),
   occurred_at DATETIME(6) NOT NULL
 );
 

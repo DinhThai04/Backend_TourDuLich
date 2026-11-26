@@ -28,7 +28,7 @@ class ReconciliationTest {
         int start=ddl.indexOf("CREATE TABLE IF NOT EXISTS payment_reconciliation_event");
         db.jdbc.execute(ddl.substring(start,ddl.indexOf(';',start)).replace("ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci","").replace("CHARACTER SET ascii COLLATE ascii_bin",""));
         var clock=Clock.fixed(time.atZone(ZoneId.of("Asia/Ho_Chi_Minh")).toInstant(),ZoneId.of("Asia/Ho_Chi_Minh"));
-        service=new ReconciliationService(db.jdbc,clock,TestServiceClients.auth(db.jdbc),TestServiceClients.tour(db.jdbc),TestServiceClients.booking(db.jdbc));
+        service=new ReconciliationService(db.jdbc,clock,TestServiceClients.auth(db.jdbc),TestServiceClients.tour(db.jdbc),TestServiceClients.booking(db.jdbc),TestServiceClients.outbox(db.jdbc));
         orders=TestServiceClients.vnpay(db.jdbc,clock,new com.fasterxml.jackson.databind.ObjectMapper().findAndRegisterModules());
         db.jdbc.update("INSERT INTO booking(id,account_id,tour_departure_id,status,created_at) VALUES(1,7,1,'CONFIRMED',?)",time.minusDays(1));
         pending("transaction1");login(true);
@@ -86,6 +86,11 @@ class ReconciliationTest {
         resolve("transaction1",decision(ReconciliationService.Action.REFUND_RECORDED,"refund-1"));
         assertEquals("REFUNDED",status());assertEquals("REFUNDED",db.jdbc.queryForObject("SELECT status FROM payment_reconciliation",String.class));
         assertEquals(2,db.count("payment_reconciliation_event"));assertEquals(0,service.list(0,"ACTIONABLE").items().size());
+        var reports = db.jdbc.queryForList("SELECT payload FROM payment_outbox WHERE event_type='admin.audit.v1' ORDER BY id", String.class);
+        assertEquals(2, reports.size());
+        org.junit.jupiter.api.Assertions.assertTrue(reports.getFirst().contains("RECONCILIATION_RECORDED"));
+        org.junit.jupiter.api.Assertions.assertTrue(reports.getLast().contains("REFUND_CONFIRMED"));
+        org.junit.jupiter.api.Assertions.assertTrue(reports.getLast().contains("transaction1"));
         assertEquals(seats,db.seats());assertEquals(0,db.count("invoice"));assertEquals(0,db.count("payment"));
         assertEquals("refunded",db.tx.execute(tx->orders.settle(callback(true)).status()));assertEquals(2,db.count("payment_reconciliation_event"));
     }

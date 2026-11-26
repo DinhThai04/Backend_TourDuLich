@@ -23,6 +23,8 @@ import java.util.UUID;
 
 @Service @RequiredArgsConstructor
 public class AccountLifecycleService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.example.auth_service.operations.AdminAuditEvents adminAudit;
 	private final UserRepository users;
 	private final UserAccountEventRepository events;
 	private final JdbcTemplate jdbc;
@@ -171,6 +173,18 @@ public class AccountLifecycleService {
 		var event=new UserAccountEvent();event.setTargetUserId(target.getId());event.setActorId(actorId());event.setAction(action);
 		event.setPreviousStatus(target.getStatus().name());event.setNewStatus(next==null?null:next.name());event.setReason(text);
 		event.setCreatedAt(now());events.save(event);
+        if (adminAudit != null) {
+            String summary = switch (action) {
+                case "LOCK" -> "Khóa tài khoản";
+                case "UNLOCK" -> "Mở khóa tài khoản";
+                case "ARCHIVE" -> "Lưu trữ tài khoản";
+                default -> "Xóa tài khoản";
+            };
+            adminAudit.record("ACCOUNT_" + action, "ACCOUNT", "ACCOUNT", target.getId(),
+                    "Tài khoản #" + target.getId(), summary, text,
+                    Map.of("status", target.getStatus().name()),
+                    Map.of("status", next == null ? "DELETED" : next.name()));
+        }
 	}
 	@Transactional(isolation=Isolation.READ_COMMITTED)
 	public User status(long id,UserStatus next,String why){

@@ -82,6 +82,13 @@ spring:
             - Path=${app.api-prefix}/auth/**
           filters:
             - StripPrefix=2
+        - id: admin-audit-logs
+          uri: ${BOOKING_BASE_URL:http://booking-service:8081}
+          predicates:
+            - Path=${app.api-prefix}/admin/audit-logs,${app.api-prefix}/admin/audit-logs/{id}
+          filters:
+            - StripPrefix=3
+            - PrefixPath=/booking/admin
         - id: booking-service
           uri: ${BOOKING_BASE_URL:http://booking-service:8081}
           predicates:

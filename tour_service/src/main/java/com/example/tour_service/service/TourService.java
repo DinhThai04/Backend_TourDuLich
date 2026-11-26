@@ -40,6 +40,8 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class TourService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.example.tour_service.operations.AdminAuditEvents adminAudit;
 
         /** The storefront list endpoint is not paginated, so it must stay bounded. */
         private static final int MAX_CATALOGUE_SIZE = 200;
@@ -276,6 +278,16 @@ public class TourService {
                         payload, status, attempts, available_at, created_at
                     ) VALUES (?, 'tour.gallery.detach.requested.v1', 'TOUR', ?, 1, ?, 'PENDING', 0, NOW(6), NOW(6))
                     """, eventId, String.valueOf(id), payload);
+            if (adminAudit != null) {
+                var actor = adminAudit.currentActor();
+                adminAudit.record(actor, "TOUR_DELETED", "CONTENT", "TOUR", id, tour.getTourTitle(), "Xóa tour",
+                        null, java.util.Map.of("title", tour.getTourTitle()), java.util.Map.of("deleted", true));
+                for (var departure : tour.getTourDepartures() == null ? java.util.List.<com.example.tour_service.entity.TourDeparture>of() : tour.getTourDepartures()) {
+                    String label = departure.getTourCode() == null ? "Chuyến #" + departure.getId() : "Chuyến " + departure.getTourCode();
+                    adminAudit.record(actor, "DEPARTURE_DELETED", "OPERATIONS", "DEPARTURE", departure.getId(), label,
+                            "Xóa lịch khởi hành thuộc tour", null, java.util.Map.of("tourId", id), java.util.Map.of("deleted", true));
+                }
+            }
             tourRepository.delete(tour);
             // The rows disappear only at commit; clearing the cache earlier would hide a still-existing tour.
             AfterCommit.run(() -> tourImageCache.update(String.valueOf(id), List.of()),

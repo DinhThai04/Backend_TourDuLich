@@ -2,6 +2,7 @@ package com.example.booking_service.reservation;
 
 import com.example.booking_service.repository.httpclient.TourInternalClient;
 import com.example.booking_service.repository.httpclient.AuthInternalClient;
+import com.example.booking_service.operations.AdminAuditEvents;
 import feign.FeignException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -13,6 +14,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 
 @Service
 public class DepartureManifestService {
@@ -28,20 +30,23 @@ public class DepartureManifestService {
     public enum Progress { NOT_STARTED, IN_PROGRESS, COMPLETED, DELAYED, SKIPPED }
     public record Checkpoint(int id, int day, String title, Progress status, LocalDateTime actualTime, String note) {}
     private record Closeout(LocalDateTime at, Integer actor, String note, String outcome) {}
-    private record Schedule(LocalDateTime departure, LocalDateTime returns, String status) {}
+    private record Schedule(LocalDateTime departure, LocalDateTime returns, String status, String code) {}
 
     private final JdbcTemplate jdbc;
     private final BookingAccess access;
     private final TourInternalClient tours;
     private final Clock clock;
     private final AuthInternalClient accounts;
+    private final AdminAuditEvents auditEvents;
 
-    public DepartureManifestService(JdbcTemplate jdbc, BookingAccess access, TourInternalClient tours, Clock clock, AuthInternalClient accounts) {
+    public DepartureManifestService(JdbcTemplate jdbc, BookingAccess access, TourInternalClient tours, Clock clock, AuthInternalClient accounts,
+                                    AdminAuditEvents auditEvents) {
         this.jdbc = jdbc;
         this.access = access;
         this.tours = tours;
         this.clock = clock;
         this.accounts = accounts;
+        this.auditEvents = auditEvents;
     }
 
     @Transactional(readOnly = true)
@@ -122,6 +127,9 @@ public class DepartureManifestService {
         var closeout = new Closeout(LocalDateTime.now(clock).withNano(0), actor, note.strip(), outcome);
         jdbc.update("UPDATE departure_manifest SET completed_at=?,completed_by=?,closeout_note=?,outcome=? WHERE departure_id=?",
                 closeout.at(), actor, closeout.note(), outcome, departureId);
+        auditEvents.record(actor, override ? "DEPARTURE_FORCE_COMPLETED" : "DEPARTURE_COMPLETED",
+                "DEPARTURE", departureId, departureLabel(departureId, schedule), "Chốt hoàn thành chuyến",
+                closeout.note(), Map.of("status", current.phase()), Map.of("status", outcome));
         return manifest(departureId, schedule, closeout);
     }
 
@@ -181,6 +189,11 @@ public class DepartureManifestService {
                     """, departureId, guideId, admin, LocalDateTime.now(clock));
         }
         audit(departureId, admin, "GUIDE_ASSIGNMENT", "Tài khoản " + previous + " → " + guideId);
+        String action = guideId == null ? "GUIDE_UNASSIGNED" : overlap == null ? "GUIDE_ASSIGNED" : "GUIDE_CONFLICT_OVERRIDDEN";
+        auditEvents.record(admin, action, "DEPARTURE", departureId, departureLabel(departureId, schedule),
+                guideId == null ? "Gỡ phân công hướng dẫn viên" : "Phân công hướng dẫn viên",
+                overlap == null ? null : reason.strip(), previous == null ? Map.of() : Map.of("guideAccountId", previous),
+                guideId == null ? Map.of() : Map.of("guideAccountId", guideId));
         return manifest(departureId, schedule, closeout);
     }
 
@@ -285,6 +298,9 @@ public class DepartureManifestService {
                 UPDATE departure_trip_report SET status=?,reviewed_by=?,reviewed_at=?,admin_comment=? WHERE departure_id=?
                 """, status, actor, LocalDateTime.now(clock), comment, id);
         audit(id, actor, status, comment);
+        auditEvents.record(actor, "TRIP_REPORT_REVIEWED", "DEPARTURE", id, "Chuyến #" + id,
+                approve ? "Duyệt báo cáo chuyến" : "Yêu cầu bổ sung báo cáo chuyến",
+                comment, Map.of("reportStatus", report.status()), Map.of("reportStatus", status));
         return reportRow(id);
     }
 
@@ -381,6 +397,10 @@ public class DepartureManifestService {
         return actor;
     }
 
+    private static String departureLabel(int id, Schedule schedule) {
+        return schedule.code() == null || schedule.code().isBlank() ? "Chuyến #" + id : "Chuyến " + schedule.code();
+    }
+
     private Schedule schedule(int departureId) {
         try {
             var departure = tours.getDeparture(departureId);
@@ -390,7 +410,8 @@ public class DepartureManifestService {
             if (start == null || end == null || end.isBefore(start)) {
                 throw conflict("Lịch khởi hành chưa có mốc giờ đi và về hợp lệ.");
             }
-            return new Schedule(start, end, String.valueOf(departure.get("operational_status")));
+            return new Schedule(start, end, String.valueOf(departure.get("operational_status")),
+                    (String) departure.get("tour_code"));
         } catch (FeignException.NotFound missing) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy lịch khởi hành.");
         } catch (FeignException unavailable) {

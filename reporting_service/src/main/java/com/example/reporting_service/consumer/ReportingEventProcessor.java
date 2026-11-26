@@ -86,6 +86,26 @@ public class ReportingEventProcessor {
                 .causationId(metadata.causationId())
                 .occurredAt(metadata.occurredAt())
                 .build();
+        if ("admin.audit.v1".equals(eventType)) {
+            JsonNode fields = metadata.payload();
+            audit.setActorId(text(fields, "actorId"));
+            audit.setActorType(text(fields, "actorType"));
+            audit.setActorName(text(fields, "actorName"));
+            audit.setActorRole(text(fields, "actorRole"));
+            audit.setAction(text(fields, "actionCode"));
+            audit.setActionGroup(text(fields, "actionGroup"));
+            audit.setEntityType(text(fields, "targetType"));
+            audit.setEntityId(text(fields, "targetId"));
+            audit.setTargetLabel(text(fields, "targetLabel"));
+            audit.setSummary(text(fields, "summary"));
+            audit.setReason(text(fields, "reason"));
+            audit.setBeforeJson(fields.hasNonNull("before") ? fields.get("before").toString() : null);
+            audit.setAfterJson(fields.hasNonNull("after") ? fields.get("after").toString() : null);
+            audit.setCreatedAt(metadata.occurredAt().atZone(REPORTING_ZONE)
+                    .withZoneSameInstant(java.time.ZoneOffset.UTC).toLocalDateTime());
+        } else {
+            audit.setActorType("SYSTEM");
+        }
         auditRepository.save(audit);
 
         int updated = jdbc.update("""

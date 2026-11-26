@@ -22,6 +22,8 @@ import com.example.auth_service.exception.AppException;
 @Service    
 @RequiredArgsConstructor
 public class RoleService {
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.example.auth_service.operations.AdminAuditEvents adminAudit;
     private static final int MAX_REFERENCE_ROWS = 1000;
     /** Names the code or the seed data depends on; a second role with one of them would be ambiguous. */
     private static final Set<String> RESERVED_ROLE_NAMES = Set.of("admin", "customer", "user");
@@ -162,6 +164,12 @@ public class RoleService {
         if (audit != null && authorizationChanged) {
             audit.record("ROLE", role.getId(), previousName + " / " + previousActive + " / " + new java.util.TreeSet<>(previousPermissions),
                     name + " / " + active + " / " + new java.util.TreeSet<>(permissionIds(saved)));
+        }
+        if (adminAudit != null && authorizationChanged) {
+            adminAudit.record("ROLE_PERMISSION_CHANGED", "ACCOUNT", "ROLE", saved.getId(), name,
+                    "Thay đổi vai trò hoặc quyền", null,
+                    java.util.Map.of("name", previousName, "active", previousActive, "permissionIds", new java.util.TreeSet<>(previousPermissions)),
+                    java.util.Map.of("name", name, "active", active, "permissionIds", new java.util.TreeSet<>(permissionIds(saved))));
         }
         return saved;
     }

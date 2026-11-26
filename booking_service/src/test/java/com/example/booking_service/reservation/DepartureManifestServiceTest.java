@@ -36,7 +36,8 @@ class DepartureManifestServiceTest {
         when(access.admin()).thenReturn(true);
         when(access.accountId()).thenReturn(7);
         accounts = mock(AuthInternalClient.class);
-        service = new DepartureManifestService(db.jdbc, access, tours, clock, accounts);
+        service = new DepartureManifestService(db.jdbc, access, tours, clock, accounts,
+                org.mockito.Mockito.mock(com.example.booking_service.operations.AdminAuditEvents.class));
         db.jdbc.update("INSERT INTO booking(id,account_id,tour_departure_id,status,created_at) VALUES(1,7,1,'CONFIRMED',?)", departure.minusDays(1));
         db.jdbc.update("""
                 INSERT INTO booking_reservation(booking_id,departure_id,departure_at,seats,status,expires_at,created_at,updated_at)

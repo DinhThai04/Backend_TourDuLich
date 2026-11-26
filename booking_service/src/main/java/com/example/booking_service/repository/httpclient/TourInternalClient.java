@@ -19,6 +19,9 @@ public interface TourInternalClient {
     @GetMapping("/internal/tour/departures/{id}")
     Map<String, Object> getDeparture(@PathVariable("id") Integer id);
 
+    @GetMapping("/internal/tour/departures/{id}/itinerary")
+    java.util.List<Map<String, Object>> getItinerary(@PathVariable("id") int id);
+
     @PostMapping("/internal/tour/departures/{id}/hold")
     Map<String, Object> holdSeats(@PathVariable("id") Integer id, @RequestBody HoldSeatsRequest request);
 

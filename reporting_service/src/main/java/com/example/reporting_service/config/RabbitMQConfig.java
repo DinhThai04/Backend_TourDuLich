@@ -71,6 +71,11 @@ public class RabbitMQConfig {
     }
 
     @Bean
+    Binding adminAuditBinding() {
+        return BindingBuilder.bind(reportingEventsQueue()).to(eventExchange()).with("admin.audit.v1");
+    }
+
+    @Bean
     Binding paymentSettledBinding() {
         return BindingBuilder.bind(reportingEventsQueue())
                 .to(eventExchange())

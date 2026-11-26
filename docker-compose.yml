@@ -124,6 +124,9 @@ services:
       - ./data_seed/microservices/sgu_invoice.sql:/docker-entrypoint-initdb.d/sql/sgu_invoice.sql:ro
       - ./data_seed/microservices/sgu_notification.sql:/docker-entrypoint-initdb.d/sql/sgu_notification.sql:ro
       - ./data_seed/microservices/sgu_reporting.sql:/docker-entrypoint-initdb.d/sql/sgu_reporting.sql:ro
+      - ./data_seed/migrations/V013__admin_audit_metadata.sql:/docker-entrypoint-initdb.d/sql/V013__admin_audit_metadata.sql:ro
+      - ./data_seed/migrations/V014__pricing_audit_outbox.sql:/docker-entrypoint-initdb.d/sql/V014__pricing_audit_outbox.sql:ro
+      - ./data_seed/admin-audit-init.sql:/docker-entrypoint-initdb.d/02-admin-audit-init.sql:ro
     healthcheck:
       # A real TCP query runs only after initdb, and verifies the seed completed.
       test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql --protocol=TCP -h 127.0.0.1 -u sgu_tour -D sgu_auth --skip-column-names -e 'SELECT COUNT(*) FROM users' >/dev/null"]
@@ -139,6 +142,8 @@ services:
     image: sgu-tour/auth-service
     environment:
       <<: *java-env
+      REPORTING_INTERNAL_KEY: ${REPORTING_INTERNAL_KEY:-}
+      APP_AUDIT_OUTBOX_ENABLED: "true"
       DB_URL: jdbc:mysql://mysql:3306/sgu_auth?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
       SPRING_DATASOURCE_USERNAME: sgu_tour
       DB_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}
@@ -173,6 +178,9 @@ services:
     image: sgu-tour/booking-service
     environment:
       <<: *java-env
+      REPORTING_INTERNAL_KEY: ${REPORTING_INTERNAL_KEY:-}
+      REPORTING_ENABLED: ${REPORTING_ENABLED:-true}
+      APP_AUDIT_OUTBOX_ENABLED: "true"
       DB_URL: jdbc:mysql://mysql:3306/sgu_booking?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
       SPRING_DATASOURCE_USERNAME: sgu_tour
       DB_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}
@@ -257,6 +265,9 @@ services:
     image: sgu-tour/pricing-service
     environment:
       <<: *java-env
+      REPORTING_INTERNAL_KEY: ${REPORTING_INTERNAL_KEY:-}
+      APP_AUDIT_OUTBOX_ENABLED: "true"
+      AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:-}
       DB_URL: jdbc:mysql://mysql:3306/sgu_pricing?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
       SPRING_DATASOURCE_USERNAME: sgu_tour
       DB_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}
@@ -276,6 +287,8 @@ services:
     image: sgu-tour/tour-service
     environment:
       <<: *java-env
+      REPORTING_INTERNAL_KEY: ${REPORTING_INTERNAL_KEY:-}
+      APP_AUDIT_OUTBOX_ENABLED: "true"
       DB_URL: jdbc:mysql://mysql:3306/sgu_tour?allowPublicKeyRetrieval=true&useSSL=false&connectionTimeZone=Asia/Ho_Chi_Minh
       SPRING_DATASOURCE_USERNAME: sgu_tour
       DB_PASSWORD: ${MYSQL_PASSWORD:-sgu-tour-local-only}

@@ -17,6 +17,9 @@ import static org.junit.jupiter.api.Assertions.*;
         "spring.jpa.hibernate.ddl-auto=create-drop"})
 @Import({PermissionService.class, SessionEpochService.class})
 class PermissionPersistenceTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.example.auth_service.operations.AdminAuditEvents adminAudit;
+
     @Autowired PermissionService service;
     @Autowired PermissionRepository permissions;
     @Autowired RoleRepository roles;

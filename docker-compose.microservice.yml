@@ -155,6 +155,7 @@ services:
     volumes:
       - mysql_pricing_data:/var/lib/mysql
       - ./data_seed/microservices/sgu_pricing.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./data_seed/migrations/V014__pricing_audit_outbox.sql:/docker-entrypoint-initdb.d/14_pricing_audit_outbox.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -usgu_pricing -Dsgu_pricing -Nse \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='prices'\" | grep -qx 1"]
       interval: 10s
@@ -290,6 +291,7 @@ services:
     volumes:
       - mysql_reporting_data:/var/lib/mysql
       - ./data_seed/microservices/sgu_reporting.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./data_seed/migrations/V013__admin_audit_metadata.sql:/docker-entrypoint-initdb.d/13_admin_audit_metadata.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -usgu_reporting -Dsgu_reporting -Nse \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='operation_audit'\" | grep -qx 1"]
       interval: 10s
@@ -313,10 +315,12 @@ services:
         condition: service_healthy
     environment:
       JAVA_XMX: ${JAVA_XMX:-}
+      APP_AUDIT_OUTBOX_ENABLED: "true"
       DB_URL: jdbc:mysql://mysql-auth:3306/sgu_auth?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
       DB_USERNAME: sgu_auth
       SPRING_DATASOURCE_USERNAME: sgu_auth
       DB_PASSWORD: ${MYSQL_AUTH_PASSWORD:?MYSQL_AUTH_PASSWORD is required}
+      REPORTING_INTERNAL_KEY: ${REPORTING_INTERNAL_KEY:?REPORTING_INTERNAL_KEY is required}
       JWT_SIGNER_KEY: ${JWT_SIGNER_KEY:?JWT_SIGNER_KEY is required}
       GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
       SOCKET_ALLOWED_ORIGINS: ${SOCKET_ALLOWED_ORIGINS:-http://localhost,http://127.0.0.1,http://localhost:5173}
@@ -356,10 +360,12 @@ services:
     environment:
       APP_BOOKING_SALES_CUTOFF: ${BOOKING_SALES_CUTOFF:-PT4H}
       JAVA_XMX: ${JAVA_XMX:-}
+      APP_AUDIT_OUTBOX_ENABLED: "true"
       DB_URL: jdbc:mysql://mysql-tour:3306/sgu_tour?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
       DB_USERNAME: sgu_tour
       SPRING_DATASOURCE_USERNAME: sgu_tour
       DB_PASSWORD: ${MYSQL_TOUR_PASSWORD:?MYSQL_TOUR_PASSWORD is required}
+      REPORTING_INTERNAL_KEY: ${REPORTING_INTERNAL_KEY:?REPORTING_INTERNAL_KEY is required}
       JWT_SIGNER_KEY: ${JWT_SIGNER_KEY:?JWT_SIGNER_KEY is required}
       AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?AUTH_INTERNAL_KEY is required}
       TOUR_INTERNAL_KEY: ${TOUR_INTERNAL_KEY:?TOUR_INTERNAL_KEY is required}
@@ -392,6 +398,8 @@ services:
       DB_USERNAME: sgu_pricing
       SPRING_DATASOURCE_USERNAME: sgu_pricing
       DB_PASSWORD: ${MYSQL_PRICING_PASSWORD:?MYSQL_PRICING_PASSWORD is required}
+      APP_AUDIT_OUTBOX_ENABLED: "true"
+      REPORTING_INTERNAL_KEY: ${REPORTING_INTERNAL_KEY:?REPORTING_INTERNAL_KEY is required}
       JWT_SIGNER_KEY: ${JWT_SIGNER_KEY:?JWT_SIGNER_KEY is required}
       AUTH_INTERNAL_KEY: ${AUTH_INTERNAL_KEY:?AUTH_INTERNAL_KEY is required}
       PRICING_INTERNAL_KEY: ${PRICING_INTERNAL_KEY:?PRICING_INTERNAL_KEY is required}
@@ -414,6 +422,7 @@ services:
     environment:
       APP_BOOKING_SALES_CUTOFF: ${BOOKING_SALES_CUTOFF:-PT4H}
       JAVA_XMX: ${JAVA_XMX:-}
+      APP_AUDIT_OUTBOX_ENABLED: "true"
       DB_URL: jdbc:mysql://mysql-booking:3306/sgu_booking?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
       DB_USERNAME: sgu_booking
       SPRING_DATASOURCE_USERNAME: sgu_booking

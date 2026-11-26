@@ -53,6 +53,8 @@ public class BookingChangeService {
 
 	private final JdbcTemplate jdbc;
 	private final ChangeLedger ledger;
+    @org.springframework.beans.factory.annotation.Autowired
+    private com.example.booking_service.operations.AdminAuditEvents adminAudit;
 	private final BookingAccess access;
 	private final ReservationPolicy policy;
 	private final ChangeMailEvents mail;
@@ -557,6 +559,11 @@ public class BookingChangeService {
 				require("APPROVE".equals(input.action()), "Thao tác không hợp lệ");
 				apply(change, booking, departures.get(n(change, "source_departure_id")),
 						departures.get(n(change, "target_departure_id")));
+                int bookingId = n(booking, "id");
+                if (adminAudit != null) adminAudit.record(access.accountId(), "BOOKING_RESCHEDULED", "BOOKING", bookingId,
+                        "Đơn #" + bookingId, "Chuyển lịch đặt chỗ", input.note(),
+                        Map.of("departureId", n(change, "source_departure_id")),
+                        Map.of("departureId", n(change, "target_departure_id")));
 			}
 			return findChange(id);
 		});
@@ -612,6 +619,9 @@ public class BookingChangeService {
 					  refund_recorded_at=? WHERE id=?
 					""", amount, input.reference(), access.accountId(), now(), id);
 			state(id, "REFUNDED", false, input.note());
+            if (adminAudit != null) adminAudit.record(access.accountId(), "BOOKING_REFUND_RECORDED", "BOOKING", bookingId,
+                    "Đơn #" + bookingId, "Ghi nhận hoàn tiền hồ sơ dời lịch", input.note(),
+                    Map.of("status", change.get("status")), Map.of("status", "REFUNDED", "amountVnd", amount, "reference", input.reference()));
 			ledger.assertLedger(n(source, "id"));
 			return findChange(id);
 		});
@@ -641,7 +651,12 @@ public class BookingChangeService {
 			for (var pending : pendingChanges) {
 				state(((Number) pending.get("id")).longValue(), "WITHDRAWN", false, "Booking cũ đã kết thúc");
 			}
-			tourClient.updateOperationalStatus(n(root, "source_departure_id"), "CANCELLED");
+            int sourceId = n(root, "source_departure_id");
+			tourClient.updateOperationalStatus(sourceId, "CANCELLED");
+            var source = departures.get(sourceId);
+            if (adminAudit != null) adminAudit.record(access.accountId(), "DEPARTURE_CANCELLED", "DEPARTURE", sourceId,
+                    "Chuyến " + Objects.toString(source.get("tour_code"), "#" + sourceId), "Hủy chuyến do sự cố",
+                    Objects.toString(current.get("reason"), null), Map.of("status", "SUSPENDED"), Map.of("status", "CANCELLED"));
 			tourClient.updateOperationalStatus(n(root, "target_departure_id"), "OPEN");
 			jdbc.update("UPDATE departure_change SET status='COMPLETED',completed_at=? WHERE id=?",
 					now(), rootId);
