@@ -38,6 +38,7 @@ class BookingChangeTest {
     AuthInternalClient authClient;
     PricingInternalClient pricingClient;
     TourInternalClient tourClient;
+    TourInternalClient changeTourClient;
     final LocalDateTime start = LocalDateTime.of(2026, 11, 20, 6, 0);
 
     void login(int id, String... permissions) {
@@ -82,6 +83,7 @@ class BookingChangeTest {
         var events = new BookingMailEvents(db.jdbc, publisher, clock, authClient, tourClient);
 
         var payC = com.example.booking_service.TestInternalClients.payment(db.jdbc, clock); var invC = com.example.booking_service.TestInternalClients.invoice(db.jdbc); var tourC = com.example.booking_service.TestInternalClients.tour(db.jdbc);
+        changeTourClient = tourC;
         expiry = new ReservationExpiryService(db.jdbc, db.manager, events, clock, tourC, payC, invC);
         lifecycle = new BookingLifecycleService(db.jdbc, db.manager, new ReservationPolicy(), expiry, events, new BookingAccess(), clock,
                 authClient, mock(InvoiceInternalClient.class), pricingClient, tourClient);
@@ -148,6 +150,26 @@ class BookingChangeTest {
     void conflict(Runnable run) { assertEquals(409, assertThrows(ResponseStatusException.class, run::run).getStatusCode().value()); }
     void missing(Runnable run) { assertEquals(404, assertThrows(ResponseStatusException.class, run::run).getStatusCode().value()); }
     int seats(int departure) { return db.jdbc.queryForObject("SELECT available_seats FROM tour_departure WHERE id = ?", Integer.class, departure); }
+
+    @Test
+    void eligibleAndOptionsReadIsoDatesFromTourService() {
+        int paid = booking(true);
+        booking(false);
+        when(changeTourClient.getDeparture(1)).thenReturn(Map.of(
+                "id", 1, "tour_id", 1, "tour_title", "Tour thử nghiệm", "operational_status", "OPEN",
+                "departure_date", start.toString(), "return_date", start.plusDays(2).toString()));
+        when(changeTourClient.getDeparturesByTour(1)).thenReturn(List.of(Map.of(
+                "id", 2, "operational_status", "OPEN", "available_seats", 10,
+                "departure_date", start.plusDays(10).toString(), "return_date", start.plusDays(12).toString())));
+
+        clock.set(start.minusHours(72));
+        assertEquals(List.of(paid), service.eligible().stream().map(row -> n(row, "id")).toList());
+        assertEquals("Tour thử nghiệm", service.eligible().getFirst().get("tour_title"));
+        assertEquals(List.of(2), service.options(paid).stream().map(row -> n(row, "id")).toList());
+
+        clock.set(start.minusHours(72).plusSeconds(1));
+        assertTrue(service.eligible().isEmpty());
+    }
 
     @Test
     void cutoffIsExactlySeventyTwoHoursAndOnlyPaidOwnerCanRequest() {

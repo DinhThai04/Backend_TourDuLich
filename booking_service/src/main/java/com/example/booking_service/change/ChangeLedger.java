@@ -60,7 +60,10 @@ public class ChangeLedger {
 	}
 
 	public static LocalDateTime date(Object value) {
-		return value instanceof LocalDateTime time ? time : ((Timestamp) value).toLocalDateTime();
+		if (value == null) return null;
+		if (value instanceof LocalDateTime time) return time;
+		if (value instanceof String isoDateTime) return LocalDateTime.parse(isoDateTime);
+		return ((Timestamp) value).toLocalDateTime();
 	}
 
 	public Map<String, Object> booking(int id) {

@@ -62,8 +62,9 @@ public class BookingChangeController {
     public ApiResponse<Object> pending(@RequestParam(defaultValue = "0") int page,
                                        @RequestParam(required = false) Integer bookingId,
                                        @RequestParam(required = false) @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate day,
-                                       @RequestParam(required = false) Boolean customerAction) {
-        return ok(service.pending(page, bookingId, day, customerAction));
+                                       @RequestParam(required = false) Boolean customerAction,
+                                       @RequestParam(defaultValue = "5") int size) {
+        return ok(service.pending(page, bookingId, day, customerAction, Math.max(1, Math.min(size, 100))));
     }
 
     @PostMapping("/shop/preview")
