@@ -20,6 +20,7 @@ import java.util.Map;
 public class InternalBookingController {
 
 	private final JdbcTemplate jdbc;
+	private final com.example.booking_service.reservation.BookingSettlementService settlements;
 	private final TourInternalClient tourClient;
 	private final AuthInternalClient authClient;
 	private final PaymentInternalClient paymentClient;
@@ -204,24 +205,21 @@ public class InternalBookingController {
 
 	@PostMapping("/bookings/{id}/mark-paid")
 	public ResponseEntity<Void> markBookingPaid(@PathVariable Integer id) {
-		LocalDateTime now = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
-		jdbc.update("UPDATE booking SET status = 'CONFIRMED' WHERE id = ? AND status = 'PENDING_PAYMENT'", id);
-		jdbc.update("UPDATE booking_reservation SET status = 'PAID', updated_at = ? WHERE booking_id = ?", now, id);
+		settlements.confirmPaid(id);
 		return ResponseEntity.ok().build();
 	}
 
 	@PostMapping("/bookings/{id}/expire-checkout")
+	@org.springframework.transaction.annotation.Transactional
 	public ResponseEntity<Void> expireCheckout(@PathVariable Integer id) {
 		LocalDateTime now = LocalDateTime.now(java.time.ZoneId.of("Asia/Ho_Chi_Minh"));
-		var holds = jdbc.queryForList("SELECT departure_id, seats, status FROM booking_reservation WHERE booking_id = ?", id);
+		jdbc.queryForList("SELECT id FROM booking WHERE id=? FOR UPDATE", id);
+		var holds = jdbc.queryForList("SELECT departure_id, seats, status FROM booking_reservation WHERE booking_id = ? FOR UPDATE", id);
 		if (!holds.isEmpty() && "CHECKOUT".equals(holds.getFirst().get("status"))) {
 			int departureId = ((Number) holds.getFirst().get("departure_id")).intValue();
 			int seats = ((Number) holds.getFirst().get("seats")).intValue();
 			if (seats > 0) {
-				try {
-					tourClient.releaseHold(departureId, seats);
-				} catch (Exception ignored) {
-				}
+				tourClient.releaseHold(departureId, seats, id);
 			}
 			jdbc.update("UPDATE booking SET status = 'EXPIRED' WHERE id = ? AND status IN ('PENDING_PAYMENT', 'CONFIRMED')", id);
 			jdbc.update("UPDATE booking_reservation SET status = 'EXPIRED', cancel_reason = 'CHECKOUT_FAILED', updated_at = ? WHERE booking_id = ? AND status = 'CHECKOUT'", now, id);

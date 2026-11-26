@@ -22,12 +22,16 @@ public final class LifecycleTestDatabase {
         var ds = new DriverManagerDataSource(mysql ? url : "jdbc:h2:mem:life_" + UUID.randomUUID() + ";MODE=MySQL;DB_CLOSE_DELAY=-1", mysql ? "root" : "sa", changeUrl==null?"":System.getenv("CHANGE_TEST_DB_PASSWORD"));
         jdbc = new JdbcTemplate(ds);
         manager = new DataSourceTransactionManager(ds); tx = new TransactionTemplate(manager);
-        for (String table : List.of("booking_change_event","booking_change","departure_change","booking_reservation","payment_reconciliation","mail_outbox","customer","booking_price_snapshot","momo_transaction","vnpay_transaction","payment","invoice","booking","tour_departure","tour","prices","users"))
+        for (String table : List.of("departure_guide_assignment","departure_attendance","departure_manifest","booking_pickup_snapshot","booking_change_event","booking_change","departure_change","booking_reservation","payment_reconciliation","mail_outbox","customer","booking_price_snapshot","momo_transaction","vnpay_transaction","payment","invoice","booking","tour_departure","tour","prices","users"))
             jdbc.execute("DROP TABLE IF EXISTS " + table);
         run("db/lifecycle_schema.sql", mysql);
         run("db/001_mail_outbox.sql", mysql);
         run("db/003_booking_reservation.sql", mysql);
         run("db/003_booking_changes.sql",mysql);
+        jdbc.execute("CREATE TABLE IF NOT EXISTS booking_pickup_snapshot (booking_id INT PRIMARY KEY,departure_id INT,address VARCHAR(300),landmark VARCHAR(300),arrival_time TIME,directions_url VARCHAR(1000),confirmed_at DATETIME)");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS departure_manifest (departure_id INT PRIMARY KEY,completed_at DATETIME,completed_by INT,closeout_note VARCHAR(500))");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS departure_attendance (departure_id INT,customer_id INT,status VARCHAR(20),updated_at DATETIME,updated_by INT,PRIMARY KEY(departure_id,customer_id))");
+        jdbc.execute("CREATE TABLE IF NOT EXISTS departure_guide_assignment (departure_id INT PRIMARY KEY,guide_account_id INT,assigned_by INT,assigned_at DATETIME)");
         jdbc.execute("CREATE TABLE IF NOT EXISTS momo_transaction (order_id VARCHAR(32) PRIMARY KEY, request_id VARCHAR(32), booking_id INT, account_id INT, amount_vnd BIGINT, status VARCHAR(16), created_at DATETIME(6), expires_at DATETIME(6), trans_id BIGINT, result_code INT)");
         jdbc.execute("CREATE TABLE IF NOT EXISTS booking_outbox (id BIGINT PRIMARY KEY AUTO_INCREMENT, event_id VARCHAR(64) NOT NULL, event_type VARCHAR(64) NOT NULL, aggregate_type VARCHAR(80) NOT NULL DEFAULT 'Booking', aggregate_id INT NOT NULL, aggregate_version INT NOT NULL DEFAULT 1, payload CLOB NOT NULL, status VARCHAR(16) NOT NULL DEFAULT 'PENDING', available_at DATETIME(6) NOT NULL, attempts INT NOT NULL DEFAULT 0, last_error VARCHAR(1024), created_at DATETIME(6) NOT NULL, published_at DATETIME(6) NULL)");
         jdbc.update("INSERT INTO users (id,username,email) VALUES (7,'Danh','tester@example.com'),(8,'Other','other@example.com')");

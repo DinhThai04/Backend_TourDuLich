@@ -47,9 +47,10 @@ public class BookingController {
     public ApiResponse<List<BookingResponse>> getAllBookings(
             @RequestParam(required = false) Integer page,
             @RequestParam(required = false) Integer size,
-            @RequestParam(required = false, defaultValue = "false") boolean mine) {
+            @RequestParam(required = false, defaultValue = "false") boolean mine,
+            @RequestParam(required = false) Integer departureId) {
         return ApiResponse.<List<BookingResponse>>builder()
-                .result(bookingService.getAllBookings(page, size, mine))
+                .result(bookingService.getAllBookings(page, size, mine, departureId))
                 .message("Got successfully")
                 .build();
     }

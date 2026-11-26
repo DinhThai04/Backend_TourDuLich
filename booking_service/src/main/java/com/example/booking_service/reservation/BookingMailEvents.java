@@ -58,12 +58,18 @@ public class BookingMailEvents {
         int passengers = jdbc.queryForObject("SELECT COUNT(*) FROM customer WHERE booking_id=?", Integer.class, bookingId);
 
         String eventKey = "booking:" + bookingId + ":" + type.name().toLowerCase();
-        String subject = "SGU Tour - " + type.name() + " (#" + bookingId + ")";
+        String label = switch (type) {
+            case BOOKING_CREATED -> "Đã giữ chỗ";
+            case BOOKING_EXPIRED -> "Đã hết hạn giữ chỗ";
+            case BOOKING_CANCELLED -> "Đã hủy đặt chỗ";
+            default -> "Cập nhật đơn đặt tour";
+        };
+        String subject = "SGU Tour · " + label + " (#" + bookingId + ")";
         String html = "<p>Xin chào <b>" + escapeHtml(username) + "</b>,</p>"
-                + "<p>Đơn hàng <b>#" + bookingId + "</b> (" + escapeHtml(tourTitle) + ") đã được " + type.name().toLowerCase() + ".</p>"
-                + "<p>Số lượng khách: " + passengers + ". " + (holdUntil != null ? "Hủy giữ ghế vào: " + holdUntil : "") + "</p>";
-        String text = "Xin chào " + username + ",\nĐơn hàng #" + bookingId + " (" + tourTitle + ") đã được " + type.name().toLowerCase()
-                + ".\nSố lượng khách: " + passengers + ".\n" + (holdUntil != null ? "Hủy giữ ghế vào: " + holdUntil : "");
+                + "<p>Đơn hàng <b>#" + bookingId + "</b> (" + escapeHtml(tourTitle) + ") · " + label + ".</p>"
+                + "<p>Số lượng khách: " + passengers + ". " + (holdUntil != null ? "Thanh toán trước " + holdUntil : "") + "</p>";
+        String text = "Xin chào " + username + ",\nĐơn hàng #" + bookingId + " (" + tourTitle + ") · " + label
+                + ".\nSố lượng khách: " + passengers + ".\n" + (holdUntil != null ? "Thanh toán trước " + holdUntil : "");
         String scheduledAt = LocalDateTime.now(clock).format(DateTimeFormatter.ISO_DATE_TIME);
 
         var payload = new java.util.LinkedHashMap<String, Object>();

@@ -10,4 +10,5 @@ public class HoldSeatsRequest {
     private Integer seats;
     private String bookingId;
     private java.time.LocalDateTime expiresAt;
+    private String pickupConfirmationKey;
 }

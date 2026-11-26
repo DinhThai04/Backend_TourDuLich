@@ -73,7 +73,7 @@ public class ReservationExpiryService {
                 if (paymentInFlight(id, now)) continue;
 
                 // Release seats via Tour internal API
-                tourClient.releaseHold(departureId, seats);
+                tourClient.releaseHold(departureId, seats, id);
 
                 jdbc.update("UPDATE booking SET status='EXPIRED' WHERE id=? AND status IN ('PENDING_PAYMENT','CONFIRMED')", id);
                 jdbc.update("UPDATE booking_reservation SET status='EXPIRED',cancel_reason='PAYMENT_DEADLINE',updated_at=? WHERE booking_id=?", now, id);

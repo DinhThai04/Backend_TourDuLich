@@ -52,7 +52,7 @@ class ReviewEligibilityTest {
         var expiry = new ReservationExpiryService(db.jdbc, db.manager, events, clock, tClient, payClient, invClient);
         lifecycle = new BookingLifecycleService(db.jdbc, db.manager, new ReservationPolicy(), expiry, events, access, clock,
                 authClient, invClient, pricingClient, tClient);
-        service = new ReviewEligibilityService(db.jdbc, access, clock, tClient, authClient, payClient, invClient);
+        service = new ReviewEligibilityService(db.jdbc, access, tClient, authClient, payClient, invClient);
     }
     BookingRequest request() {
         return BookingRequest.builder().userId("7").tourDepartureId("1").listOfCustomers(List.of(

@@ -35,6 +35,9 @@ public class TourDepartureService {
     @org.springframework.beans.factory.annotation.Autowired(required = false)
     private com.example.tour_service.operations.OperationAudit audit;
 
+    @org.springframework.beans.factory.annotation.Value("${app.booking.sales-cutoff:PT4H}")
+    private java.time.Duration salesCutoff = java.time.Duration.ofHours(4);
+
     public record UpcomingPage(List<UpcomingDepartureResponse> items, boolean hasNext) {}
 
     public UpcomingPage upcoming(int page) {
@@ -301,6 +304,8 @@ public class TourDepartureService {
                 .id(tourDeparture.getId())
                 .tourCode(tourDeparture.getTourCode())
                 .departureDate(tourDeparture.getDepartureDate())
+                .bookingCloseAt(tourDeparture.getDepartureDate().minus(salesCutoff)
+                        .atZone(java.time.ZoneId.of("Asia/Ho_Chi_Minh")).toOffsetDateTime())
                 .returnDate(tourDeparture.getReturnDate())
                 .availableSeats(tourDeparture.getAvailableSeats())
                 .capacity(tourDeparture.getCapacity())

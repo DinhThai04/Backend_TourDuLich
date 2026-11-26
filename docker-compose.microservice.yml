@@ -130,6 +130,7 @@ services:
     volumes:
       - mysql_tour_data:/var/lib/mysql
       - ./data_seed/microservices/sgu_tour.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./data_seed/migrations/V009__departure_pickup_options.sql:/docker-entrypoint-initdb.d/09_pickup_options.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -usgu_tour -Dsgu_tour -Nse \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='tour'\" | grep -qx 1"]
       interval: 10s
@@ -174,6 +175,8 @@ services:
     volumes:
       - mysql_booking_data:/var/lib/mysql
       - ./data_seed/microservices/sgu_booking.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./data_seed/migrations/V007__booking_departure_operations.sql:/docker-entrypoint-initdb.d/07_departure_operations.sql:ro
+      - ./data_seed/migrations/V008__departure_guide_assignment.sql:/docker-entrypoint-initdb.d/08_guide_assignment.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -usgu_booking -Dsgu_booking -Nse \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='booking'\" | grep -qx 1"]
       interval: 10s
@@ -348,6 +351,7 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
+      APP_BOOKING_SALES_CUTOFF: ${BOOKING_SALES_CUTOFF:-PT4H}
       JAVA_XMX: ${JAVA_XMX:-}
       DB_URL: jdbc:mysql://mysql-tour:3306/sgu_tour?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
       DB_USERNAME: sgu_tour
@@ -405,6 +409,7 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
+      APP_BOOKING_SALES_CUTOFF: ${BOOKING_SALES_CUTOFF:-PT4H}
       JAVA_XMX: ${JAVA_XMX:-}
       DB_URL: jdbc:mysql://mysql-booking:3306/sgu_booking?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
       DB_USERNAME: sgu_booking
@@ -457,6 +462,7 @@ services:
       rabbitmq:
         condition: service_healthy
     environment:
+      APP_BOOKING_SALES_CUTOFF: ${BOOKING_SALES_CUTOFF:-PT4H}
       JAVA_XMX: ${JAVA_XMX:-}
       DB_URL: jdbc:mysql://mysql-payment:3306/sgu_payment?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Ho_Chi_Minh
       DB_USERNAME: sgu_payment

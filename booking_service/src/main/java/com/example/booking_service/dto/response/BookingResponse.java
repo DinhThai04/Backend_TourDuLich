@@ -20,6 +20,10 @@ public class BookingResponse {
     private String accountId;
     private String createdAt;
     private String status;
+    private boolean tripCompleted;
+    private Pickup pickup;
+
+    public record Pickup(String address, String landmark, String arrivalTime, String directionsUrl) {}
     private String tourDepartureId;
     private String message;
     private String reservationStatus;

@@ -131,7 +131,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
         String token = authHeader.get(0).substring(7);
 
         // 3. A token accepted moments ago is reused instead of calling the auth service again.
-        if (introspectionCache.isAccepted(token)) {
+        if (HttpMethod.GET.equals(exchange.getRequest().getMethod()) && introspectionCache.isAccepted(token)) {
             return chain.filter(exchange);
         }
 
@@ -206,7 +206,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
                 || (HttpMethod.GET.equals(request.getMethod())
                 && (apiPrefix + "/tour/advice/locations").equals(path))) return true;
         String relative = path.startsWith(apiPrefix) ? path.substring(apiPrefix.length()) : path;
-        if (HttpMethod.GET.equals(request.getMethod()) && relative.matches("/tour/tour-departures/[0-9]+/meeting-point"))
+        if (HttpMethod.GET.equals(request.getMethod()) && relative.matches("/tour/tour-departures/[0-9]+/meeting-point(?:/options)?"))
             return request.getQueryParams().containsKey("tourId");
         // Management summary lives below the public departure catalog, but must still introspect credentials.
         if(relative.matches("/tour/tour-departures/[^/]+/capacity/?")) return false;

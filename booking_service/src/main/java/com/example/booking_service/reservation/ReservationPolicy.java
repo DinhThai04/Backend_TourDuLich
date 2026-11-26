@@ -6,6 +6,19 @@ import java.time.temporal.ChronoUnit;
 
 @Component
 public class ReservationPolicy {
+    @org.springframework.beans.factory.annotation.Value("${app.booking.sales-cutoff:PT4H}")
+    private Duration salesCutoff = Duration.ofHours(4);
+
+    public void requireBookable(LocalDateTime now, LocalDateTime departure) {
+        if (!now.isBefore(departure.minus(salesCutoff)))
+            throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.CONFLICT,
+                    "Đã đóng nhận đặt chỗ cho chuyến này. Vui lòng chọn lịch khởi hành khác.");
+    }
+
+    public LocalDateTime capDeadline(LocalDateTime deadline, LocalDateTime departure) {
+        return earlier(deadline, departure.minus(salesCutoff));
+    }
+
     public record Plan(boolean immediate, LocalDateTime deadline, LocalDateTime reminderOne, LocalDateTime reminderTwo) {}
     public Plan plan(LocalDateTime created, LocalDateTime departure) {
         if (!departure.isAfter(created)) throw new IllegalArgumentException("Chuyến đi đã khởi hành");

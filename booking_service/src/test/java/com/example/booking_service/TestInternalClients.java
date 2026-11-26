@@ -61,6 +61,8 @@ public final class TestInternalClients {
             jdbc.update("UPDATE tour_departure SET available_seats=LEAST(COALESCE(capacity,32767),available_seats+?),version=version+1 WHERE id=?", seats, id);
             return Map.of("success", true);
         });
+        when(client.releaseHold(anyInt(), anyInt(), anyInt())).thenAnswer(inv ->
+                client.releaseHold(inv.getArgument(0, Integer.class), inv.getArgument(1, Integer.class)));
         doAnswer(inv -> {
             int id = inv.getArgument(0, Integer.class);
             jdbc.update("UPDATE tour_departure SET version=version+1 WHERE id=?", id);

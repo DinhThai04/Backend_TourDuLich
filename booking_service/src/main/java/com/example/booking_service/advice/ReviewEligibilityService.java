@@ -9,8 +9,6 @@ import com.example.booking_service.repository.httpclient.TourInternalClient;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import java.time.Clock;
-import java.time.LocalDateTime;
 import java.util.*;
 
 @Service
@@ -18,16 +16,15 @@ public class ReviewEligibilityService {
 	public record Result(boolean eligible, String message) {}
 	private final JdbcTemplate jdbc;
 	private final BookingAccess access;
-	private final Clock clock;
 	private final TourInternalClient tourClient;
 	private final AuthInternalClient authClient;
 	private final PaymentInternalClient paymentClient;
 	private final InvoiceInternalClient invoiceClient;
 
-	public ReviewEligibilityService(JdbcTemplate jdbc, BookingAccess access, Clock clock,
+	public ReviewEligibilityService(JdbcTemplate jdbc, BookingAccess access,
 			TourInternalClient tourClient, AuthInternalClient authClient,
 			PaymentInternalClient paymentClient, InvoiceInternalClient invoiceClient) {
-		this.jdbc=jdbc; this.access=access; this.clock=clock;
+		this.jdbc=jdbc; this.access=access;
 		this.tourClient=tourClient; this.authClient=authClient;
 		this.paymentClient=paymentClient; this.invoiceClient=invoiceClient;
 	}
@@ -36,8 +33,14 @@ public class ReviewEligibilityService {
 		if(tourId<1) throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,"Mã tour không hợp lệ");
 		// Always the authenticated owner, including admins. Never accept an accountId from the caller.
 		var ids=jdbc.queryForList("""
-			SELECT b.id FROM booking b 
-			WHERE b.account_id=? AND b.status='CONFIRMED' AND b.tour_departure_id IS NOT NULL
+			SELECT b.id FROM booking b
+			JOIN departure_manifest m ON m.departure_id=b.tour_departure_id AND m.completed_at IS NOT NULL
+			WHERE EXISTS (
+				SELECT 1 FROM customer p JOIN departure_attendance a
+				  ON a.customer_id=p.id AND a.departure_id=b.tour_departure_id AND a.status='RETURNED'
+				WHERE p.booking_id=b.id
+			)
+			AND b.account_id=? AND b.status='CONFIRMED'
 			  AND NOT EXISTS (SELECT 1 FROM booking_change c WHERE c.booking_id=b.id AND c.active_key=1)
 			""", Integer.class, access.accountId());
 		
@@ -50,11 +53,7 @@ public class ReviewEligibilityService {
 				if (departureId != null) {
 					Map<String, Object> departure = tourClient.getDeparture(departureId);
 					if (departure != null && ((Number) departure.get("tour_id")).longValue() == tourId) {
-						Object returnDate = departure.get("return_date");
-						LocalDateTime returnDt = returnDate instanceof LocalDateTime ? (LocalDateTime) returnDate : ((java.sql.Timestamp) returnDate).toLocalDateTime();
-						if (returnDt.isBefore(LocalDateTime.now(clock))) {
-							filteredIds.add(bookingId);
-						}
+						filteredIds.add(bookingId);
 					}
 				}
 			} catch (Exception ignored) {
@@ -74,6 +73,6 @@ public class ReviewEligibilityService {
 				&& (s.reservationStatus()==null || "PAID".equals(s.reservationStatus())))
 				return new Result(true,"Bạn có thể đánh giá tour đã hoàn tất; mỗi tài khoản một đánh giá cho mỗi tour.");
 		}
-		return new Result(false,"Chỉ tài khoản có booking đã thanh toán được xác minh và chuyến đi đã kết thúc mới được đánh giá tour này.");
+		return new Result(false,"Chỉ tài khoản có booking đã thanh toán được xác minh và có hành khách được xác nhận trở về sau khi điều hành chốt chuyến mới được đánh giá tour này.");
 	}
 }

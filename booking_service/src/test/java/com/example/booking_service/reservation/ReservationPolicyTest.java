@@ -6,6 +6,18 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class ReservationPolicyTest {
     final ReservationPolicy policy = new ReservationPolicy();
+
+    @org.junit.jupiter.api.Test
+    void saleClosesAtExactCutoffAndPaymentDeadlineCannotExceedIt() {
+        var departure = java.time.LocalDateTime.of(2026, 11, 1, 12, 0);
+        org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> policy.requireBookable(departure.minusHours(4).minusSeconds(1), departure));
+        org.junit.jupiter.api.Assertions.assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> policy.requireBookable(departure.minusHours(4), departure));
+        org.junit.jupiter.api.Assertions.assertThrows(org.springframework.web.server.ResponseStatusException.class,
+                () -> policy.requireBookable(departure.minusHours(2), departure));
+        org.junit.jupiter.api.Assertions.assertEquals(departure.minusHours(4), policy.capDeadline(departure, departure));
+    }
+
     LocalDateTime day(int day) { return LocalDateTime.of(2026,11,day,8,0); }
     @Test void earlyBookingHasSixDayDeadlineAndTwoReminders() {
         var plan = policy.plan(day(1), day(20).withHour(6));

@@ -26,6 +26,7 @@ class BookingLifecycleTest {
     BookingAccess access;
     BookingMailOutboxPublisher publisher;
     AuthInternalClient authClient;
+    TourInternalClient internalTours;
     @BeforeEach void setup() throws Exception {
         db = new LifecycleTestDatabase(); 
         clock = new LifecycleTestDatabase.MutableClock(LocalDateTime.of(2026,11,1,10,0));
@@ -39,12 +40,13 @@ class BookingLifecycleTest {
         when(pricingClient.getPriceById(anyLong())).thenReturn(Map.of("id", 1, "adultPrice", 3350000, "childPrice", 2000000, "toddlerPrice", 0, "infantPrice", 0, "singleSupplementPrice", 500));
         when(invoiceClient.getInvoiceByBookingId(anyInt())).thenReturn(Map.of("status", "PAID"));
         answerDeparture(tourClient);
-        doThrow(new RuntimeException("Tour service unavailable")).when(tourClient).releaseHold(anyInt(), anyInt());
+        doThrow(new RuntimeException("Tour service unavailable")).when(tourClient).releaseHold(anyInt(), anyInt(), anyInt());
         var publisher = mock(BookingMailOutboxPublisher.class);
         this.publisher = publisher;
         var payClient = com.example.booking_service.TestInternalClients.payment(db.jdbc, clock);
         var invClient = com.example.booking_service.TestInternalClients.invoice(db.jdbc);
         var tClient = com.example.booking_service.TestInternalClients.tour(db.jdbc);
+        internalTours = tClient;
         var events = new BookingMailEvents(db.jdbc, publisher, clock, authClient, tClient);
         expiry = new ReservationExpiryService(db.jdbc, db.manager, events, clock, tClient, payClient, invClient);
         access = mock(BookingAccess.class); 
@@ -73,6 +75,38 @@ class BookingLifecycleTest {
             for (var e : row.entrySet()) map.put(e.getKey().toLowerCase(), e.getValue());
             return map;
         });
+    }
+
+    @Test void requiresCurrentPickupAndSnapshotsConfirmedPoint() {
+        var details = new HashMap<>(internalTours.getDeparture(1));
+        String confirmation = "a".repeat(64);
+        var mainPoint = Map.of("confirmationKey", "c".repeat(64), "address", "Điểm tập trung chính", "arrivalTime", "05:00:00");
+        details.put("meeting_point", mainPoint);
+        details.put("meeting_points", List.of(mainPoint, Map.of("confirmationKey", confirmation,
+                "address", "Điểm tập trung A", "arrivalTime", "05:30:00")));
+        doReturn(details).when(internalTours).getDeparture(1);
+
+        var input = request();
+        var missing = assertThrows(ResponseStatusException.class, () -> lifecycle.create(input));
+        assertEquals(409, missing.getStatusCode().value());
+        input.setPickupConfirmationKey("b".repeat(64));
+        assertEquals(409, assertThrows(ResponseStatusException.class, () -> lifecycle.create(input)).getStatusCode().value());
+        assertEquals(0, db.count("booking"));
+        input.setPickupConfirmationKey(confirmation);
+        int bookingId = Integer.parseInt(lifecycle.create(input).getId());
+        var saved = lifecycle.get(bookingId);
+        assertEquals("Điểm tập trung A", saved.getPickup().address());
+        assertFalse(saved.isTripCompleted());
+        db.jdbc.update("UPDATE booking SET status='CONFIRMED' WHERE id=?", bookingId);
+        db.jdbc.update("INSERT INTO departure_manifest(departure_id,completed_at) VALUES(1,?)", LocalDateTime.now(clock));
+        db.jdbc.update("""
+                INSERT INTO departure_attendance(departure_id,customer_id,status)
+                SELECT 1,id,'RETURNED' FROM customer WHERE booking_id=?
+                """, bookingId);
+        assertTrue(lifecycle.get(bookingId).isTripCompleted());
+        when(access.accountId()).thenReturn(8);
+        doCallRealMethod().when(access).requireReadOwner(7, "BOOKINGS_GET_ALL");
+        assertEquals(403, assertThrows(ResponseStatusException.class, () -> lifecycle.get(bookingId)).getStatusCode().value());
     }
 
     @Test void staleDisplayedPriceCannotCreateAHoldAndTheSameKeyCanRetry() {
@@ -212,10 +246,10 @@ class BookingLifecycleTest {
         assertEquals(9, db.seats());
         assertEquals(10, db.jdbc.queryForObject("SELECT available_seats FROM tour_departure WHERE id=51", Integer.class));
     }
-    @Test void immediateCheckoutHasNoPrematureSuccessEmail() {
+    @Test void immediateCheckoutSendsHoldNoticeWithoutPaidConfirmation() {
         clock.set(LocalDateTime.of(2026,11,13,10,0)); int id = create();
         assertTrue(lifecycle.get(id).isPaymentRequiredNow()); assertEquals("CHECKOUT", lifecycle.get(id).getReservationStatus());
-        verify(publisher, never()).sendNow(anyString()); assertEquals(9, db.seats());
+        verify(publisher).sendNow(argThat(payload -> payload.contains("BOOKING_CREATED") && !payload.contains("PAYMENT_SUCCEEDED"))); assertEquals(9, db.seats());
     }
     @Test void cancellationIsIdempotentAndPreservesOriginalCreatedAt() {
         int id = create(); var original = lifecycle.get(id).getCreatedAt(); clock.set(LocalDateTime.of(2026,11,2,10,0));
