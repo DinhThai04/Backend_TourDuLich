@@ -118,8 +118,14 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
                     .message("Đường dẫn này chỉ dùng cho giao tiếp nội bộ giữa các dịch vụ")
                     .build());
         }
-        // 1. Logic check Public Endpoint (Giữ nguyên)
         if (isPublicEndpoint(exchange.getRequest())) {
+            var request = exchange.getRequest();
+            if (HttpMethod.GET.equals(request.getMethod())
+                    && request.getHeaders().containsKey(HttpHeaders.AUTHORIZATION)
+                    && isAnonymousCatalogRead(request.getURI().getPath())) {
+                var anonymous = request.mutate().headers(headers -> headers.remove(HttpHeaders.AUTHORIZATION)).build();
+                return chain.filter(exchange.mutate().request(anonymous).build());
+            }
             return chain.filter(exchange);
         }
 
@@ -188,6 +194,16 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
     @Override
     public int getOrder() {
         return -1;
+    }
+
+    private boolean isAnonymousCatalogRead(String path) {
+        String relative = path.startsWith(apiPrefix) ? path.substring(apiPrefix.length()) : path;
+        // The catalog and public review responses are independent of caller identity.
+        return switch (relative) {
+            case "/tour/tours/search", "/tour/locations/destinations",
+                 "/tour/locations/destinations/attractive", "/auth/reviews/high-rating" -> true;
+            default -> false;
+        };
     }
 
     private boolean isPublicEndpoint(ServerHttpRequest request) {
