@@ -39,8 +39,8 @@ public class AuditService {
     }
 
     @Transactional(readOnly = true)
-    public Page<OperationAudit> page(int page) {
-        if (page < 0 || page > 10000) throw new IllegalArgumentException("Invalid audit page");
-        return repository.findAll(PageRequest.of(page, 20, Sort.by(Sort.Direction.DESC, "id")));
+    public Page<OperationAudit> page(int page, int size) {
+        if (page < 0 || page > 10000 || size < 1 || size > 100) throw new IllegalArgumentException("Invalid audit page");
+        return repository.findAll(PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "id")));
     }
 }

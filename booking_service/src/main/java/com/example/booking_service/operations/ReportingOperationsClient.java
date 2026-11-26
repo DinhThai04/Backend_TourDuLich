@@ -2,16 +2,19 @@ package com.example.booking_service.operations;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.time.LocalDate;
-import java.util.Map;
 import java.util.Optional;
+import java.util.List;
+import java.util.Map;
 
 @Component
 public class ReportingOperationsClient {
@@ -40,6 +43,23 @@ public class ReportingOperationsClient {
         return enabled && internalKey != null && internalKey.length() >= 32;
     }
 
+    private record AuditResponse(List<Map<String, Object>> content, boolean last, long totalElements) {}
+
+    public OperationsInsights.AuditPage audit(int page, int size) {
+        try {
+            AuditResponse result = client.get()
+                    .uri(uriBuilder -> uriBuilder.path("/internal/reports/audit").queryParam("page", page).queryParam("size", size).build())
+                    .header(INTERNAL_KEY_HEADER, internalKey)
+                    .retrieve()
+                    .body(AuditResponse.class);
+            if (result == null || result.content() == null) {
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Chưa có phản hồi nhật ký từ dịch vụ báo cáo");
+            }
+            return new OperationsInsights.AuditPage(result.content(), !result.last(), result.totalElements());
+        } catch (RestClientException exception) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Chưa tải được nhật ký từ dịch vụ báo cáo", exception);
+        }
+    }
     public Optional<Map<String, Object>> report(LocalDate from, LocalDate through) {
         if (!available()) return Optional.empty();
         try {

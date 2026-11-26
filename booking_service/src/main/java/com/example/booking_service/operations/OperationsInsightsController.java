@@ -15,8 +15,14 @@ public class OperationsInsightsController {
 
     @GetMapping("/report")
     public ApiResponse<?> report(@RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) LocalDate through) {
-        return ok(insights.report(from, through));
+            @RequestParam @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) LocalDate through,
+            @RequestParam(required = false) Integer tourId, @RequestParam(required = false) String region) {
+        return ok(insights.report(from, through, tourId, region));
+    }
+
+    @GetMapping("/invoice-transactions/{bookingId}")
+    public ApiResponse<?> invoiceTransactions(@PathVariable int bookingId) {
+        return ok(insights.invoiceTransactions(bookingId));
     }
 
     @GetMapping("/deliveries/{bookingId}")
@@ -31,13 +37,19 @@ public class OperationsInsightsController {
     }
 
     @GetMapping("/audit")
-    public ApiResponse<?> audit(@RequestParam(defaultValue = "0") int page) {
-        return ok(insights.audit(page));
+    public ApiResponse<?> audit(@RequestParam(defaultValue = "0") int page,
+                                @RequestParam(defaultValue = "20") int size) {
+        return ok(insights.audit(page, size));
     }
 
     @GetMapping("/integrity")
     public ApiResponse<?> integrity() {
         return ok(insights.integrity());
+    }
+
+    @PostMapping("/integrity/rescan")
+    public ApiResponse<?> rescan() {
+        return ok(insights.rescan());
     }
 
     private ApiResponse<Object> ok(Object value) {

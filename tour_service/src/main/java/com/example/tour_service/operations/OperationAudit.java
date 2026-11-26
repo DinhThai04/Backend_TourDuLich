@@ -19,9 +19,9 @@ public class OperationAudit {
         var authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.getName().matches("[0-9]{1,9}")) return;
         jdbc.update("""
-                INSERT INTO operation_audit(area,target_id,actor_id,before_value,after_value,created_at)
-                VALUES (?,?,?,?,?,?)
-                """, area, target, Integer.parseInt(authentication.getName()),
+                INSERT INTO operation_audit(entity_type,entity_id,action,actor_id,before_json,after_json,created_at)
+                VALUES (?,?,'UPDATE',?,JSON_QUOTE(?),JSON_QUOTE(?),?)
+                """, area, Long.toString(target), Integer.parseInt(authentication.getName()),
                 truncate(before), truncate(after), LocalDateTime.now(ZoneId.of("Asia/Ho_Chi_Minh")));
     }
 

@@ -37,8 +37,9 @@ public class InternalReportingController {
     }
 
     @GetMapping("/audit")
-    public Page<OperationAudit> audit(@RequestParam(defaultValue = "0") int page) {
-        return auditService.page(page);
+    public Page<OperationAudit> audit(@RequestParam(defaultValue = "0") int page,
+                                      @RequestParam(defaultValue = "20") int size) {
+        return auditService.page(page, size);
     }
 
     @GetMapping("/operations")

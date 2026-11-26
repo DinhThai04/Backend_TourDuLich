@@ -10,6 +10,9 @@ import java.util.Map;
 @FeignClient(name = "tour-service-internal", url = "${app.services.tour-base-url:http://localhost:8086/tour}", configuration = TourFeignConfiguration.class)
 public interface TourInternalClient {
 
+    @GetMapping("/internal/tour/departures/operations")
+    java.util.List<Map<String, Object>> reportDepartures();
+
     @GetMapping("/internal/tour/departures/{id}/capacity")
     Map<String, Object> getCapacity(@PathVariable("id") Integer id);
 
@@ -21,6 +24,12 @@ public interface TourInternalClient {
 
     @DeleteMapping("/internal/tour/departures/{id}/hold")
     Map<String, Object> releaseHold(@PathVariable("id") Integer id, @RequestParam Integer seats);
+
+    @DeleteMapping("/internal/tour/departures/{id}/hold")
+    Map<String, Object> releaseHold(@PathVariable("id") Integer id, @RequestParam Integer seats, @RequestParam Integer bookingId);
+
+    @PutMapping("/internal/tour/departures/{id}/hold/{bookingId}/confirm")
+    void confirmHold(@PathVariable("id") Integer id, @PathVariable("bookingId") Integer bookingId);
 
     @PostMapping("/internal/tour/departures/{id}/increment-version")
     void incrementVersion(@PathVariable("id") Integer id);
@@ -37,6 +46,11 @@ public interface TourInternalClient {
     record HoldSeatsRequest(
             Integer seats,
             String bookingId,
-            LocalDateTime expiresAt
-    ) {}
+            LocalDateTime expiresAt,
+            String pickupConfirmationKey
+    ) {
+        public HoldSeatsRequest(Integer seats, String bookingId, LocalDateTime expiresAt) {
+            this(seats, bookingId, expiresAt, null);
+        }
+    }
 }

@@ -218,3 +218,15 @@ INSERT INTO `permissions` (`id`,`code`,`api_path`,`method`,`module`,`name`) VALU
 INSERT INTO `permissions` (`id`,`code`,`api_path`,`method`,`module`,`name`) VALUES (123,CONVERT(0x56454849434C45535F44454C455445 USING utf8mb4),CONVERT(0x2F6170692F76312F746F75722F76656869636C65732F7B69647D USING utf8mb4),CONVERT(0x44454C455445 USING utf8mb4),CONVERT(0x56454849434C4553 USING utf8mb4),CONVERT(0x56454849434C45535F44454C455445 USING utf8mb4));
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+-- Apply to sgu_auth before editing role permissions in an existing deployment.
+CREATE TABLE IF NOT EXISTS operation_audit (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    area VARCHAR(40) NOT NULL,
+    target_id BIGINT NOT NULL,
+    actor_id INT NOT NULL,
+    before_value VARCHAR(2000),
+    after_value VARCHAR(2000),
+    created_at DATETIME(6) NOT NULL,
+    INDEX ix_operation_audit_area_id (area, target_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
