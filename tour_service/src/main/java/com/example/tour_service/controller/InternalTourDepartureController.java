@@ -120,6 +120,15 @@ public class InternalTourDepartureController {
         return pickup;
     }
 
+    @GetMapping("/{id}/itinerary")
+    public List<Map<String, Object>> departureItinerary(@PathVariable int id) {
+        return jdbc.query("""
+                SELECT i.id,i.day_number,i.title FROM itinerary i
+                JOIN tour_departure d ON d.tour_id=i.tour_id WHERE d.id=? ORDER BY i.day_number,i.id
+                """, (rs, index) -> Map.of("id", rs.getInt("id"), "day", rs.getInt("day_number"),
+                "title", java.util.Objects.toString(rs.getString("title"), "")), id);
+    }
+
     @PostMapping("/{id}/hold")
     @Transactional
     public ResponseEntity<HoldSeatsResponse> holdSeats(

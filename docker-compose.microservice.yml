@@ -108,6 +108,8 @@ services:
     volumes:
       - mysql_auth_data:/var/lib/mysql
       - ./data_seed/microservices/sgu_auth.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./data_seed/migrations/V010__tour_guide_role.sql:/docker-entrypoint-initdb.d/10_tour_guide_role.sql:ro
+      - ./data_seed/migrations/V011__tour_guide_permission.sql:/docker-entrypoint-initdb.d/11_tour_guide_permission.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -usgu_auth -Dsgu_auth -Nse \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='users'\" | grep -qx 1"]
       interval: 10s
@@ -177,6 +179,7 @@ services:
       - ./data_seed/microservices/sgu_booking.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
       - ./data_seed/migrations/V007__booking_departure_operations.sql:/docker-entrypoint-initdb.d/07_departure_operations.sql:ro
       - ./data_seed/migrations/V008__departure_guide_assignment.sql:/docker-entrypoint-initdb.d/08_guide_assignment.sql:ro
+      - ./data_seed/migrations/V012__guide_trip_workflow.sql:/docker-entrypoint-initdb.d/12_guide_trip_workflow.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "MYSQL_PWD=$$MYSQL_PASSWORD mysql -usgu_booking -Dsgu_booking -Nse \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name='booking'\" | grep -qx 1"]
       interval: 10s

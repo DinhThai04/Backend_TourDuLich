@@ -37,7 +37,7 @@ public class ReviewEligibilityService {
 			JOIN departure_manifest m ON m.departure_id=b.tour_departure_id AND m.completed_at IS NOT NULL
 			WHERE EXISTS (
 				SELECT 1 FROM customer p JOIN departure_attendance a
-				  ON a.customer_id=p.id AND a.departure_id=b.tour_departure_id AND a.status='RETURNED'
+				  ON a.customer_id=p.id AND a.departure_id=b.tour_departure_id AND a.status IN ('RETURNED','SEPARATED')
 				WHERE p.booking_id=b.id
 			)
 			AND b.account_id=? AND b.status='CONFIRMED'

@@ -15,4 +15,6 @@ public class CustomerRequest {
     String address;
     String gender;
     String status;
+    String guardianName;
+    String guardianPhone;
 }

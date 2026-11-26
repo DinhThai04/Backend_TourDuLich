@@ -142,8 +142,8 @@ if (departure == null || departure.isEmpty()) {
             }, key);
             int bookingId = Objects.requireNonNull(key.getKey()).intValue();
             for (var passenger : passengers) {
-                jdbc.update("INSERT INTO customer (booking_id,full_name,birthdate,gender,address,booking_type,status) VALUES (?,?,?,?,?,?,'BOOKED')",
-                        bookingId, passenger.fullName(), passenger.birthdate(), passenger.male(), passenger.address(), passenger.type());
+                jdbc.update("INSERT INTO customer (booking_id,full_name,birthdate,gender,address,booking_type,guardian_name,guardian_phone,status) VALUES (?,?,?,?,?,?,?,?,'BOOKED')",
+                        bookingId, passenger.fullName(), passenger.birthdate(), passenger.male(), passenger.address(), passenger.type(), passenger.guardianName(), passenger.guardianPhone());
             }
             persistSnapshot(bookingId, snapshot, now);
             if (pickup != null) {
@@ -222,11 +222,11 @@ if (departure == null || departure.isEmpty()) {
             return closed;
         }
         var saved = jdbc.query("""
-                SELECT full_name,birthdate,gender,address FROM customer WHERE booking_id=? ORDER BY id
+                SELECT full_name,birthdate,gender,address,guardian_name,guardian_phone FROM customer WHERE booking_id=? ORDER BY id
                 """, (rs, index) -> new PassengerIdentity(rs.getString("full_name"),
-                rs.getObject("birthdate", LocalDate.class), rs.getBoolean("gender"), rs.getString("address")), id);
+                rs.getObject("birthdate", LocalDate.class), rs.getBoolean("gender"), rs.getString("address"), rs.getString("guardian_name"), rs.getString("guardian_phone")), id);
         var submitted = passengers.stream()
-                .map(p -> new PassengerIdentity(p.fullName(), p.birthdate(), p.male(), p.address())).toList();
+                .map(p -> new PassengerIdentity(p.fullName(), p.birthdate(), p.male(), p.address(), p.guardianName(), p.guardianPhone())).toList();
         if (!saved.equals(submitted))
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Lượt giữ chỗ trước đã được xử lý với thông tin khác. Vui lòng kiểm tra đơn trước khi đặt lại.");
@@ -253,13 +253,21 @@ if (departure == null || departure.isEmpty()) {
                 throw new IllegalArgumentException("Địa chỉ không hợp lệ hoặc vượt quá 255 ký tự");
             int age = Period.between(birth, businessDate).getYears();
             String type = age < 2 ? "INFANT" : age <= 4 ? "TODDLER" : age <= 11 ? "CHILD" : "ADULT";
+            String guardianName = customer.getGuardianName() == null ? null : customer.getGuardianName().strip();
+            String guardianPhone = customer.getGuardianPhone() == null ? null : customer.getGuardianPhone().strip();
+            if (guardianName != null || guardianPhone != null) {
+                if (age >= 18 || guardianName == null || guardianName.length() < 2 || guardianName.length() > 100
+                        || !guardianName.matches("[\\p{L}\\p{M}]+(?: +[\\p{L}\\p{M}]+)*")
+                        || guardianPhone == null || !guardianPhone.matches("0[0-9]{9,10}"))
+                    throw new IllegalArgumentException("Thông tin người giám hộ không hợp lệ");
+            }
             passengers.add(new Passenger(customer.getFullName().trim(), birth,
-                    "Male".equalsIgnoreCase(customer.getGender()), address, type));
+                    "Male".equalsIgnoreCase(customer.getGender()), address, type, guardianName, guardianPhone));
         }
         return passengers;
     }
 
-    private record PassengerIdentity(String fullName, LocalDate birthdate, boolean male, String address) {}
+    private record PassengerIdentity(String fullName, LocalDate birthdate, boolean male, String address, String guardianName, String guardianPhone) {}
 
     /** Optional idempotency key. Only a replay of the same booking request can reuse it. */
     private static String clientKey(String value) {
@@ -495,7 +503,7 @@ if (departure == null || departure.isEmpty()) {
                 SELECT 1 FROM departure_manifest m JOIN departure_attendance a ON a.departure_id=m.departure_id
                 JOIN customer c ON c.id=a.customer_id
                 WHERE m.departure_id=b.tour_departure_id AND m.completed_at IS NOT NULL
-                  AND a.status='RETURNED' AND c.booking_id=b.id
+                  AND a.status IN ('RETURNED','SEPARATED') AND c.booking_id=b.id
               ) THEN 1 ELSE 0 END AS trip_completed,
               r.reminder_one_at,r.reminder_two_at,
               s.adult_price AS snap_adult,s.child_price AS snap_child,s.toddler_price AS snap_toddler,
@@ -581,7 +589,7 @@ if (departure == null || departure.isEmpty()) {
         return units;
     }
 
-    private record Passenger(String fullName, LocalDate birthdate, boolean male, String address, String type) {}
+    private record Passenger(String fullName, LocalDate birthdate, boolean male, String address, String type, String guardianName, String guardianPhone) {}
 
     private record PriceSnapshot(long priceId, BigDecimal adult, BigDecimal child, BigDecimal toddler,
             BigDecimal infant, BigDecimal supplement, long total) {}

@@ -78,7 +78,10 @@ class DepartureManifestServiceTest {
     }
 
     @Test void guideOnlyOperatesAssignedDepartureAndLosesAccessOnRemoval() {
-        when(accounts.getUserStatus(8L)).thenReturn(Map.of("status", "ACTIVE"));
+        when(accounts.getUserStatus(8L)).thenReturn(Map.of("status", "ACTIVE", "tourGuide", false));
+        assertEquals(409, assertThrows(ResponseStatusException.class,
+                () -> db.tx.execute(transaction -> service.assign(1, 8))).getStatusCode().value());
+        when(accounts.getUserStatus(8L)).thenReturn(Map.of("status", "ACTIVE", "tourGuide", true));
         assertEquals(8, db.tx.execute(transaction -> service.assign(1, 8)).guideAccountId());
         when(access.admin()).thenReturn(false);
         when(access.accountId()).thenReturn(8);
@@ -116,11 +119,53 @@ class DepartureManifestServiceTest {
         assertFalse(review.check(1).eligible());
     }
 
+    @Test void allAbsentCanCloseAfterReportIsApproved() {
+        when(accounts.getUserStatus(8L)).thenReturn(Map.of("status", "ACTIVE", "tourGuide", true));
+        db.tx.execute(transaction -> service.assign(1, 8));
+        clock.set(returns.plusHours(1));
+        mark(1, NO_SHOW);
+        mark(2, NO_SHOW);
+        assertEquals(409, assertThrows(ResponseStatusException.class,
+                () -> db.tx.execute(transaction -> service.complete(1, "Chốt"))).getStatusCode().value());
+        when(access.admin()).thenReturn(false);
+        when(access.accountId()).thenReturn(8);
+        var submitted = db.tx.execute(transaction -> service.saveReport(1, true, "Toàn bộ khách vắng", null, "Không có khách bàn giao"));
+        assertEquals("SUBMITTED", submitted.status());
+        when(access.admin()).thenReturn(true);
+        when(access.accountId()).thenReturn(7);
+        db.tx.execute(transaction -> service.review(1, true, null));
+        assertEquals("COMPLETED_NO_SHOW", db.tx.execute(transaction -> service.complete(1, "Đã duyệt")).outcome());
+    }
+
+    @Test void overlappingAssignmentRequiresExplicitOverrideAndReason() {
+        when(accounts.getUserStatus(8L)).thenReturn(Map.of("status", "ACTIVE", "tourGuide", true));
+        when(tours.getDeparture(2)).thenReturn(Map.of("departure_date", departure.plusHours(1).toString(),
+                "return_date", returns.plusHours(1).toString(), "operational_status", "OPEN"));
+        db.tx.execute(transaction -> service.assign(1, 8));
+        assertEquals(Map.of(8, 1), service.guideConflicts(2, java.util.List.of(8)));
+        assertEquals(409, assertThrows(ResponseStatusException.class,
+                () -> db.tx.execute(transaction -> service.assign(2, 8))).getStatusCode().value());
+        assertEquals(8, db.tx.execute(transaction -> service.assign(2, 8, true, "Có phương án bàn giao")).guideAccountId());
+    }
+
+    @Test void guideMustExplainDelayedCheckpoint() {
+        when(accounts.getUserStatus(8L)).thenReturn(Map.of("status", "ACTIVE", "tourGuide", true));
+        when(tours.getItinerary(1)).thenReturn(java.util.List.of(Map.of("id", 4, "day", 1, "title", "Tham quan")));
+        db.tx.execute(transaction -> service.assign(1, 8));
+        when(access.admin()).thenReturn(false);
+        when(access.accountId()).thenReturn(8);
+        clock.set(departure.plusHours(1));
+        assertEquals(409, assertThrows(ResponseStatusException.class,
+                () -> db.tx.execute(transaction -> service.progress(1, 4, DepartureManifestService.Progress.DELAYED, " "))).getStatusCode().value());
+        assertEquals("Mưa", db.tx.execute(transaction ->
+                service.progress(1, 4, DepartureManifestService.Progress.DELAYED, "Mưa")).getFirst().note());
+    }
+
     private DepartureManifestService.Manifest mark(int customerId, DepartureManifestService.Attendance status) {
         return db.tx.execute(transaction -> service.mark(1, customerId, status));
     }
 
     private DepartureManifestService.Manifest complete() {
-        return db.tx.execute(transaction -> service.complete(1, "Xác nhận xe và khách đã về"));
+        return db.tx.execute(transaction -> service.complete(1, "Xác nhận xe và khách đã về", true));
     }
 }

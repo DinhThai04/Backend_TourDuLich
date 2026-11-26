@@ -28,6 +28,7 @@ public class InternalAuthController {
                 .orElse(ResponseEntity.notFound().build());
     }
 
+    @org.springframework.transaction.annotation.Transactional(readOnly = true)
     @GetMapping("/{id}/status")
     public ResponseEntity<Map<String, Object>> getUserStatus(@PathVariable Long id) {
         return userRepository.findById(id)
@@ -35,6 +36,9 @@ public class InternalAuthController {
                     Map<String, Object> map = new java.util.HashMap<>();
                     map.put("id", user.getId());
                     map.put("status", user.getStatus().name());
+                    var role = user.getRole();
+                    map.put("tourGuide", role != null && Boolean.TRUE.equals(role.getActive())
+                            && role.getPermissions().stream().anyMatch(permission -> "TOUR_GUIDE_OPERATE".equals(permission.getCode())));
                     return ResponseEntity.ok(map);
                 })
                 .orElse(ResponseEntity.notFound().build());
