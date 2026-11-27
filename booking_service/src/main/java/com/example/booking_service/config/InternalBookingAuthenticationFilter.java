@@ -14,6 +14,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.regex.Pattern;
 import java.util.List;
 
 @Component
@@ -21,6 +24,7 @@ import java.util.List;
 @Slf4j
 public class InternalBookingAuthenticationFilter extends OncePerRequestFilter {
 
+    private static final Pattern TICKET_MAIL = Pattern.compile("/internal/booking/bookings/[0-9]+/ticket-mail");
     private final BookingInternalSecurityProperties properties;
 
     @Override
@@ -34,8 +38,11 @@ public class InternalBookingAuthenticationFilter extends OncePerRequestFilter {
             return;
         }
 
-        String internalKey = request.getHeader("X-Internal-Booking-Key");
-        if (internalKey == null || internalKey.isBlank() || !internalKey.equals(properties.getInternalKey())) {
+        boolean ticketOnly = "GET".equals(request.getMethod()) && TICKET_MAIL.matcher(path).matches();
+        String internalKey = request.getHeader(ticketOnly ? "X-Internal-Notification-Key" : "X-Internal-Booking-Key");
+        String expected = ticketOnly ? properties.getTicketMailKey() : properties.getInternalKey();
+        if (internalKey == null || internalKey.isBlank() || expected == null || expected.isBlank()
+                || !MessageDigest.isEqual(expected.getBytes(StandardCharsets.UTF_8), internalKey.getBytes(StandardCharsets.UTF_8))) {
             log.warn("Invalid or missing internal key for path: {}", path);
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.getWriter().write("{\"error\":\"Unauthorized\",\"message\":\"Invalid internal API key\"}");

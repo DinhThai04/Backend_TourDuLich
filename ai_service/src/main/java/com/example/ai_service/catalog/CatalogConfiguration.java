@@ -22,7 +22,7 @@ public class CatalogConfiguration {
         return new HttpTourFactsReader(localClient(baseUrl,mapper),mapper,clock);
     }
     private RestClient localClient(String baseUrl,ObjectMapper mapper) {
-        LocalServiceUrl.requireLocal(baseUrl,"/api/v1/tour","Invalid local catalog URL.");
+        LocalServiceUrl.requireCatalog(baseUrl);
         var http=HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(2)).followRedirects(HttpClient.Redirect.NEVER).build();
         var requests=BoundedHttp.requests(http,Duration.ofSeconds(4));
         var rest=RestClient.builder().baseUrl(baseUrl).requestFactory(requests).requestInterceptor(BoundedHttp.responseLimit(1048576))

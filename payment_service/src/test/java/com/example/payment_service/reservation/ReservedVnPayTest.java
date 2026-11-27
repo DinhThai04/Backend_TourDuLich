@@ -47,6 +47,24 @@ class ReservedVnPayTest {
     }
     String settle(Map<String,String> fields) { return db.tx.execute(tx -> service.handlePaymentReturn(fields)).getStatus(); }
 
+    @Test void legacyBookingQuoteAndCheckoutUseConfiguredPriceId() {
+        var tours = TestServiceClients.tour(db.jdbc);
+        var departure = new HashMap<>(tours.getDeparture(1));
+        departure.put("tour_price_id", 901L);
+        org.mockito.Mockito.doReturn(departure).when(tours).getDeparture(1);
+        var prices = TestServiceClients.pricing(db.jdbc);
+        org.mockito.Mockito.doReturn(Map.of("adultPrice", 4200000, "childPrice", 2000000,
+                "toddlerPrice", 0, "infantPrice", 0, "singleSupplementPrice", 500))
+                .when(prices).getPriceById(901L);
+        var outbox = TestServiceClients.outbox(db.jdbc);
+        orders = new VnPayOrderService(db.jdbc, TestServiceClients.mailWriter(db.jdbc, JsonMapper.builder().build()),
+                clock, tours, prices, TestServiceClients.booking(db.jdbc), outbox);
+
+        assertEquals(4200000L, orders.quote(1, 7, "vnpay").amountVnd());
+        var order = db.tx.execute(tx -> orders.prepare(1, 7, "4200000"));
+        assertEquals(4200000L, order.amountVnd());
+    }
+
     @Test void callbackReturnsTheBookingFromTheVerifiedTransaction() {
         var fields = callback(prepare(), true);
         var response = db.tx.execute(tx -> service.handlePaymentReturn(fields));

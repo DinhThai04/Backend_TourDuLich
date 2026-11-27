@@ -86,7 +86,7 @@ class RoleMutationTest {
         var users = mock(UserRepository.class);
         var permissions = mock(PermissionRepository.class);
         var epochs = mock(SessionEpochService.class);
-        var service = new RoleService(roles, permissions, mock(AdminContinuity.class), users, epochs);
+        var service = new RoleService(roles, permissions, mock(AdminContinuity.class), users, epochs, org.mockito.Mockito.mock(com.example.auth_service.operations.OperationAudit.class), org.mockito.Mockito.mock(com.example.auth_service.operations.AdminAuditEvents.class));
         var current = new Role(); current.setId(2L); current.setName("Staff"); current.setActive(true);
         when(roles.findById(2L)).thenReturn(Optional.of(current));
         when(roles.findByNameIgnoreCase("Staff")).thenReturn(Optional.of(current));
@@ -104,7 +104,7 @@ class RoleMutationTest {
         var roles = mock(RoleRepository.class);
         var epochs = mock(SessionEpochService.class);
         var service = new RoleService(roles, mock(PermissionRepository.class), mock(AdminContinuity.class),
-                mock(UserRepository.class), epochs);
+                mock(UserRepository.class), epochs, org.mockito.Mockito.mock(com.example.auth_service.operations.OperationAudit.class), org.mockito.Mockito.mock(com.example.auth_service.operations.AdminAuditEvents.class));
         var current = new Role(); current.setId(2L); current.setName("Staff"); current.setActive(true);
         when(roles.findById(2L)).thenReturn(Optional.of(current));
         when(roles.findByNameIgnoreCase("Staff")).thenReturn(Optional.of(current));
@@ -116,6 +116,6 @@ class RoleMutationTest {
     }
     private static RoleService service(RoleRepository roles) {
         return new RoleService(roles, mock(PermissionRepository.class), mock(AdminContinuity.class),
-                mock(UserRepository.class), mock(SessionEpochService.class));
+                mock(UserRepository.class), mock(SessionEpochService.class), org.mockito.Mockito.mock(com.example.auth_service.operations.OperationAudit.class), org.mockito.Mockito.mock(com.example.auth_service.operations.AdminAuditEvents.class));
     }
 }

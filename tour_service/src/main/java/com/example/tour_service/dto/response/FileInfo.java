@@ -1,5 +1,4 @@
 package com.example.tour_service.dto.response;
-import jakarta.persistence.Column;
 import lombok.Getter;
 import lombok.Setter;
 

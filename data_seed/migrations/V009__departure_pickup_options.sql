@@ -1,6 +1,6 @@
 ALTER TABLE departure_meeting_point
     MODIFY COLUMN landmark VARCHAR(300),
-    MODIFY COLUMN directions_url VARCHAR(1000) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    MODIFY COLUMN directions_url VARCHAR(1000);
 
 CREATE TABLE IF NOT EXISTS departure_extra_meeting_point (
     departure_id INT NOT NULL,

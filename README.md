@@ -307,6 +307,10 @@ MAIL_CROSS_SERVICE_TEST=true mvn -f booking_service/pom.xml -Dtest=CrossServiceL
 CAPACITY_CROSS_SERVICE_TEST=true mvn -f tour_service/pom.xml -Dtest=DepartureCapacityTest test
 ```
 
+Booking–Payment dùng H2 và các adapter nội bộ kiểm thử. Ba ca chạy mã nghiệp vụ giữ chỗ,
+ghi nhận thanh toán, chuyển sự kiện sang Booking, hủy đồng thời và callback đến muộn.
+Các ca này chưa xác nhận việc vận chuyển sự kiện qua RabbitMQ hoặc kết nối cổng VNPay thật.
+
 Kiểm tra cấu hình Compose không khởi động container hoặc import dữ liệu:
 
 ```bash

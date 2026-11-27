@@ -13,6 +13,7 @@ import org.springframework.web.bind.annotation.*;
 @RequestMapping("/operations/departures")
 public class DepartureManifestController {
     public record Mark(@NotNull DepartureManifestService.Attendance status, @Size(max = 500) String note) {}
+    public record Confirmation(java.time.LocalDateTime actualDepartureAt, @Size(max = 500) String reason) {}
     public record Complete(@NotBlank @Size(max = 500) String note, boolean override) {}
 
     public record Assignment(@Positive Integer accountId, boolean forceOverride, @Size(max = 500) String reason) {}
@@ -23,8 +24,21 @@ public class DepartureManifestController {
 
     private final DepartureManifestService service;
 
-    public DepartureManifestController(DepartureManifestService service) {
+    private final DepartureReadiness readiness;
+
+    public DepartureManifestController(DepartureManifestService service, DepartureReadiness readiness) {
         this.service = service;
+        this.readiness = readiness;
+    }
+
+    @GetMapping("/alerts")
+    public ApiResponse<DepartureReadiness.Page> alerts(@RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false) Integer bookingId,
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE)
+            java.time.LocalDate day) {
+        return ApiResponse.<DepartureReadiness.Page>builder().result(readiness.alerts(page, size, bookingId, day)).build();
     }
 
     @GetMapping("/{departureId}/manifest")
@@ -36,6 +50,12 @@ public class DepartureManifestController {
     public ApiResponse<DepartureManifestService.Manifest> mark(@PathVariable int departureId,
             @PathVariable int customerId, @Valid @RequestBody Mark request) {
         return response(service.mark(departureId, customerId, request.status(), request.note()));
+    }
+
+    @PostMapping("/{departureId}/confirm-departure")
+    public ApiResponse<DepartureManifestService.Manifest> confirmDeparture(@PathVariable int departureId,
+            @Valid @RequestBody Confirmation request) {
+        return response(service.confirmDeparture(departureId, request.actualDepartureAt(), request.reason()));
     }
 
     @PutMapping("/{departureId}/manifest/completion")

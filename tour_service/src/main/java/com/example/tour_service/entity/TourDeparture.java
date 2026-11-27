@@ -30,6 +30,9 @@ public class TourDeparture {
 
     private Integer capacity;
 
+    @Column(name = "operating_vehicle_id")
+    private String operatingVehicleId;
+
     @Builder.Default
     @Column(nullable=false)
     private String operationalStatus="OPEN";

@@ -70,12 +70,12 @@ public class OperationsInsights {
 		return wallClock(rows, "scheduled_at", "sent_at", "updated_at");
 	}
 
-	public void retryDelivery(int bookingId, long id) {
+	public void retryDelivery(int bookingId, long id, boolean confirmUncertain) {
 		if (!access.admin()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cần quyền quản trị để gửi lại");
 		try {
-			notificationClient.retryMail(bookingId, id);
+			notificationClient.retryMail(bookingId, id, confirmUncertain);
 		} catch (feign.FeignException.Conflict conflict) {
-			throw new ResponseStatusException(HttpStatus.CONFLICT, "Chỉ gửi lại email đã xác nhận thất bại");
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Email không còn đủ điều kiện để gửi lại hoặc cần xác nhận kết quả gửi trước");
 		}
 	}
 

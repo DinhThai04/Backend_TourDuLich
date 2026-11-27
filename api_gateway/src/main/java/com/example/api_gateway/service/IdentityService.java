@@ -2,7 +2,6 @@ package com.example.api_gateway.service;
 
 
 import lombok.AccessLevel;
-import lombok.RequiredArgsConstructor;
 import lombok.experimental.FieldDefaults;
 import org.springframework.stereotype.Service;
 

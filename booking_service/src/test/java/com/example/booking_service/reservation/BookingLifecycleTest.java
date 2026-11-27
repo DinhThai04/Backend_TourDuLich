@@ -26,6 +26,7 @@ class BookingLifecycleTest {
     BookingAccess access;
     BookingMailOutboxPublisher publisher;
     AuthInternalClient authClient;
+    PricingInternalClient prices;
     TourInternalClient internalTours;
     @BeforeEach void setup() throws Exception {
         db = new LifecycleTestDatabase(); 
@@ -35,6 +36,7 @@ class BookingLifecycleTest {
         var tourClient = mock(TourInternalClient.class);
         var invoiceClient = mock(InvoiceInternalClient.class);
         var pricingClient = mock(PricingInternalClient.class);
+        prices = pricingClient;
         when(authClient.getUserById(anyLong())).thenReturn(Map.of("email", "tester@example.com", "username", "tester"));
         when(authClient.getUserStatus(anyLong())).thenReturn(Map.of("status", "ACTIVE"));
         when(pricingClient.getPriceById(anyLong())).thenReturn(Map.of("id", 1, "adultPrice", 3350000, "childPrice", 2000000, "toddlerPrice", 0, "infantPrice", 0, "singleSupplementPrice", 500));
@@ -57,7 +59,7 @@ class BookingLifecycleTest {
     }
     BookingRequest request() {
         return BookingRequest.builder().userId("7").tourDepartureId("1").listOfCustomers(List.of(
-                CustomerRequest.builder().fullName("Danh").birthdate("2000-01-01").gender("Male").build())).build();
+                CustomerRequest.builder().fullName("Danh").birthdate("2000-01-01").gender("Male").address("12 Đường Lê Lợi, Phường Ba Đình, Thành phố Hà Nội").build())).build();
     }
     int create() { return Integer.parseInt(lifecycle.create(request()).getId()); }
 
@@ -75,6 +77,59 @@ class BookingLifecycleTest {
             for (var e : row.entrySet()) map.put(e.getKey().toLowerCase(), e.getValue());
             return map;
         });
+    }
+
+    @Test void validatesPassengerAddressBeforeTakingSeats() {
+        var input = request();
+        var passenger = input.getListOfCustomers().getFirst();
+        for (String address : Arrays.asList(null, "...", "123 Nguyễn Trãi",
+                "123 Nguyễn Trãi, Phường Ba Đình, Thành phố Hồ Chí Minh")) {
+            passenger.setAddress(address);
+            assertThrows(IllegalArgumentException.class, () -> lifecycle.create(input));
+        }
+        assertEquals(10, db.seats());
+        assertEquals(0, db.count("booking"));
+        passenger.setAddress("12/3 Đường Lê Lợi, Phường Ba Đình, Thành phố Hà Nội");
+        int id = Integer.parseInt(lifecycle.create(input).getId());
+        assertEquals(passenger.getAddress(), db.jdbc.queryForObject(
+                "SELECT address FROM customer WHERE booking_id=?", String.class, id));
+    }
+
+    @Test void requiresGuardianForMinorEvenAtAdultFare() {
+        var input = request();
+        var passenger = input.getListOfCustomers().getFirst();
+        passenger.setBirthdate("2012-01-01");
+        var error = assertThrows(IllegalArgumentException.class, () -> lifecycle.create(input));
+        assertTrue(error.getMessage().contains("người giám hộ"));
+        passenger.setGuardianName("Nguyễn Văn An");
+        passenger.setGuardianPhone("0912345678");
+        int id = Integer.parseInt(lifecycle.create(input).getId());
+        assertEquals("0912345678", db.jdbc.queryForObject(
+                "SELECT guardian_phone FROM customer WHERE booking_id=?", String.class, id));
+    }
+
+    @Test void bookingUsesConfiguredPriceIdInsteadOfTourId() {
+        var departure = new HashMap<>(internalTours.getDeparture(1));
+        departure.put("tour_price_id", 901L);
+        doReturn(departure).when(internalTours).getDeparture(1);
+        when(prices.getPriceById(901L)).thenReturn(Map.of("id", 901, "adultPrice", 4200000,
+                "childPrice", 2000000, "toddlerPrice", 0, "infantPrice", 0, "singleSupplementPrice", 500));
+
+        var input = request();
+        input.setExpectedAmount("4200000");
+        int id = Integer.parseInt(lifecycle.create(input).getId());
+
+        assertEquals(901L, db.jdbc.queryForObject("SELECT price_id FROM booking_price_snapshot WHERE booking_id=?",
+                Long.class, id));
+        assertEquals(4200000L, db.jdbc.queryForObject("SELECT total_amount FROM booking_price_snapshot WHERE booking_id=?",
+                Long.class, id));
+    }
+
+    @Test void existingCheckoutAcceptsDepartureWithoutPublishedPickupButRejectsAfterCutoff() {
+        assertNull(lifecycle.create(request()).getPickup());
+        var departure = com.example.booking_service.reservation.BookingMailEvents.date(internalTours.getDeparture(1).get("departure_date"));
+        clock.set(departure.plusHours(2));
+        assertEquals(409, assertThrows(ResponseStatusException.class, () -> lifecycle.create(request())).getStatusCode().value());
     }
 
     @Test void requiresCurrentPickupAndSnapshotsConfirmedPoint() {
@@ -210,6 +265,8 @@ class BookingLifecycleTest {
         var booking = request();
         booking.setClientKey(UUID.randomUUID().toString());
         booking.getListOfCustomers().getFirst().setBirthdate("2014-11-02");
+        booking.getListOfCustomers().getFirst().setGuardianName("Nguyễn Văn An");
+        booking.getListOfCustomers().getFirst().setGuardianPhone("0912345678");
         var original = lifecycle.create(booking);
         assertEquals("CHILD", db.jdbc.queryForObject("SELECT booking_type FROM customer", String.class));
 

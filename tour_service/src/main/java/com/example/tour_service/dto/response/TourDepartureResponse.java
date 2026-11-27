@@ -19,6 +19,7 @@ public class TourDepartureResponse {
     Short availableSeats;
     Integer capacity;
     String operationalStatus;
+    String operatingVehicleId;
     long version;
     int tourId;
     TourPriceResponse tourPrice;

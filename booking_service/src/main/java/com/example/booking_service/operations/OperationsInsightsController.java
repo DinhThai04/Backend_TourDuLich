@@ -31,8 +31,9 @@ public class OperationsInsightsController {
     }
 
     @PostMapping("/deliveries/{bookingId}/{id}/retry")
-    public ApiResponse<?> retry(@PathVariable int bookingId, @PathVariable long id) {
-        insights.retryDelivery(bookingId, id);
+    public ApiResponse<?> retry(@PathVariable int bookingId, @PathVariable long id,
+            @RequestParam(defaultValue = "false") boolean confirmUncertain) {
+        insights.retryDelivery(bookingId, id, confirmUncertain);
         return ok(true);
     }
 

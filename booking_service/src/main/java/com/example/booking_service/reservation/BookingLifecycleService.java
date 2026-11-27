@@ -21,6 +21,7 @@ import java.time.*;
 import java.util.*;
 
 @Service
+@lombok.extern.slf4j.Slf4j
 public class BookingLifecycleService {
     /** Grace shown on reads while the background worker is about to release a due hold. */
     private static final long EXPIRY_DISPLAY_GRACE_SECONDS = 60;
@@ -104,6 +105,7 @@ if (departure == null || departure.isEmpty()) {
                 var existing = replay(account, departureId, clientKey, passengers);
                 if (existing != null) return existing;
             }
+            passengers.forEach(passenger -> validateNewPassenger(passenger, now.toLocalDate()));
             if (request.getPricingDate() != null && !now.toLocalDate().equals(request.getPricingDate()))
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "Đã sang ngày mới theo giờ Việt Nam. Vui lòng kiểm tra lại giá trước khi đặt.");
@@ -129,7 +131,7 @@ if (departure == null || departure.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "Số chỗ đang giữ chưa thanh toán vượt mức " + MAX_HELD_SEATS + "; hãy hoàn tất hoặc hủy bớt");
             // Giá được chốt ngay khi tạo booking, không đọc lại bảng giá lúc thanh toán.
-            PriceSnapshot snapshot = snapshotFor(tourIdOf(departure.get("tour_id")), passengers);
+            PriceSnapshot snapshot = snapshotFor(departure, passengers);
             String expected = request.getExpectedAmount();
             if (expected != null && BigDecimal.valueOf(snapshot.total()).compareTo(new BigDecimal(expected)) != 0)
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -149,10 +151,10 @@ if (departure == null || departure.isEmpty()) {
             if (pickup != null) {
                 jdbc.update("""
                         INSERT INTO booking_pickup_snapshot
-                            (booking_id,departure_id,address,landmark,arrival_time,directions_url,confirmed_at)
-                        VALUES (?,?,?,?,?,?,?)
+                            (booking_id,departure_id,address,landmark,arrival_time,directions_url,confirmed_at,meeting_point_id)
+                        VALUES (?,?,?,?,?,?,?,?)
                         """, bookingId, departureId, pickup.get("address"), pickup.get("landmark"),
-                        pickup.get("arrivalTime"), pickup.get("directionsUrl"), now);
+                        pickup.get("arrivalTime"), pickup.get("directionsUrl"), now, pickup.get("confirmationKey"));
             }
             // Seat consumption is owned by Tour: holdSeats locks the departure row on the Tour side
             // and decrements available_seats atomically, so Booking must not write tour_departure.
@@ -180,7 +182,8 @@ if (departure == null || departure.isEmpty()) {
                 try {
                     tourClient.releaseHold(departureId, seats, bookingId);
                 } catch (Exception releaseEx) {
-                    // Best-effort seat compensation when local DB transaction fails after remote hold.
+                    log.warn("Could not release held seats after booking rollback, bookingId={}, departureId={}, error={}",
+                            bookingId, departureId, releaseEx.getClass().getSimpleName());
                 }
                 throw ex;
             }
@@ -265,6 +268,13 @@ if (departure == null || departure.isEmpty()) {
                     "Male".equalsIgnoreCase(customer.getGender()), address, type, guardianName, guardianPhone));
         }
         return passengers;
+    }
+
+    private static void validateNewPassenger(Passenger passenger, LocalDate businessDate) {
+        if (!PassengerAddress.isValid(passenger.address()))
+            throw new IllegalArgumentException("Địa chỉ hành khách phải có số nhà/tên đường, xã/phường thuộc đúng tỉnh/thành phố");
+        if (Period.between(passenger.birthdate(), businessDate).getYears() < 18 && passenger.guardianName() == null)
+            throw new IllegalArgumentException("Hành khách dưới 18 tuổi cần thông tin người giám hộ");
     }
 
     private record PassengerIdentity(String fullName, LocalDate birthdate, boolean male, String address, String guardianName, String guardianPhone) {}
@@ -436,8 +446,8 @@ if (departure == null || departure.isEmpty()) {
                         departureDate = depDate != null ? BookingMailEvents.date(depDate).toString() : null;
                         returnDate = retDate != null ? BookingMailEvents.date(retDate).toString() : null;
                     }
-                } catch (Exception ignored) {
-                    // Tour service unavailable, continue without tour info
+                } catch (Exception unavailable) {
+                    log.debug("Could not enrich booking history with departure {}", departureId);
                 }
             }
 
@@ -447,7 +457,9 @@ if (departure == null || departure.isEmpty()) {
                 if (!snap.isEmpty() && snap.get(0).get("total_amount") instanceof Number amt) {
                     totalAmount = amt.longValue();
                 }
-            } catch (Exception ignored) {}
+            } catch (Exception unavailable) {
+                log.debug("Could not read the price snapshot for booking {}", bookingIdInt);
+            }
 
             try {
                 Map<String, Object> invoice = invoiceClient.getInvoiceByBookingId(bookingIdInt);
@@ -457,8 +469,10 @@ if (departure == null || departure.isEmpty()) {
                         totalAmount = invAmt.longValue();
                     }
                 }
-            } catch (Exception ignored) {
-                // Invoice service unavailable, continue without invoice info
+            } catch (feign.FeignException.NotFound missing) {
+                log.trace("No invoice yet for booking {}", bookingIdInt);
+            } catch (Exception unavailable) {
+                log.debug("Could not enrich booking history with an invoice for booking {}", bookingIdInt);
             }
             
             items.add(new HistoryRow(bookingResp, tourCode, tourTitle, departureDate, returnDate, invoiceStatus, totalAmount));
@@ -466,9 +480,6 @@ if (departure == null || departure.isEmpty()) {
         return new HistoryPage(items, rows.size() > limit);
     }
 
-    private static String historyDate(Object value) {
-        return value == null ? null : BookingMailEvents.date(value).toString();
-    }
     /**
      * {@code mine} is what the profile page sends: a staff account also holds BOOKINGS_GET_ALL, and
      * the global page would show it somebody else's newest bookings instead of its own history.
@@ -527,7 +538,6 @@ if (departure == null || departure.isEmpty()) {
         int bookingId = ((Number) row.get("id")).intValue();
         LocalDateTime now = LocalDateTime.now(clock);
         
-        // Fetch departure status via Tour internal API (replaces direct tour_departure JOIN)
         String departureStatus = "OPEN";
         Integer departureId = (Integer) row.get("hold_departure_id");
         if (departureId != null) {
@@ -537,8 +547,8 @@ if (departure == null || departure.isEmpty()) {
                     Object status = departure.get("operational_status");
                     if (status != null) departureStatus = status.toString();
                 }
-            } catch (Exception ignored) {
-                // Tour service unavailable, assume OPEN
+            } catch (Exception unavailable) {
+                log.debug("Could not refresh departure status for booking {}", bookingId);
             }
         }
         
@@ -594,20 +604,11 @@ if (departure == null || departure.isEmpty()) {
     private record PriceSnapshot(long priceId, BigDecimal adult, BigDecimal child, BigDecimal toddler,
             BigDecimal infant, BigDecimal supplement, long total) {}
 
-    private int tourIdOf(Object value) {
-        if (value instanceof Number number) return number.intValue();
-        if (value instanceof String text) {
-            try { return Integer.parseInt(text.trim()); }
-            catch (RuntimeException invalid) { throw new IllegalArgumentException("Tour ID không hợp lệ"); }
-        }
-        throw new IllegalArgumentException("Tour ID không hợp lệ");
-    }
-
-    private PriceSnapshot snapshotFor(int tourId, List<Passenger> passengers) {
+    private PriceSnapshot snapshotFor(Map<String, Object> departure, List<Passenger> passengers) {
         // Get price info via Pricing internal API (replaces direct prices+tour JOIN)
         Map<String, Object> price;
         try {
-            price = pricingClient.getPriceById((long) tourId);
+            price = pricingClient.getPriceById(DeparturePricing.priceId(departure));
         } catch (Exception e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để đặt");
         }

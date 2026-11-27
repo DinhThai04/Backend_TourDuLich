@@ -44,6 +44,8 @@ import static org.junit.jupiter.api.Assertions.*;
 @Transactional(propagation = Propagation.NOT_SUPPORTED)
 @Import({TourDepartureService.class, DepartureCapacityReader.class})
 class DepartureCapacityTest {
+    @org.springframework.boot.test.mock.mockito.MockBean
+    private com.example.tour_service.operations.OperationAudit operationAudit;
     @DynamicPropertySource
     static void database(DynamicPropertyRegistry properties) {
         properties.add("spring.datasource.url", () -> "jdbc:h2:mem:capacity;MODE=MySQL;DB_CLOSE_DELAY=-1");
@@ -58,6 +60,7 @@ class DepartureCapacityTest {
     @Autowired PlatformTransactionManager manager;
     @Autowired TourDepartureService service;
     @MockBean PricingClient pricing;
+    @MockBean com.example.tour_service.operations.MeetingPointService meetingPoints;
 
     final LocalDateTime start = LocalDateTime.of(2090, 1, 20, 7, 0);
     int id, tourId;

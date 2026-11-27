@@ -107,6 +107,13 @@ spring:
             - Path=${app.api-prefix}/pricing/**
           filters:
             - StripPrefix=2
+        - id: confirm-departure
+          uri: ${BOOKING_BASE_URL:http://booking-service:8081}
+          predicates:
+            - Path=${app.api-prefix}/tour/departures/{id}/confirm-departure
+            - Method=POST
+          filters:
+            - SetPath=/booking/operations/departures/{id}/confirm-departure
         - id: tour-service
           uri: ${TOUR_BASE_URL:http://tour-service:8086}
           predicates:

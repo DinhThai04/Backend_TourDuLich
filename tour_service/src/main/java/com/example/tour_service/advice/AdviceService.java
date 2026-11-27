@@ -1,6 +1,5 @@
 package com.example.tour_service.advice;
 
-import com.example.tour_service.dto.request.TourPriceBatchRequest;
 import com.example.tour_service.dto.response.TourPriceResponse;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;

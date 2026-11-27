@@ -43,7 +43,7 @@ class RandomToursExclusionTest {
             tourDepartureService,
             mock(TransactionTemplate.class),
             mock(org.springframework.jdbc.core.JdbcTemplate.class),
-            mock(TourGalleryProof.class));
+            mock(TourGalleryProof.class), org.mockito.Mockito.mock(com.example.tour_service.operations.AdminAuditEvents.class));
 
     @Test
     void excludingCurrentTourStillReturnsThreeOtherTours() {

@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.time.Clock;
@@ -45,9 +46,10 @@ public class InternalNotificationController {
     }
 
     @PostMapping("/bookings/{bookingId}/{id}/retry")
-    public ResponseEntity<Void> retry(@PathVariable int bookingId, @PathVariable long id) {
-        if (!repository.retry(bookingId, id, LocalDateTime.now(clock)))
-            throw new IllegalStateException("Only failed, unsent mail can be retried");
+    public ResponseEntity<Void> retry(@PathVariable int bookingId, @PathVariable long id,
+            @RequestParam(defaultValue = "false") boolean confirmUncertain) {
+        if (!repository.retry(bookingId, id, LocalDateTime.now(clock), confirmUncertain))
+            throw new IllegalStateException("Email is not eligible for retry or requires confirmation");
         return ResponseEntity.noContent().build();
     }
 

@@ -460,14 +460,6 @@ public class AuthService {
         }
     }
 
-    private static String stringClaim(JWTClaimsSet claims, String name) {
-        try {
-            return claims.getStringClaim(name);
-        } catch (ParseException malformed) {
-            throw new AppException(ErrorCode.INVALID_TOKEN);
-        }
-    }
-
     public void logout(LogoutRequest request) {
         if (request == null) return;
         invalidateQuietly(request.getToken(), TokenType.ACCESS);

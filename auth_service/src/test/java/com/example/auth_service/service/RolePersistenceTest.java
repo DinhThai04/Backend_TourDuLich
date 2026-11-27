@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @Import({RoleService.class, AdminContinuity.class, SessionEpochService.class})
 class RolePersistenceTest {
     @org.springframework.boot.test.mock.mockito.MockBean
+    private com.example.auth_service.operations.OperationAudit operationAudit;
+    @org.springframework.boot.test.mock.mockito.MockBean
     private com.example.auth_service.operations.AdminAuditEvents adminAudit;
 
     @Autowired RoleService service;

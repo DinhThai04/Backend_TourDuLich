@@ -12,6 +12,6 @@ public interface VehicleRepository extends JpaRepository<Vehicle, String> {
      * would be quietly overwritten instead of reported as the duplicate it is.
      */
     @Modifying
-    @Query("insert into Vehicle (id, vehicleType) values (:id, :vehicleType)")
-    int insertNew(@Param("id") String id, @Param("vehicleType") String vehicleType);
+    @Query("insert into Vehicle (id, vehicleType, capacity) values (:id, :vehicleType, :capacity)")
+    int insertNew(@Param("id") String id, @Param("vehicleType") String vehicleType, @Param("capacity") Integer capacity);
 }

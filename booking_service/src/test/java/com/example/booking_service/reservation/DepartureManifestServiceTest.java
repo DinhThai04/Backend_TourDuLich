@@ -26,6 +26,8 @@ class DepartureManifestServiceTest {
     private TourInternalClient tours;
     private AuthInternalClient accounts;
     private DepartureManifestService service;
+    private InvoiceInternalClient invoices;
+    private com.example.booking_service.operations.AdminAuditEvents audit;
 
     @BeforeEach void setup() throws Exception {
         db = new LifecycleTestDatabase();
@@ -36,8 +38,9 @@ class DepartureManifestServiceTest {
         when(access.admin()).thenReturn(true);
         when(access.accountId()).thenReturn(7);
         accounts = mock(AuthInternalClient.class);
-        service = new DepartureManifestService(db.jdbc, access, tours, clock, accounts,
-                org.mockito.Mockito.mock(com.example.booking_service.operations.AdminAuditEvents.class));
+        invoices = mock(InvoiceInternalClient.class);
+        audit = mock(com.example.booking_service.operations.AdminAuditEvents.class);
+        service = new DepartureManifestService(db.jdbc, access, tours, clock, accounts, audit, invoices);
         db.jdbc.update("INSERT INTO booking(id,account_id,tour_departure_id,status,created_at) VALUES(1,7,1,'CONFIRMED',?)", departure.minusDays(1));
         db.jdbc.update("""
                 INSERT INTO booking_reservation(booking_id,departure_id,departure_at,seats,status,expires_at,created_at,updated_at)
@@ -59,6 +62,8 @@ class DepartureManifestServiceTest {
         mark(1, BOARDED);
         assertEquals(1, db.count("departure_attendance"));
 
+        clock.set(departure);
+        confirm();
         clock.set(returns.plusHours(1));
         assertEquals(AWAITING_CLOSEOUT, service.get(1).phase());
         assertEquals(409, assertThrows(ResponseStatusException.class, this::complete).getStatusCode().value());
@@ -70,6 +75,51 @@ class DepartureManifestServiceTest {
         assertEquals(result.completedAt(), complete().completedAt());
         assertEquals(409, assertThrows(ResponseStatusException.class, () -> mark(2, BOARDED)).getStatusCode().value());
         assertEquals("CONFIRMED", db.jdbc.queryForObject("SELECT status FROM booking WHERE id=1", String.class));
+    }
+
+    @Test void elapsedDepartureStaysUnconfirmedEvenWhenPickupAndGuideAreMissing() {
+        clock.set(departure.plusHours(2));
+        var result = service.get(1);
+        assertEquals(OVERDUE_UNCONFIRMED, result.phase());
+        assertNull(result.guideAccountId());
+        assertNull(result.passengers().getFirst().meetingPointName());
+        assertEquals(EXPECTED, result.passengers().getFirst().status());
+        assertEquals(0, db.count("departure_attendance"));
+
+        when(access.admin()).thenReturn(false);
+        when(access.accountId()).thenReturn(8);
+        assertTrue(service.assignedDepartures().isEmpty());
+        assertEquals(403, assertThrows(ResponseStatusException.class, () -> service.get(1)).getStatusCode().value());
+        when(access.admin()).thenReturn(true);
+        when(access.accountId()).thenReturn(7);
+        assertEquals(409, assertThrows(ResponseStatusException.class, () -> mark(1, BOARDED)).getStatusCode().value());
+        clock.set(returns.plusHours(2));
+        assertEquals(OVERDUE_UNCONFIRMED, service.get(1).phase());
+        assertEquals(409, assertThrows(ResponseStatusException.class, this::complete).getStatusCode().value());
+    }
+
+    @Test void verifiesLegacyBookingAgainstPaidInvoiceWithoutRecreatingSeatHolds() {
+        db.jdbc.update("DELETE FROM booking_reservation WHERE booking_id=1");
+        assertTrue(service.get(1).passengers().isEmpty());
+        when(invoices.getInvoicesBatch(java.util.List.of(1))).thenReturn(java.util.List.of(Map.of(
+                "bookingId", 1, "status", "PAID")));
+        assertEquals(2, service.get(1).passengers().size());
+        assertEquals(0, db.count("booking_reservation"));
+    }
+
+    @Test void rejectsEarlyOrUnexplainedConfirmationAndAuditsRetroactiveDepartureOnce() {
+        assertEquals(409, assertThrows(ResponseStatusException.class, this::confirm).getStatusCode().value());
+        clock.set(departure.plusHours(2));
+        assertEquals(409, assertThrows(ResponseStatusException.class, this::confirm).getStatusCode().value());
+        assertEquals(409, assertThrows(ResponseStatusException.class, () -> db.tx.execute(tx ->
+                service.confirmDeparture(1, departure, " "))).getStatusCode().value());
+        var confirmed = db.tx.execute(tx -> service.confirmDeparture(1, departure, "Xe đã rời điểm đón"));
+        assertEquals(IN_PROGRESS, confirmed.phase());
+        assertEquals(departure, confirmed.actualDepartureAt());
+        assertEquals(7, confirmed.confirmedBy());
+        assertEquals(departure, confirm().actualDepartureAt());
+        verify(audit).record(eq(7), eq("DEPARTURE_CONFIRMED"), eq("DEPARTURE"), eq(1), anyString(),
+                anyString(), eq("Xe đã rời điểm đón"), anyMap(), anyMap());
     }
 
     @Test void rejectsNonAdminBeforeLoadingSchedule() {
@@ -89,6 +139,7 @@ class DepartureManifestServiceTest {
         assertEquals(java.util.List.of(1), service.assignedDepartures());
         assertEquals(403, assertThrows(ResponseStatusException.class, () -> service.get(2)).getStatusCode().value());
         clock.set(departure);
+        assertEquals(8, confirm().confirmedBy());
         assertEquals(BOARDED, mark(1, BOARDED).passengers().getFirst().status());
         assertEquals(403, assertThrows(ResponseStatusException.class, this::complete).getStatusCode().value());
         when(access.admin()).thenReturn(true);
@@ -107,6 +158,9 @@ class DepartureManifestServiceTest {
         when(payment.getPaymentStatus(1)).thenReturn(paid);
         when(invoice.getInvoiceByBookingId(1)).thenReturn(paid);
         var review = new ReviewEligibilityService(db.jdbc, access, tours, auth, payment, invoice);
+        clock.set(departure);
+        confirm();
+        clearInvocations(tours);
         clock.set(returns.plusHours(1));
         assertFalse(review.check(1).eligible());
         mark(1, BOARDED);
@@ -123,6 +177,8 @@ class DepartureManifestServiceTest {
     @Test void allAbsentCanCloseAfterReportIsApproved() {
         when(accounts.getUserStatus(8L)).thenReturn(Map.of("status", "ACTIVE", "tourGuide", true));
         db.tx.execute(transaction -> service.assign(1, 8));
+        clock.set(departure);
+        confirm();
         clock.set(returns.plusHours(1));
         mark(1, NO_SHOW);
         mark(2, NO_SHOW);
@@ -155,11 +211,17 @@ class DepartureManifestServiceTest {
         db.tx.execute(transaction -> service.assign(1, 8));
         when(access.admin()).thenReturn(false);
         when(access.accountId()).thenReturn(8);
+        clock.set(departure);
+        confirm();
         clock.set(departure.plusHours(1));
         assertEquals(409, assertThrows(ResponseStatusException.class,
                 () -> db.tx.execute(transaction -> service.progress(1, 4, DepartureManifestService.Progress.DELAYED, " "))).getStatusCode().value());
         assertEquals("Mưa", db.tx.execute(transaction ->
                 service.progress(1, 4, DepartureManifestService.Progress.DELAYED, "Mưa")).getFirst().note());
+    }
+
+    private DepartureManifestService.Manifest confirm() {
+        return db.tx.execute(transaction -> service.confirmDeparture(1, null, null));
     }
 
     private DepartureManifestService.Manifest mark(int customerId, DepartureManifestService.Attendance status) {

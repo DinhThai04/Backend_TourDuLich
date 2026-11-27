@@ -21,10 +21,8 @@ public class TourPriceService {
     private static final int MAX_LIST_SIZE = 500;
 
     private final TourPriceRepository repository;
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.example.pricing_service.operations.OperationAudit audit;
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.example.pricing_service.operations.AdminAuditEvents adminAudit;
+    private final com.example.pricing_service.operations.OperationAudit audit;
+    private final com.example.pricing_service.operations.AdminAuditEvents adminAudit;
 
     public TourPriceResponse createPrice(TourPriceRequest request) {
         VndPricePolicy.validate(request);

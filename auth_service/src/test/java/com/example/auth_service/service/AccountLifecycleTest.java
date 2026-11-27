@@ -32,6 +32,8 @@ import static org.mockito.Mockito.*;
 @Transactional(propagation=Propagation.NOT_SUPPORTED)
 class AccountLifecycleTest {
     @org.springframework.boot.test.mock.mockito.MockBean
+    private com.example.auth_service.operations.OperationAudit operationAudit;
+    @org.springframework.boot.test.mock.mockito.MockBean
     private com.example.auth_service.operations.AdminAuditEvents adminAudit;
 
     @DynamicPropertySource static void db(DynamicPropertyRegistry r){r.add("spring.datasource.url",()->"jdbc:h2:mem:account_lifecycle;MODE=MySQL;DB_CLOSE_DELAY=-1");r.add("spring.datasource.driver-class-name",()->"org.h2.Driver");r.add("spring.datasource.username",()->"sa");r.add("spring.datasource.password",()->"");}

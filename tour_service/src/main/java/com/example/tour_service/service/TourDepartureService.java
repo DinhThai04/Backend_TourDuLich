@@ -32,8 +32,9 @@ public class TourDepartureService {
     private final PricingClient pricingClient;
     private final DepartureCapacityReader capacityReader;
     private final org.springframework.context.ApplicationEventPublisher events;
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.example.tour_service.operations.OperationAudit audit;
+    private final com.example.tour_service.operations.OperationAudit audit;
+    private final com.example.tour_service.operations.MeetingPointService meetingPoints;
+    private final com.example.tour_service.repository.VehicleRepository vehicles;
 
     @org.springframework.beans.factory.annotation.Value("${app.booking.sales-cutoff:PT4H}")
     private java.time.Duration salesCutoff = java.time.Duration.ofHours(4);
@@ -248,6 +249,7 @@ public class TourDepartureService {
                 .returnDate((tourDepartureRequest.getReturnDate()))
                 .availableSeats((short)total)
                 .capacity(total)
+                .operationalStatus("DRAFT")
                 .tour(tour)
                 .build();
 
@@ -280,7 +282,7 @@ public class TourDepartureService {
         var nextReturn=request.getReturnDate()==null?departure.getReturnDate():request.getReturnDate();
         boolean datesChanged=!nextDate.equals(departure.getDepartureDate()) || !nextReturn.equals(departure.getReturnDate());
         if(datesChanged) conflict("Không đổi ngày/giờ trực tiếp. Chỉ dời chuyến bằng quy trình sự cố bắt buộc và xác nhận của khách");
-        if(!"OPEN".equals(departure.getOperationalStatus())) conflict("Lịch đang có sự cố; xử lý tại mục dời lịch");
+        if(!java.util.Set.of("OPEN", "DRAFT").contains(departure.getOperationalStatus())) conflict("Lịch đang có sự cố; xử lý tại mục dời lịch");
         validateDates(nextDate,nextReturn);
         if(total<state.occupied()) conflict("Tổng sức chứa không thể nhỏ hơn "+state.occupied()+" chỗ đã thanh toán/đang giữ");
         String previous = departure.getCapacity() + " tổng chỗ / " + departure.getAvailableSeats() + " chỗ còn";
@@ -292,6 +294,37 @@ public class TourDepartureService {
         // Capacity or seat edits change the widget's "next departure" block.
         AfterCommit.run(() -> events.publishEvent(new TourDeparturesChangedEvent()),
                 "Cannot evict the random tour cache after updating departure " + saved.getId());
+        return toResponse(saved);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public TourDepartureResponse open(int id) {
+        var departure = locked(id);
+        if ("OPEN".equals(departure.getOperationalStatus())) return toResponse(departure);
+        if (!"DRAFT".equals(departure.getOperationalStatus()) || !departure.getDepartureDate().isAfter(now()))
+            conflict("Chỉ mở bán lịch nháp chưa đến giờ khởi hành.");
+        meetingPoints.requireValidPickup(id);
+        departure.setOperationalStatus("OPEN");
+        var saved = tourDepartureRepository.saveAndFlush(departure);
+        AfterCommit.run(() -> events.publishEvent(new TourDeparturesChangedEvent()),
+                "Cannot evict the random tour cache after opening departure " + id);
+        return toResponse(saved);
+    }
+
+    @org.springframework.transaction.annotation.Transactional
+    public TourDepartureResponse assignVehicle(int id, String vehicleId) {
+        var departure = locked(id);
+        if (!java.util.Set.of("OPEN", "DRAFT", "REPLACEMENT_ONLY").contains(departure.getOperationalStatus())
+                || !departure.getReturnDate().isAfter(now()))
+            conflict("Không thể đổi xe của lịch đã kết thúc hoặc đang xử lý sự cố.");
+        if (vehicleId != null && vehicles.findById(vehicleId).filter(vehicle -> vehicle.getCapacity() != null
+                && vehicle.getCapacity() > 0).isEmpty())
+            conflict("Chọn xe có sức chứa đã được cấu hình.");
+        if (java.util.Objects.equals(departure.getOperatingVehicleId(), vehicleId)) return toResponse(departure);
+        String previous = departure.getOperatingVehicleId();
+        departure.setOperatingVehicleId(vehicleId);
+        var saved = tourDepartureRepository.saveAndFlush(departure);
+        audit.record("VEHICLE_ASSIGNMENT", id, previous, vehicleId);
         return toResponse(saved);
     }
 
@@ -310,6 +343,7 @@ public class TourDepartureService {
                 .availableSeats(tourDeparture.getAvailableSeats())
                 .capacity(tourDeparture.getCapacity())
                 .operationalStatus(tourDeparture.getOperationalStatus())
+                .operatingVehicleId(tourDeparture.getOperatingVehicleId())
                 .version(tourDeparture.getVersion())
                 .tourId(tourDeparture.getTour().getId())
                 .build();

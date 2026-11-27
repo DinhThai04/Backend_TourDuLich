@@ -2,7 +2,6 @@ package com.example.tour_service.dto.internal;
 
 import lombok.*;
 
-import java.math.BigDecimal;
 
 @Data
 @Builder

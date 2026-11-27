@@ -3,9 +3,6 @@ package com.example.auth_service.service;
 import org.springframework.stereotype.Service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.domain.Specification;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -22,8 +19,6 @@ import com.example.auth_service.exception.AppException;
 @Service    
 @RequiredArgsConstructor
 public class RoleService {
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.example.auth_service.operations.AdminAuditEvents adminAudit;
     private static final int MAX_REFERENCE_ROWS = 1000;
     /** Names the code or the seed data depends on; a second role with one of them would be ambiguous. */
     private static final Set<String> RESERVED_ROLE_NAMES = Set.of("admin", "customer", "user");
@@ -33,8 +28,8 @@ public class RoleService {
     private final AdminContinuity adminContinuity;
     private final com.example.auth_service.repository.UserRepository userRepository;
     private final SessionEpochService sessionEpochService;
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.example.auth_service.operations.OperationAudit audit;
+    private final com.example.auth_service.operations.OperationAudit audit;
+    private final com.example.auth_service.operations.AdminAuditEvents adminAudit;
 
     @Value("${app.registration.customer-role-name:Khách Hàng}")
     private String customerRoleName;

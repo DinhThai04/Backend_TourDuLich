@@ -1,6 +1,5 @@
 package com.example.auth_service.dto.request;
 
-import org.springframework.web.multipart.MultipartFile;
 
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;

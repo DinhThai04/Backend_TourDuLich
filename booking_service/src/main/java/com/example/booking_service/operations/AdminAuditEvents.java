@@ -34,7 +34,7 @@ public class AdminAuditEvents {
         event.put("occurredAt", Instant.now().toString());
         event.put("correlationId", java.util.Objects.toString(org.slf4j.MDC.get("requestId"), id));
         event.put("actorId", String.valueOf(actorId));
-        event.put("actorType", access.admin() ? "ADMIN" : "STAFF");
+        event.put("actorType", access.admin() ? "ADMIN" : access.can("TOUR_GUIDE_OPERATE") ? "TOUR_GUIDE" : "STAFF");
         event.put("actorName", Objects.toString(account.get("username"), "Quản trị viên #" + actorId));
         event.put("actorRole", access.admin() ? "SUPER_ADMIN" : account.get("role"));
         event.put("actionGroup", "OPERATIONS");

@@ -4,7 +4,7 @@ import com.cloudinary.Cloudinary;
 import com.cloudinary.utils.ObjectUtils;
 import com.example.file_service.dto.FileInfo;
 import com.example.file_service.entity.FileMgmt;
-import org.springframework.beans.factory.annotation.Autowired;
+import lombok.RequiredArgsConstructor;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
 import org.springframework.stereotype.Repository;
@@ -16,15 +16,14 @@ import java.util.Objects;
 import java.util.UUID;
 
 @Repository
+@RequiredArgsConstructor
 public class FileRepository {
 
-    @Autowired
-    private Cloudinary cloudinary;
+    private final Cloudinary cloudinary;
 
     public FileInfo store(MultipartFile file) throws IOException {
         com.example.file_service.service.ImageUploadPolicy.validate(java.util.List.of(file));
-        // Upload lên Cloudinary
-        Map uploadResult = cloudinary.uploader().upload(
+        Map<?, ?> uploadResult = cloudinary.uploader().upload(
                 file.getBytes(),
                 ObjectUtils.asMap(
                         "public_id", UUID.randomUUID().toString(),
@@ -41,8 +40,6 @@ public class FileRepository {
     }
 
     public Resource read(FileMgmt fileMgmt) throws IOException {
-        // Cloudinary không cần đọc file từ local.
-        // Nếu bạn muốn tải file từ URL của Cloudinary:
         byte[] data = new CloudinaryImageReader().read(fileMgmt.getUrl(), cloudinary.config.cloudName);
         return new ByteArrayResource(data);
     }
@@ -51,7 +48,7 @@ public class FileRepository {
     public void delete(FileMgmt fileMgmt) {
         if (!canDelete(fileMgmt)) throw new IllegalArgumentException("Chưa xác minh được public_id của ảnh trong tài khoản Cloudinary này; cần kiểm tra thủ công");
         try {
-            Map result = cloudinary.uploader().destroy(fileMgmt.getPath(), ObjectUtils.asMap("resource_type", "image", "invalidate", true));
+            Map<?, ?> result = cloudinary.uploader().destroy(fileMgmt.getPath(), ObjectUtils.asMap("resource_type", "image", "invalidate", true));
             if (!java.util.Set.of("ok", "not found").contains(Objects.toString(result.get("result"), "")))
                 throw new com.example.file_service.exception.MediaStorageException("Cloudinary chưa xác nhận xóa ảnh; dữ liệu ảnh được giữ lại để thử lại");
         } catch (IOException e) {

@@ -12,7 +12,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.List;
 import java.util.Map;
 
 @Service
@@ -118,23 +117,18 @@ public class RescheduleRefundSaga {
 		long changeId = ((Number) payload.get("changeId")).longValue();
 		
 		try {
-			// Step 1: Release hold on source departure
 			releaseHold(sourceDepartureId, seats);
 			jdbc.update("UPDATE booking_saga SET status = 'SOURCE_HOLD_RELEASED', current_step = 'SOURCE_HOLD_RELEASED', updated_at = ? WHERE id = ?", LocalDateTime.now(), sagaId);
 			
-			// Step 2: Create hold on target departure
 			createHold(targetDepartureId, seats, bookingId);
 			jdbc.update("UPDATE booking_saga SET status = 'TARGET_HOLD_CREATED', current_step = 'TARGET_HOLD_CREATED', updated_at = ? WHERE id = ?", LocalDateTime.now(), sagaId);
 			
-			// Step 3: Update booking with new departure
 			jdbc.update("UPDATE booking SET tour_departure_id = ? WHERE id = ?", targetDepartureId, bookingId);
 			jdbc.update("UPDATE booking_reservation SET departure_id = ?, departure_at = ?, updated_at = ? WHERE booking_id = ?", 
 					targetDepartureId, payload.get("targetDepartureAt"), LocalDateTime.now(), bookingId);
 			
-			// Step 4: Update change record
 			jdbc.update("UPDATE booking_change SET status = 'APPROVED', applied_at = ?, active_key = NULL, version = version + 1 WHERE id = ?", LocalDateTime.now(), changeId);
 			
-			// Step 5: Send notification
 			sendMail(bookingId, "BOOKING_RESCHEDULED");
 			
 			jdbc.update("UPDATE booking_saga SET status = 'COMPLETED', current_step = 'COMPLETED', updated_at = ? WHERE id = ?", LocalDateTime.now(), sagaId);
@@ -153,18 +147,15 @@ public class RescheduleRefundSaga {
 		long changeId = ((Number) payload.get("changeId")).longValue();
 		
 		try {
-			// Step 1: Initiate refund via payment service
 			paymentClient.refund(bookingId, refundAmount, refundReference);
 			jdbc.update("UPDATE booking_saga SET status = 'PAYMENT_REFUND_INITIATED', current_step = 'PAYMENT_REFUND_INITIATED', updated_at = ? WHERE id = ?", LocalDateTime.now(), sagaId);
 			
-			// Step 2: Payment service handles refund event propagation to invoice_service asynchronously.
+			// Payment service handles refund event propagation to invoice_service asynchronously.
 			jdbc.update("UPDATE booking_saga SET status = 'INVOICE_UPDATED', current_step = 'INVOICE_UPDATED', updated_at = ? WHERE id = ?", LocalDateTime.now(), sagaId);
 			
-			// Step 4: Update change record
 			jdbc.update("UPDATE booking_change SET status = 'REFUNDED', refund_recorded_at = ?, refund_amount = ?, refund_reference = ?, refund_recorded_by = ?, version = version + 1 WHERE id = ?", 
 					LocalDateTime.now(), refundAmount, refundReference, 0, changeId);
 			
-			// Step 5: Send notification
 			sendMail(bookingId, "REFUND_PROCESSED");
 			
 			jdbc.update("UPDATE booking_saga SET status = 'COMPLETED', current_step = 'COMPLETED', updated_at = ? WHERE id = ?", LocalDateTime.now(), sagaId);

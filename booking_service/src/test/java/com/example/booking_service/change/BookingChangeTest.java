@@ -68,7 +68,7 @@ class BookingChangeTest {
         db.jdbc.update("INSERT INTO tour_departure (id, tour_id, departure_date, return_date, available_seats, capacity, tour_code) VALUES (2, 1, ?, ?, 10, 10, 'TARGET')", start.plusDays(10), start.plusDays(12));
 
         var notificationClient = mock(NotificationMailClient.class);
-        var publisher = new BookingMailOutboxPublisher(db.jdbc, notificationClient);
+        var publisher = new BookingMailOutboxPublisher(db.jdbc, notificationClient, "1970-01-01T00:00:00");
         var tourClient = mock(TourInternalClient.class);
         this.tourClient = tourClient;
         var authClient = mock(AuthInternalClient.class);
@@ -92,7 +92,7 @@ class BookingChangeTest {
                 new ChangeLedger(db.jdbc, tourC, pricingClient, payC, invC),
                 access, new ReservationPolicy(),
                 new ChangeMailEvents(db.jdbc, publisher, clock, authClient, tourClient),
-                clock, db.manager, authClient, tourC, payC);
+                clock, db.manager, authClient, tourC, payC, org.mockito.Mockito.mock(com.example.booking_service.operations.AdminAuditEvents.class));
 
         eligibility = new MailEligibility(db.jdbc, clock, authClient, tourC, payC, invC);
         login(7);
@@ -253,6 +253,36 @@ class BookingChangeTest {
     }
 
     @Test
+    void overdueUnconfirmedIncidentQueuesCustomerProposalAndSupportsReschedule() {
+        int booking = booking(true);
+        clock.set(start.plusHours(1));
+        admin();
+        var valid = shopInput();
+        var late = new ChangeRequests.Shop(valid.clientKey(), 1, valid.expectedVersion(),
+                valid.reasonCode(), valid.reason(), valid.evidence(), true,
+                valid.departureAt(), valid.returnAt(), 10, start.plusDays(1));
+        var root = service.shop(late, false);
+        assertEquals("SUSPENDED", db.jdbc.queryForObject("SELECT operational_status FROM tour_departure WHERE id=1", String.class));
+        assertTrue(db.count("booking_outbox") > 0);
+        var request = request();
+        login(7);
+        var accepted = service.respond(id(request), decision(request, "ACCEPT"));
+        admin();
+        service.review(id(accepted), decision(accepted, "APPROVE"));
+        assertEquals(n(root, "target_departure_id"), db.jdbc.queryForObject(
+                "SELECT tour_departure_id FROM booking WHERE id=?", Integer.class, booking));
+    }
+
+    @Test
+    void cannotOpenIncidentAfterRealDepartureWasConfirmed() {
+        booking(true);
+        db.jdbc.update("INSERT INTO departure_manifest(departure_id,actual_departure_at,confirmed_by) VALUES(1,?,7)", start);
+        clock.set(start.plusHours(1));
+        conflict(this::proposal);
+        assertEquals(0, db.count("departure_change"));
+    }
+
+    @Test
     void suspendedOldHoldsDoNotExpireAndUnpaidTransferDoesNotResetOriginalDeadline() {
         int b = booking(false);
         proposal();
@@ -388,7 +418,7 @@ class BookingChangeTest {
         var changeMail = new ChangeMailEvents(db.jdbc, publisher, clock, authClient, tourClient);
         var failingService = new BookingChangeService(db.jdbc,
                 new ChangeLedger(db.jdbc, com.example.booking_service.TestInternalClients.tour(db.jdbc), pricingClient, com.example.booking_service.TestInternalClients.payment(db.jdbc), com.example.booking_service.TestInternalClients.invoice(db.jdbc)),
-                new BookingAccess(), new ReservationPolicy(), changeMail, clock, db.manager, authClient, com.example.booking_service.TestInternalClients.tour(db.jdbc), com.example.booking_service.TestInternalClients.payment(db.jdbc));
+                new BookingAccess(), new ReservationPolicy(), changeMail, clock, db.manager, authClient, com.example.booking_service.TestInternalClients.tour(db.jdbc), com.example.booking_service.TestInternalClients.payment(db.jdbc), org.mockito.Mockito.mock(com.example.booking_service.operations.AdminAuditEvents.class));
         login(7);
         assertThrows(IllegalArgumentException.class, () -> failingService.customer(customer(b)));
         assertEquals(0, db.count("booking_change"));
@@ -448,7 +478,7 @@ class BookingChangeTest {
                     .userId("7")
                     .tourDepartureId("" + d)
                     .listOfCustomers(List.of(com.example.booking_service.dto.request.CustomerRequest.builder()
-                            .fullName("Test").birthdate("2000-01-01").gender("Male").build()))
+                            .fullName("Test").birthdate("2000-01-01").gender("Male").address("12 Đường Lê Lợi, Phường Ba Đình, Thành phố Hà Nội").build()))
                     .build();
             conflict(() -> lifecycle.create(request));
         }
@@ -628,7 +658,7 @@ class BookingChangeTest {
                 .userId("7")
                 .tourDepartureId("2")
                 .listOfCustomers(List.of(com.example.booking_service.dto.request.CustomerRequest.builder()
-                        .fullName("Test guest").birthdate("2000-01-01").gender("Male").build()))
+                        .fullName("Test guest").birthdate("2000-01-01").gender("Male").address("12 Đường Lê Lợi, Phường Ba Đình, Thành phố Hà Nội").build()))
                 .build();
         assertNotNull(lifecycle.create(request).getId());
     }
@@ -664,7 +694,7 @@ class BookingChangeTest {
                 .userId("7")
                 .tourDepartureId("2")
                 .listOfCustomers(List.of(com.example.booking_service.dto.request.CustomerRequest.builder()
-                        .fullName("Test guest").birthdate("2000-01-01").gender("Male").build()))
+                        .fullName("Test guest").birthdate("2000-01-01").gender("Male").address("12 Đường Lê Lợi, Phường Ba Đình, Thành phố Hà Nội").build()))
                 .build();
         assertNotNull(lifecycle.create(request).getId());
     }

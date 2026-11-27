@@ -20,4 +20,6 @@ public class Vehicle {
     @Column(nullable = false)
     private String vehicleType;
 
+    private Integer capacity;
+
 }

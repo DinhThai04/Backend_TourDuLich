@@ -3,6 +3,7 @@ package com.example.booking_service.reservation;
 import com.example.booking_service.repository.httpclient.TourInternalClient;
 import com.example.booking_service.repository.httpclient.AuthInternalClient;
 import com.example.booking_service.operations.AdminAuditEvents;
+import com.example.booking_service.repository.httpclient.InvoiceInternalClient;
 import feign.FeignException;
 import org.springframework.http.HttpStatus;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -19,18 +20,20 @@ import java.util.Map;
 @Service
 public class DepartureManifestService {
     public enum Attendance { EXPECTED, BOARDED, NO_SHOW, RETURNED, SEPARATED, UNVERIFIED_RETURN }
-    public enum Phase { SCHEDULED, BOARDING, IN_PROGRESS, AWAITING_CLOSEOUT, COMPLETED, CANCELLED, SUSPENDED }
+    public enum Phase { SCHEDULED, BOARDING, IN_PROGRESS, AWAITING_CLOSEOUT, COMPLETED, CANCELLED, INCIDENT, OVERDUE_UNCONFIRMED }
 
     public record Passenger(int customerId, int bookingId, String name, Attendance status, String note, String meetingPointName,
-                            String pickupTime, int accountId, String guardianNote) {}
+                            String pickupTime, int accountId, String guardianNote, BookingPickupService.PickupStatus pickupStatus) {}
     public record Manifest(Phase phase, LocalDateTime completedAt, Integer completedBy, String closeoutNote,
-                           List<Passenger> passengers, Integer guideAccountId, String outcome) {}
+                           List<Passenger> passengers, Integer guideAccountId, String outcome,
+                           LocalDateTime actualDepartureAt, Integer confirmedBy) {}
     public record Report(int guideId, String status, String summary, String incidentNote, String handoverNote,
                          LocalDateTime submittedAt, Integer reviewedBy, LocalDateTime reviewedAt, String adminComment) {}
     public enum Progress { NOT_STARTED, IN_PROGRESS, COMPLETED, DELAYED, SKIPPED }
     public record Checkpoint(int id, int day, String title, Progress status, LocalDateTime actualTime, String note) {}
-    private record Closeout(LocalDateTime at, Integer actor, String note, String outcome) {}
-    private record Schedule(LocalDateTime departure, LocalDateTime returns, String status, String code) {}
+    private record Closeout(LocalDateTime at, Integer actor, String note, String outcome, LocalDateTime actualDepartureAt, Integer confirmedBy) {}
+    private record Schedule(LocalDateTime departure, LocalDateTime returns, String status, String code,
+                            List<BookingPickupService.Option> pickups) {}
 
     private final JdbcTemplate jdbc;
     private final BookingAccess access;
@@ -38,15 +41,17 @@ public class DepartureManifestService {
     private final Clock clock;
     private final AuthInternalClient accounts;
     private final AdminAuditEvents auditEvents;
+    private final InvoiceInternalClient invoices;
 
     public DepartureManifestService(JdbcTemplate jdbc, BookingAccess access, TourInternalClient tours, Clock clock, AuthInternalClient accounts,
-                                    AdminAuditEvents auditEvents) {
+                                    AdminAuditEvents auditEvents, InvoiceInternalClient invoices) {
         this.jdbc = jdbc;
         this.access = access;
         this.tours = tours;
         this.clock = clock;
         this.accounts = accounts;
         this.auditEvents = auditEvents;
+        this.invoices = invoices;
     }
 
     @Transactional(readOnly = true)
@@ -54,6 +59,33 @@ public class DepartureManifestService {
         requireOperator(departureId);
         var schedule = schedule(departureId);
         return manifest(departureId, schedule, closeout(departureId, false));
+    }
+
+    @Transactional(isolation = Isolation.READ_COMMITTED)
+    public Manifest confirmDeparture(int id, LocalDateTime actual, String reason) {
+        requireOperator(id);
+        var state = lock(id);
+        int actor = requireOperator(id);
+        var schedule = schedule(id);
+        if (state.actualDepartureAt() != null) return manifest(id, schedule, state);
+        var now = LocalDateTime.now(clock).withNano(0);
+        if (!"OPEN".equals(schedule.status()) || state.at() != null || now.isBefore(schedule.departure()))
+            throw conflict("Chỉ xác nhận xuất phát cho chuyến đang mở đã đến giờ khởi hành.");
+        boolean late = actual != null || !now.isBefore(schedule.departure().plusMinutes(15))
+                || !now.isBefore(schedule.returns());
+        String explanation = reason == null ? null : reason.strip();
+        if (late && (actual == null || explanation == null || explanation.isBlank()))
+            throw conflict("Nhập giờ xuất phát thực tế và lý do xác nhận muộn.");
+        var recorded = actual == null ? now : actual.withNano(0);
+        if (recorded.isBefore(schedule.departure().minusMinutes(90)) || recorded.isAfter(now)
+                || !recorded.isBefore(schedule.returns()))
+            throw conflict("Giờ xuất phát thực tế phải từ lúc mở điểm danh đến trước giờ về và không ở tương lai.");
+        jdbc.update("UPDATE departure_manifest SET actual_departure_at=?,confirmed_by=? WHERE departure_id=?",
+                recorded, actor, id);
+        auditEvents.record(actor, "DEPARTURE_CONFIRMED", "DEPARTURE", id, departureLabel(id, schedule),
+                "Xác nhận xuất phát", explanation, Map.of("status", "OVERDUE_UNCONFIRMED"),
+                Map.of("status", "IN_PROGRESS", "actualDepartureAt", recorded.toString()));
+        return manifest(id, schedule, closeout(id, false));
     }
 
     @Transactional(isolation = Isolation.READ_COMMITTED)
@@ -69,7 +101,8 @@ public class DepartureManifestService {
         requireOperator(departureId);
         var current = manifest(departureId, schedule, closeout);
         if (current.phase() == Phase.COMPLETED || current.phase() == Phase.CANCELLED
-                || current.phase() == Phase.SUSPENDED || current.phase() == Phase.SCHEDULED) {
+                || current.phase() == Phase.INCIDENT || current.phase() == Phase.OVERDUE_UNCONFIRMED
+                || current.phase() == Phase.SCHEDULED) {
             throw conflict("Chuyến chưa mở điểm danh hoặc đã khóa vận hành.");
         }
         var passenger = current.passengers().stream().filter(p -> p.customerId() == customerId)
@@ -124,7 +157,8 @@ public class DepartureManifestService {
         }
         String outcome = current.passengers().isEmpty() ? "COMPLETED_NO_PASSENGERS"
                 : current.passengers().stream().allMatch(p -> p.status() == Attendance.NO_SHOW) ? "COMPLETED_NO_SHOW" : "COMPLETED";
-        var closeout = new Closeout(LocalDateTime.now(clock).withNano(0), actor, note.strip(), outcome);
+        var closeout = new Closeout(LocalDateTime.now(clock).withNano(0), actor, note.strip(), outcome,
+                current.actualDepartureAt(), current.confirmedBy());
         jdbc.update("UPDATE departure_manifest SET completed_at=?,completed_by=?,closeout_note=?,outcome=? WHERE departure_id=?",
                 closeout.at(), actor, closeout.note(), outcome, departureId);
         auditEvents.record(actor, override ? "DEPARTURE_FORCE_COMPLETED" : "DEPARTURE_COMPLETED",
@@ -411,7 +445,7 @@ public class DepartureManifestService {
                 throw conflict("Lịch khởi hành chưa có mốc giờ đi và về hợp lệ.");
             }
             return new Schedule(start, end, String.valueOf(departure.get("operational_status")),
-                    (String) departure.get("tour_code"));
+                    (String) departure.get("tour_code"), BookingPickupService.parseOptions(departure));
         } catch (FeignException.NotFound missing) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy lịch khởi hành.");
         } catch (FeignException unavailable) {
@@ -429,18 +463,19 @@ public class DepartureManifestService {
 
     private Closeout closeout(int departureId, boolean lock) {
         return jdbc.query("""
-                SELECT completed_at,completed_by,closeout_note,outcome FROM departure_manifest WHERE departure_id=?
+                SELECT completed_at,completed_by,closeout_note,outcome,actual_departure_at,confirmed_by FROM departure_manifest WHERE departure_id=?
                 """ + (lock ? " FOR UPDATE" : ""), (rs, row) -> new Closeout(
                 rs.getObject("completed_at", LocalDateTime.class),
-                rs.getObject("completed_by", Integer.class), rs.getString("closeout_note"), rs.getString("outcome")), departureId)
-                .stream().findFirst().orElse(new Closeout(null, null, null, null));
+                rs.getObject("completed_by", Integer.class), rs.getString("closeout_note"), rs.getString("outcome"),
+                rs.getObject("actual_departure_at", LocalDateTime.class), rs.getObject("confirmed_by", Integer.class)), departureId)
+                .stream().findFirst().orElse(new Closeout(null, null, null, null, null, null));
     }
 
     private Manifest manifest(int id, Schedule schedule, Closeout closeout) {
+        var eligible = paidBookings(id);
         var passengers = jdbc.query("""
                 SELECT c.id, b.id AS booking_id, b.account_id, c.full_name, a.status, a.note, p.address AS meeting_point,p.arrival_time,c.guardian_name,c.guardian_phone
                 FROM booking b
-                JOIN booking_reservation r ON r.booking_id=b.id AND r.departure_id=b.tour_departure_id AND r.status='PAID'
                 JOIN customer c ON c.booking_id=b.id
                 LEFT JOIN departure_attendance a ON a.departure_id=b.tour_departure_id AND a.customer_id=c.id
                 LEFT JOIN booking_pickup_snapshot p ON p.booking_id=b.id AND p.departure_id=b.tour_departure_id
@@ -449,18 +484,60 @@ public class DepartureManifestService {
                 """, (rs, row) -> new Passenger(rs.getInt("id"), rs.getInt("booking_id"), rs.getString("full_name"),
                 rs.getString("status") == null ? Attendance.EXPECTED : Attendance.valueOf(rs.getString("status")),
                 rs.getString("note"),rs.getString("meeting_point"),rs.getString("arrival_time"),rs.getInt("account_id"),
-                rs.getString("guardian_name") == null ? null : rs.getString("guardian_name") + " · " + rs.getString("guardian_phone")), id);
-        return new Manifest(phase(schedule, closeout), closeout.at(), closeout.actor(), closeout.note(), passengers,
-                access.admin() ? guide(id) : null, closeout.outcome());
+                rs.getString("guardian_name") == null ? null : rs.getString("guardian_name") + " · " + rs.getString("guardian_phone"),
+                null), id);
+        var selection = new java.util.HashMap<Integer, BookingPickupService.PickupStatus>();
+        var confirmed = passengers.stream().filter(passenger -> eligible.contains(passenger.bookingId())).map(passenger -> {
+            var status = selection.computeIfAbsent(passenger.bookingId(),
+                    bookingId -> BookingPickupService.selection(jdbc, bookingId, id, schedule.pickups()).status());
+            return new Passenger(passenger.customerId(), passenger.bookingId(), passenger.name(), passenger.status(),
+                    passenger.note(), status == BookingPickupService.PickupStatus.CONFIRMED ? passenger.meetingPointName() : null,
+                    status == BookingPickupService.PickupStatus.CONFIRMED ? passenger.pickupTime() : null,
+                    passenger.accountId(), passenger.guardianNote(), status);
+        }).toList();
+        return new Manifest(phase(schedule, closeout), closeout.at(), closeout.actor(), closeout.note(), confirmed,
+                access.admin() ? guide(id) : null, closeout.outcome(), closeout.actualDepartureAt(), closeout.confirmedBy());
+    }
+
+    java.util.Set<Integer> paidBookings(int id) {
+        var paid = new java.util.HashSet<Integer>();
+        var legacy = jdbc.query("""
+                SELECT b.id, r.status AS reservation_status, r.departure_id AS reservation_departure_id
+                FROM booking b LEFT JOIN booking_reservation r ON r.booking_id=b.id
+                WHERE b.tour_departure_id=? AND b.status='CONFIRMED' ORDER BY b.id
+                """, (rs, row) -> {
+            int booking = rs.getInt("id");
+            String status = rs.getString("reservation_status");
+            if ("PAID".equals(status) && id == rs.getInt("reservation_departure_id")) {
+                paid.add(booking);
+                return null;
+            }
+            return booking;
+        }, id).stream().filter(java.util.Objects::nonNull).toList();
+        try {
+            for (int offset = 0; offset < legacy.size(); offset += 100) {
+                var batch = legacy.subList(offset, Math.min(legacy.size(), offset + 100));
+                for (var invoice : invoices.getInvoicesBatch(batch)) {
+                    if ("PAID".equals(invoice.get("status")) && invoice.get("bookingId") instanceof Number booking
+                            && batch.contains(booking.intValue())) paid.add(booking.intValue());
+                }
+            }
+        } catch (FeignException unavailable) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Chưa đối chiếu được hóa đơn để lập danh sách hành khách.");
+        }
+        return paid;
     }
 
     private Phase phase(Schedule schedule, Closeout closeout) {
         if (closeout.at() != null) return Phase.COMPLETED;
         if ("CANCELLED".equals(schedule.status())) return Phase.CANCELLED;
-        if ("SUSPENDED".equals(schedule.status())) return Phase.SUSPENDED;
+        if ("SUSPENDED".equals(schedule.status())) return Phase.INCIDENT;
+        if (!"OPEN".equals(schedule.status())) return Phase.SCHEDULED;
         var now = LocalDateTime.now(clock);
-        if (!now.isBefore(schedule.returns())) return Phase.AWAITING_CLOSEOUT;
-        if (!now.isBefore(schedule.departure())) return Phase.IN_PROGRESS;
+        if (closeout.actualDepartureAt() != null)
+            return now.isBefore(schedule.returns()) ? Phase.IN_PROGRESS : Phase.AWAITING_CLOSEOUT;
+        if (!now.isBefore(schedule.departure())) return Phase.OVERDUE_UNCONFIRMED;
         return now.isBefore(schedule.departure().minusMinutes(90)) ? Phase.SCHEDULED : Phase.BOARDING;
     }
 

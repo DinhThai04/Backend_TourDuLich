@@ -18,7 +18,8 @@ class RefundRecordingTest {
     void recordsARefundOnceAndRejectsConflictingEvidence() {
         JdbcTemplate jdbc = mock(JdbcTemplate.class);
         OutboxPublisher outbox = mock(OutboxPublisher.class);
-        var controller = new InternalPaymentController(mock(PaymentRepository.class), jdbc, outbox);
+        var controller = new InternalPaymentController(new com.example.payment_service.service.InternalPaymentService(
+                mock(PaymentRepository.class), jdbc, outbox));
         var paidAt = LocalDateTime.of(2026, 11, 1, 7, 0);
         when(jdbc.queryForList(contains("FROM payment WHERE booking_id="), eq(50))).thenReturn(
                 List.of(Map.of("status", "PAID", "account_id", 10, "total_booking_tour_expense", 100000, "day_of_pay", paidAt, "pay_method_id", 1)),

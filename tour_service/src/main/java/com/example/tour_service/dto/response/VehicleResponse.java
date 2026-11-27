@@ -11,4 +11,5 @@ import lombok.experimental.FieldDefaults;
 public class VehicleResponse {
     String id;
     String name;
+    Integer capacity;
 }

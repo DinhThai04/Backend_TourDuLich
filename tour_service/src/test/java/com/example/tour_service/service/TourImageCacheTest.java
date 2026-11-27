@@ -8,6 +8,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -107,6 +108,19 @@ class TourImageCacheTest {
         cache.update("7", List.of());
 
         assertTrue(cache.byTourId().isEmpty());
+    }
+
+    @Test
+    void failedSnapshotReplaceDoesNotLeaveTemporaryFiles() throws Exception {
+        var destination = Files.createDirectory(tempDir.resolve("tour-images.json"));
+        Files.createFile(destination.resolve("existing"));
+
+        cache.update("7", List.of("https://cdn/new.jpg"));
+
+        assertEquals(List.of("https://cdn/new.jpg"), cache.byTourId().get("7"));
+        try (var entries = Files.list(tempDir)) {
+            assertEquals(List.of(destination), entries.toList());
+        }
     }
 
     private TourImageCache newCache(FileClient client) {

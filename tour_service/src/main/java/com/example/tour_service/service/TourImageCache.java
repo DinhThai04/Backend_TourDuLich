@@ -160,14 +160,23 @@ public class TourImageCache {
     }
 
     private void writeSnapshot(Map<String, List<String>> images) {
+        Path temporary = null;
         try {
             Path directory = snapshotFile.toAbsolutePath().getParent();
             Files.createDirectories(directory);
-            Path temporary = Files.createTempFile(directory, "tour-images", ".json");
+            temporary = Files.createTempFile(directory, "tour-images", ".json");
             objectMapper.writeValue(temporary.toFile(), images);
             Files.move(temporary, snapshotFile, StandardCopyOption.REPLACE_EXISTING);
         } catch (IOException | RuntimeException failure) {
             log.warn("Cannot persist tour image snapshot {}: {}", snapshotFile, failure.toString());
+        } finally {
+            if (temporary != null) {
+                try {
+                    Files.deleteIfExists(temporary);
+                } catch (IOException | SecurityException failure) {
+                    log.warn("Cannot remove temporary tour image snapshot: {}", failure.getClass().getSimpleName());
+                }
+            }
         }
     }
 }

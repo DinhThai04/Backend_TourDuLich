@@ -1,6 +1,5 @@
 package com.example.tour_service.config;
 
-import org.springframework.security.oauth2.jwt.BadJwtException;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.stereotype.Component;
 

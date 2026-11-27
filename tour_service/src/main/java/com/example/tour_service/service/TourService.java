@@ -1,6 +1,5 @@
 package com.example.tour_service.service;
 
-import com.example.tour_service.dto.request.TourPriceBatchRequest;
 import com.example.tour_service.dto.request.UpdateTourRequest;
 import com.example.tour_service.dto.response.*;
 import com.example.tour_service.repository.TourSpecification;
@@ -40,8 +39,6 @@ import java.util.stream.Collectors;
 @Service
 @RequiredArgsConstructor
 public class TourService {
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.example.tour_service.operations.AdminAuditEvents adminAudit;
 
         /** The storefront list endpoint is not paginated, so it must stay bounded. */
         private static final int MAX_CATALOGUE_SIZE = 200;
@@ -70,6 +67,7 @@ public class TourService {
         private final TransactionTemplate transactions;
         private final org.springframework.jdbc.core.JdbcTemplate jdbc;
         private final TourGalleryProof galleryProof;
+    private final com.example.tour_service.operations.AdminAuditEvents adminAudit;
 
     public TourResponse getTourById(int id) {
         Tour tour = tourRepository.findById(id)

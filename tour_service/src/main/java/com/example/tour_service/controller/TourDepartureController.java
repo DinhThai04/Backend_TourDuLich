@@ -15,6 +15,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class TourDepartureController {
     private final TourDepartureService tourDepartureService;
+    public record VehicleAssignment(@jakarta.validation.constraints.Size(min = 1, max = 255) String vehicleId) {}
 
     @GetMapping("/upcoming")
     public ApiResponse<TourDepartureService.UpcomingPage> upcoming(@RequestParam(defaultValue = "0") int page,
@@ -67,6 +68,18 @@ public class TourDepartureController {
                 .result(tourDepartureService.create(request))
                 .message("Created Successfully")
                 .build();
+    }
+
+    @PostMapping("/{id}/open")
+    public ApiResponse<TourDepartureResponse> open(@PathVariable int id) {
+        return ApiResponse.<TourDepartureResponse>builder().result(tourDepartureService.open(id)).build();
+    }
+
+    @PutMapping("/{id}/vehicle")
+    public ApiResponse<TourDepartureResponse> assignVehicle(@PathVariable int id,
+            @jakarta.validation.Valid @RequestBody VehicleAssignment input) {
+        return ApiResponse.<TourDepartureResponse>builder()
+                .result(tourDepartureService.assignVehicle(id, input.vehicleId())).build();
     }
 
     @PutMapping("/{id}")

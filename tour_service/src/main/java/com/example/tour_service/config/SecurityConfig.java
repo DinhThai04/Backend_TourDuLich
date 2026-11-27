@@ -1,20 +1,13 @@
 package com.example.tour_service.config;
 
-import com.example.tour_service.exception.ErrorCode;
-import com.example.tour_service.dto.request.ApiResponse;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.http.HttpMethod;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
-import org.springframework.security.config.http.SessionCreationPolicy;
-import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationConverter;
@@ -22,10 +15,6 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtGra
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
-import java.util.Arrays;
-import java.util.List;
-import java.util.Set;
-import java.util.stream.Collectors;
 
 @Configuration
 @EnableWebSecurity
@@ -76,6 +65,7 @@ public class SecurityConfig {
                     .requestMatchers(HttpMethod.POST, "/tours", "/tours/**").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOURS_CREATE")
                     .requestMatchers(HttpMethod.PUT, "/tours", "/tours/**").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOURS_UPDATE")
                     .requestMatchers(HttpMethod.DELETE, "/tours", "/tours/**").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOURS_DELETE")
+                    .requestMatchers(HttpMethod.POST, "/tour-departures/*/open").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOUR_DEPARTURES_UPDATE")
                     .requestMatchers(HttpMethod.POST, "/tour-departures", "/tour-departures/**").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOUR_DEPARTURES_CREATE")
                     .requestMatchers(HttpMethod.PUT, "/tour-departures", "/tour-departures/**").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:TOUR_DEPARTURES_UPDATE")
                     .requestMatchers(HttpMethod.POST, "/locations", "/locations/**").hasAnyAuthority("SGU_SUPER_ADMIN", "PERM:LOCATIONS_CREATE")

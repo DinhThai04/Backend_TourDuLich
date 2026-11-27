@@ -82,7 +82,7 @@ class TourDeletionTest {
                         tempDir.resolve("tour-images.json").toString()),
                 mock(TourDepartureService.class),
                 new org.springframework.transaction.support.TransactionTemplate(transactionManager),
-                jdbc, mock(com.example.tour_service.service.TourGalleryProof.class));
+                jdbc, mock(com.example.tour_service.service.TourGalleryProof.class), org.mockito.Mockito.mock(com.example.tour_service.operations.AdminAuditEvents.class));
         Location location = Location.builder().city("Fixture").img("").type(LocationType.DEPARTURE).build();
         em.persist(location);
         Vehicle vehicle = Vehicle.builder().id("DELETE_BUS").vehicleType("Bus").build();

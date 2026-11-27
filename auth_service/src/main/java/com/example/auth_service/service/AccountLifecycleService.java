@@ -23,8 +23,7 @@ import java.util.UUID;
 
 @Service @RequiredArgsConstructor
 public class AccountLifecycleService {
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.example.auth_service.operations.AdminAuditEvents adminAudit;
+    private final com.example.auth_service.operations.AdminAuditEvents adminAudit;
 	private final UserRepository users;
 	private final UserAccountEventRepository events;
 	private final JdbcTemplate jdbc;

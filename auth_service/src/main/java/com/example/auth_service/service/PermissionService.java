@@ -22,8 +22,7 @@ import java.util.Set;
 @Transactional
 @RequiredArgsConstructor
 public class PermissionService {
-    @org.springframework.beans.factory.annotation.Autowired
-    private com.example.auth_service.operations.AdminAuditEvents adminAudit;
+    private final com.example.auth_service.operations.AdminAuditEvents adminAudit;
     private static final int MAX_REFERENCE_ROWS = 1000;
 
     private final PermissionRepository permissionRepository;

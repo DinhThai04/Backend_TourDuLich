@@ -4,7 +4,6 @@ import com.example.ai_service.account.BookingQuestions;
 import com.example.ai_service.advisor.PolicyCatalog;
 import com.example.ai_service.model.LanguageModel;
 import com.example.ai_service.model.ModelFailure;
-import com.example.ai_service.model.ModelResult;
 import com.example.ai_service.model.ModelTask;
 import com.example.ai_service.security.AiInputPolicy;
 import com.fasterxml.jackson.databind.ObjectMapper;

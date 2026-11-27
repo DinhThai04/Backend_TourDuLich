@@ -3,7 +3,6 @@ package com.example.tour_service.service;
 import com.example.tour_service.dto.request.VehicleRequest;
 import com.example.tour_service.dto.response.VehicleResponse;
 import com.example.tour_service.entity.Vehicle;
-import com.example.tour_service.enums.LocationType;
 import com.example.tour_service.repository.VehicleRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -27,7 +26,7 @@ public class VehicleService {
         if (vehicleRepository.existsById(vehicleRequest.getId()))
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Mã phương tiện đã tồn tại");
         try {
-            vehicleRepository.insertNew(vehicleRequest.getId(), vehicleRequest.getVehicleType());
+            vehicleRepository.insertNew(vehicleRequest.getId(), vehicleRequest.getVehicleType(), vehicleRequest.getCapacity());
         } catch (DataIntegrityViolationException taken) {
             // The id was claimed between the check and the insert; the key, not the caller, decides.
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Mã phương tiện đã tồn tại");
@@ -35,6 +34,7 @@ public class VehicleService {
         return VehicleResponse.builder()
                 .id(vehicleRequest.getId())
                 .name(vehicleRequest.getVehicleType())
+                .capacity(vehicleRequest.getCapacity())
                 .build();
     }
 
@@ -51,6 +51,7 @@ public class VehicleService {
         return VehicleResponse.builder()
                 .id(vehicle.getId())
                 .name(vehicle.getVehicleType())
+                .capacity(vehicle.getCapacity())
                 .build();
     }
 }

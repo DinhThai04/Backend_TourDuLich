@@ -35,6 +35,8 @@ class ManagementGatewayTest {
                 MockServerHttpRequest.delete("/api/v1/tour/tours/1").build(),
                 MockServerHttpRequest.get("/api/v1/pricing/prices").build(),
                 MockServerHttpRequest.get("/api/v1/tour/tour-departures/list").build(),
+                MockServerHttpRequest.post("/api/v1/tour/tour-departures/1/open").build(),
+                MockServerHttpRequest.post("/api/v1/tour/departures/1/confirm-departure").build(),
                 MockServerHttpRequest.post("/api/v1/pricing/prices").build(),
                 MockServerHttpRequest.post("/api/v1/search/tours").build()}) {
             var exchange = MockServerWebExchange.from(request); filter.filter(exchange, chain).block();

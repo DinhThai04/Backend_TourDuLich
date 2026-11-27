@@ -105,36 +105,26 @@ public class VnPayOrderService {
 		var snapshot = snapshot(bookingId);
 		if (snapshot != null) return new Quote(snapshotAmount(snapshot), unitPrices(snapshot), supplement(snapshot));
 		
-		// Get price via Pricing internal API
-		Object tourIdObj = departure.get("tour_id");
-		if (tourIdObj == null) throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour không tồn tại");
-		long tourId = ((Number) tourIdObj).longValue();
-		Map<String, Object> price;
-		try {
-			price = pricingClient.getPriceById(tourId);
-		} catch (Exception e) {
-			throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để thanh toán");
-		}
-		if (price == null || price.isEmpty())
-			throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để thanh toán");
-		
-		return new Quote(calculateAmount(customers, price), unitPrices(price), supplement(price));
-	}
+        var price = tourPrice(departure);
+        return new Quote(calculateAmount(customers, price), unitPrices(price), supplement(price));
+    }
 
-	/** A tour without a price row is a data problem for the operator, not a server fault. */
-	private Map<String, Object> tourPrice(Object tourId) {
-		// Get price via Pricing internal API
-		long id = ((Number) tourId).longValue();
-		Map<String, Object> price;
-		try {
-			price = pricingClient.getPriceById(id);
-		} catch (Exception e) {
-			throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để thanh toán");
-		}
-		if (price == null || price.isEmpty())
-			throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để thanh toán");
-		return price;
-	}
+    private Map<String, Object> tourPrice(Map<String, Object> departure) {
+        // Older Tour instances omit this field during a rolling deployment.
+        Object value = departure.getOrDefault("tour_price_id", departure.get("tour_id"));
+        Map<String, Object> price;
+        try {
+            long priceId = value instanceof Number number ? number.longValue() : Long.parseLong(String.valueOf(value));
+            if (priceId < 1) throw new IllegalArgumentException("Mã bảng giá không hợp lệ");
+            price = pricingClient.getPriceById(priceId);
+        } catch (Exception unavailable) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để thanh toán");
+        }
+        if (price == null || price.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để thanh toán");
+        }
+        return price;
+    }
 
 	private static boolean payable(Object status) {
 		return List.of("PENDING_PAYMENT", "CONFIRMED").contains(String.valueOf(status));
@@ -284,7 +274,7 @@ public class VnPayOrderService {
 		if (customers.isEmpty()) throw new IllegalArgumentException("Booking chưa có hành khách");
 		var snapshot = snapshot(bookingId);
 		long amount = snapshot != null ? snapshotAmount(snapshot)
-				: calculateAmount(customers, tourPrice(departure.get("tour_id")));
+				: calculateAmount(customers, tourPrice(departure));
 		BigDecimal expected;
 		try { expected = expectedAmount == null ? null : new BigDecimal(expectedAmount); }
 		catch (NumberFormatException malformed) { throw new IllegalArgumentException("Số tiền xác nhận không hợp lệ"); }

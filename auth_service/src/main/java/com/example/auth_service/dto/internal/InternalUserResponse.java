@@ -2,7 +2,6 @@ package com.example.auth_service.dto.internal;
 
 import lombok.*;
 
-import java.time.LocalDateTime;
 
 @Data
 @Builder

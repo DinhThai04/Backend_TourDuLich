@@ -26,7 +26,7 @@ class PriceValidationTest {
     TourPriceService service;
     MockMvc mvc;
     @BeforeEach void setup() {
-        repository=mock(TourPriceRepository.class);service=new TourPriceService(repository);
+        repository=mock(TourPriceRepository.class);service=new TourPriceService(repository, org.mockito.Mockito.mock(com.example.pricing_service.operations.OperationAudit.class), org.mockito.Mockito.mock(com.example.pricing_service.operations.AdminAuditEvents.class));
         mvc=MockMvcBuilders.standaloneSetup(new TourPriceController(service)).setControllerAdvice(new GlobalExceptionHandler())
                 .addFilters(new PriceBatchBodyFilter()).build();
     }

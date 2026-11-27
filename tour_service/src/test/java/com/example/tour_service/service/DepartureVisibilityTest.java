@@ -26,9 +26,13 @@ import static org.mockito.Mockito.when;
 /** Departure ids are sequential, so an anonymous caller must not be able to enumerate closed slots. */
 class DepartureVisibilityTest {
     private final TourDepartureRepository departures = mock(TourDepartureRepository.class);
+    private final com.example.tour_service.operations.MeetingPointService meetingPoints =
+            mock(com.example.tour_service.operations.MeetingPointService.class);
+    private final com.example.tour_service.repository.VehicleRepository vehicles =
+            mock(com.example.tour_service.repository.VehicleRepository.class);
     private final TourDepartureService service = new TourDepartureService(departures,
             mock(TourRepository.class), mock(PricingClient.class),
-            mock(DepartureCapacityReader.class), mock(org.springframework.context.ApplicationEventPublisher.class));
+            mock(DepartureCapacityReader.class), mock(org.springframework.context.ApplicationEventPublisher.class), mock(com.example.tour_service.operations.OperationAudit.class), meetingPoints, vehicles);
 
     @AfterEach void clearCaller() { SecurityContextHolder.clearContext(); }
 
@@ -64,6 +68,36 @@ class DepartureVisibilityTest {
             assertEquals(ErrorCode.TOUR_DEPARTURE_NOT_FOUND,
                     assertThrows(AppException.class, () -> service.getTourDepartureById(1)).getErrorCode());
         }
+    }
+
+    @Test void draftIsHiddenAndRequiresAValidPickupBeforeOpening() {
+        var draft = departure("DRAFT", LocalDateTime.now().plusDays(2));
+        catalogue(draft);
+        SecurityContextHolder.getContext().setAuthentication(anonymous());
+        assertThrows(AppException.class, () -> service.getTourDepartureById(1));
+        when(departures.lockById(1)).thenReturn(Optional.of(draft));
+        when(departures.saveAndFlush(draft)).thenReturn(draft);
+        org.mockito.Mockito.doThrow(new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.CONFLICT, "Thiếu điểm tập trung"))
+                .doNothing().when(meetingPoints).requireValidPickup(1);
+        assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> service.open(1));
+        assertEquals("DRAFT", draft.getOperationalStatus());
+        assertEquals("OPEN", service.open(1).getOperationalStatus());
+        assertEquals("OPEN", draft.getOperationalStatus());
+    }
+
+    @Test void assignsExactlyOneConfiguredVehicleAndCanRemoveIt() {
+        var draft = departure("DRAFT", LocalDateTime.now().plusDays(2));
+        when(departures.lockById(1)).thenReturn(Optional.of(draft));
+        when(departures.saveAndFlush(draft)).thenReturn(draft);
+        var van = com.example.tour_service.entity.Vehicle.builder().id("VAN").capacity(16).build();
+        var bus = com.example.tour_service.entity.Vehicle.builder().id("BUS").capacity(45).build();
+        when(vehicles.findById("VAN")).thenReturn(Optional.of(van));
+        when(vehicles.findById("BUS")).thenReturn(Optional.of(bus));
+        assertThrows(org.springframework.web.server.ResponseStatusException.class, () -> service.assignVehicle(1, "MISSING"));
+        assertEquals("VAN", service.assignVehicle(1, "VAN").getOperatingVehicleId());
+        assertEquals("BUS", service.assignVehicle(1, "BUS").getOperatingVehicleId());
+        org.junit.jupiter.api.Assertions.assertNull(service.assignVehicle(1, null).getOperatingVehicleId());
     }
 
     @Test void signedInCallerStillReadsClosedDeparturesOfTheirOwnHistory() {
