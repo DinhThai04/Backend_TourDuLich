@@ -35,7 +35,11 @@ public class InternalAuthAuthenticationFilter extends OncePerRequestFilter {
         }
 
         String internalKey = request.getHeader("X-Internal-Auth-Key");
-        if (internalKey == null || internalKey.isBlank() || !internalKey.equals(properties.getInternalKey())) {
+        String expectedKey = properties.getInternalKey();
+        if (internalKey == null || internalKey.isBlank() || expectedKey == null || expectedKey.isBlank()
+                || !java.security.MessageDigest.isEqual(
+                        internalKey.getBytes(java.nio.charset.StandardCharsets.UTF_8),
+                        expectedKey.getBytes(java.nio.charset.StandardCharsets.UTF_8))) {
             log.warn("Invalid or missing internal key for path: {}", path);
             response.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
             response.getWriter().write("{\"error\":\"Unauthorized\",\"message\":\"Invalid internal API key\"}");

@@ -20,15 +20,15 @@ import java.util.Optional;
 public class PaymentEventProcessor {
 
     private final InvoiceRepository invoiceRepository;
+    private final com.fasterxml.jackson.databind.ObjectMapper objectMapper;
 
     private static final ZoneId VIETNAM_ZONE = ZoneId.of("Asia/Ho_Chi_Minh");
 
     @Transactional
     public void process(String messageId, String eventType, String payload) {
-        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         PaymentSettlementEvent event;
         try {
-            event = mapper.readValue(payload, PaymentSettlementEvent.class);
+            event = objectMapper.readValue(payload, PaymentSettlementEvent.class);
         } catch (Exception e) {
             log.error("Failed to parse payment event payload: {}", e.getMessage());
             throw new RuntimeException("Failed to parse payment event payload", e);
@@ -53,7 +53,7 @@ public class PaymentEventProcessor {
         Optional<Invoice> existing = invoiceRepository.findByBookingId(bookingId);
         if (existing.isPresent()) {
             Invoice invoice = existing.get();
-            if (InvoiceStatus.PAID.equals(invoice.getStatus())) {
+            if (InvoiceStatus.PAID.equals(invoice.getStatus()) || InvoiceStatus.REFUNDED.equals(invoice.getStatus())) {
                 log.debug("Invoice already exists and is PAID for booking {}", bookingId);
                 return;
             }
@@ -82,10 +82,16 @@ public class PaymentEventProcessor {
         if (bookingId == null) return;
 
         Optional<Invoice> existing = invoiceRepository.findByBookingId(bookingId);
-        existing.ifPresent(invoice -> {
+        if (existing.isPresent()) {
+            Invoice invoice = existing.get();
             invoice.setStatus(InvoiceStatus.REFUNDED);
             invoiceRepository.save(invoice);
-            log.info("Marked invoice as REFUNDED for booking {} from payment event", bookingId);
-        });
+        } else if (event.getAccountId() != null && event.getAmountVnd() != null && event.getPaidAt() != null && event.getPayMethodId() != null) {
+            invoiceRepository.save(Invoice.builder().bookingId(bookingId).accountId(event.getAccountId())
+                    .dayOfPay(event.getPaidAt()).paymentMethodId(event.getPayMethodId()).status(InvoiceStatus.REFUNDED)
+                    .totalBookingTourExpense(BigDecimal.valueOf(event.getAmountVnd())).build());
+        } else {
+            throw new IllegalArgumentException("Missing settlement data for refund without invoice: " + bookingId);
+        }
     }
 }

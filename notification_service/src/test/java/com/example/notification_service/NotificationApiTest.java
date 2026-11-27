@@ -109,6 +109,28 @@ class NotificationApiTest {
     }
 
     @Test
+    void uncertainMailRequiresExplicitConfirmationAndCanOnlyBeQueuedOnce() throws Exception {
+        enqueueService.enqueue(request("booking:100:unknown"));
+        jdbc.update("UPDATE mail_outbox SET status='UNKNOWN'");
+        Long id = jdbc.queryForObject("SELECT id FROM mail_outbox", Long.class);
+        String path = "/internal/notifications/mail/bookings/100/" + id + "/retry";
+
+        mvc.perform(post(path).header("X-Internal-Notification-Key", KEY))
+                .andExpect(status().isConflict());
+        mvc.perform(post(path).param("confirmUncertain", "true"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(post(path).header("X-Internal-Notification-Key", KEY).param("confirmUncertain", "true"))
+                .andExpect(status().isNoContent());
+        mvc.perform(post(path).header("X-Internal-Notification-Key", KEY).param("confirmUncertain", "true"))
+                .andExpect(status().isConflict());
+        assertEquals("RETRY", jdbc.queryForObject("SELECT status FROM mail_outbox", String.class));
+
+        jdbc.update("UPDATE mail_outbox SET status='SENT',sent_at=CURRENT_TIMESTAMP");
+        mvc.perform(post(path).header("X-Internal-Notification-Key", KEY).param("confirmUncertain", "true"))
+                .andExpect(status().isConflict());
+    }
+
+    @Test
     void workerClaimsAndSendsMail() {
         enqueueService.enqueue(request("booking:100:sent"));
         AtomicReference<String> recipient = new AtomicReference<>();
@@ -121,7 +143,8 @@ class NotificationApiTest {
                 (to, mail) -> {
                     recipient.set(to);
                     payload.set(mail);
-                }, properties, mapper, Clock.system(ZoneId.of("Asia/Ho_Chi_Minh")));
+                }, properties, mapper, Clock.system(ZoneId.of("Asia/Ho_Chi_Minh")),
+                new com.example.notification_service.service.TicketReceiptMail("http://localhost", "test", "https://example.test"));
 
         worker.poll();
 

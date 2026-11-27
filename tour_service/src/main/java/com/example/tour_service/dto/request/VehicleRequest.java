@@ -19,4 +19,8 @@ public class VehicleRequest {
     @Size(max = 255, message = "Loại phương tiện tối đa 255 ký tự")
     String vehicleType;
 
+    @jakarta.validation.constraints.Min(1)
+    @jakarta.validation.constraints.Max(32767)
+    Integer capacity;
+
 }

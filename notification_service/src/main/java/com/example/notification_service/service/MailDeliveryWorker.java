@@ -30,14 +30,16 @@ public class MailDeliveryWorker {
     private final MailProperties properties;
     private final ObjectMapper mapper;
     private final Clock clock;
+    private final TicketReceiptMail ticketReceipt;
 
     public MailDeliveryWorker(MailOutboxRepository repository, MailSender sender,
-            MailProperties properties, ObjectMapper mapper, Clock clock) {
+            MailProperties properties, ObjectMapper mapper, Clock clock, TicketReceiptMail ticketReceipt) {
         this.repository = repository;
         this.sender = sender;
         this.properties = properties;
         this.mapper = mapper;
         this.clock = clock;
+        this.ticketReceipt = ticketReceipt;
         properties.validate();
     }
 
@@ -77,6 +79,14 @@ public class MailDeliveryWorker {
             return;
         }
         if (!repository.start(item, now(), now().plus(properties.getLease()))) return;
+        try {
+            payload = ticketReceipt.enrich(item, payload);
+        } catch (RuntimeException unavailable) {
+            var status = item.attemptCount() + 1 >= properties.getMaxAttempts()
+                    ? MailDeliveryStatus.FAILED : MailDeliveryStatus.RETRY;
+            finish(item, status, "Ticket information unavailable", now().plusMinutes(10));
+            return;
+        }
         MailDeliveryStatus result = MailDeliveryStatus.SENT;
         String reason = null;
         LocalDateTime next = now();

@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import java.util.List;
 import java.util.Map;
 
-@FeignClient(name = "booking-service-internal", url = "${app.services.booking-base-url:http://localhost:8082/booking}", configuration = BookingFeignConfiguration.class)
+@FeignClient(name = "booking-service-internal", url = "${app.services.booking-base-url:http://localhost:8081/booking}", configuration = BookingFeignConfiguration.class)
 public interface BookingInternalClient {
 
     @GetMapping("/internal/booking/users/{userId}/active-bookings")

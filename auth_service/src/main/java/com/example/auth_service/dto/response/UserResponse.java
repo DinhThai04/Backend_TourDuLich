@@ -1,7 +1,5 @@
 package com.example.auth_service.dto.response;
 
-import java.util.List;
-import java.util.Set;
 
 import lombok.*;
 import lombok.experimental.FieldDefaults;

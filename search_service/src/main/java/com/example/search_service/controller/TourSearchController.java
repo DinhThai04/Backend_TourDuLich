@@ -2,13 +2,10 @@ package com.example.search_service.controller;
 
 import com.example.search_service.document.TourDocument;
 import com.example.search_service.dto.ApiResponse;
-import com.example.search_service.exception.AppException;
-import com.example.search_service.exception.ErrorCode;
 import com.example.search_service.service.TourSearchService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.web.bind.annotation.*;
-import java.util.List;
 
 @RestController
 @RequestMapping("/tours")

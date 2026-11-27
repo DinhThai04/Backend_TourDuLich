@@ -23,7 +23,7 @@ public interface TourDepartureRepository extends JpaRepository<TourDeparture, In
 
     @Query("""
             select new com.example.tour_service.dto.response.UpcomingDepartureResponse(
-                d.id, t.id, t.tourTitle, d.tourCode, d.departureDate, d.availableSeats)
+                d.id, t.id, t.tourTitle, d.tourCode, d.departureDate, d.availableSeats, d.capacity)
             from TourDeparture d join d.tour t
             where d.departureDate >= :from and d.departureDate < :until
               and d.operationalStatus = 'OPEN'
@@ -43,7 +43,4 @@ public interface TourDepartureRepository extends JpaRepository<TourDeparture, In
             """)
     List<TourDeparture> findOpenFutureByTourIds(@Param("tourIds") List<Integer> tourIds,
                                                 @Param("now") LocalDateTime now);
-
-    @Query(value = "SELECT COUNT(*) FROM reviews WHERE user_id = :userId", nativeQuery = true)
-    long countReviewsByUserId(@Param("userId") Long userId);
 }

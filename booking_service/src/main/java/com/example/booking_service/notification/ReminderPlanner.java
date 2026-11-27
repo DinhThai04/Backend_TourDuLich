@@ -1,13 +1,14 @@
 package com.example.booking_service.notification;
 
 import com.example.booking_service.config.BookingMailOutboxPublisher;
+import com.example.booking_service.repository.httpclient.AuthInternalClient;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.example.booking_service.repository.httpclient.InvoiceInternalClient;
 import com.example.booking_service.repository.httpclient.PaymentInternalClient;
 import com.example.booking_service.repository.httpclient.TourInternalClient;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.PlatformTransactionManager;
-import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.*;
@@ -27,18 +28,16 @@ public class ReminderPlanner {
 	private final BookingMailOutboxPublisher publisher;
 	private final MailProperties properties;
 	private final Clock clock;
-	private final TransactionTemplate transactions;
+	private final ObjectMapper json;
 	private final ReminderStateReader reader;
 	private final ReminderRules rules = new ReminderRules();
-	private final TourInternalClient tourClient;
 	
 	public ReminderPlanner(JdbcTemplate jdbc, BookingMailOutboxPublisher publisher, MailProperties properties, Clock clock,
-			PlatformTransactionManager manager, TourInternalClient tourClient,
+			ObjectMapper json, AuthInternalClient authClient, TourInternalClient tourClient,
 			PaymentInternalClient paymentClient, InvoiceInternalClient invoiceClient) {
 		this.jdbc=jdbc; this.publisher=publisher; this.properties=properties; this.clock=clock;
-		this.transactions=new TransactionTemplate(manager);
-		this.reader=new ReminderStateReader(jdbc, null, tourClient, paymentClient, invoiceClient);
-		this.tourClient = tourClient;
+		this.json=json;
+		this.reader=new ReminderStateReader(jdbc, authClient, tourClient, paymentClient, invoiceClient);
 	}
 	public Result dispatch(Request request) {
 		LocalDateTime now=LocalDateTime.now(clock).withNano(0);
@@ -52,36 +51,7 @@ public class ReminderPlanner {
 		for(int index=0;index<count;index++) {
 			int id=ids.get(index); cursor=id;
 			try {
-				// Check departure date via Tour internal API
-				var booking = jdbc.queryForMap("SELECT tour_departure_id FROM booking WHERE id=?", id);
-				Integer departureId = (Integer) booking.get("tour_departure_id");
-				if (departureId == null) continue;
-				LocalDateTime departureDate;
-				try {
-					Map<String, Object> departure = tourClient.getDeparture(departureId);
-					Object depDate = departure.get("departure_date");
-					departureDate = depDate instanceof LocalDateTime ? (LocalDateTime) depDate : ((java.sql.Timestamp) depDate).toLocalDateTime();
-					if (!departureDate.toLocalDate().isAfter(now.toLocalDate())) continue;
-				} catch (Exception e) {
-					continue; // Skip if tour service unavailable
-				}
-				
-				String outcome=transactions.execute(tx -> {
-					var state=reader.read(id);
-					if(state.isEmpty()) return "skip";
-					var s=state.get();
-					var selected=rules.select(s,now);
-					if(selected.isEmpty()) return "skip";
-					if(properties.isTestMode() && !properties.getTestRecipient().equalsIgnoreCase(s.recipient())) return "skip";
-					if (!isValidRecipient(s.recipient())) { return "invalid_recipient"; }
-					var choice=selected.get();
-					if(request.dryRun()) return "preview";
-					var payload=new MailPayload(1,s.name(),s.tour(),s.departureId(),s.departureAt(),s.passengers(),
-							null,null,null,choice.deadline(),choice.daysBefore(),choice.due());
-					var payloadJson = toJson(payload);
-					publisher.sendNow(payloadJson);
-					return "created";
-				});
+				String outcome = planReminder(id, now, request.dryRun());
 				if("invalid_recipient".equals(outcome)) {
 					skipped++;invalidRecipients++;
 					log.warn("Reminder skipped for booking {} (invalid recipient)",id);
@@ -97,15 +67,33 @@ public class ReminderPlanner {
 		return new Result(request.dryRun(),count,eligible,created,exists,skipped,failed,cursor,more,invalidRecipients);
 	}
 
-	private boolean isValidRecipient(String recipient) {
-		return recipient != null && recipient.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$");
-	}
+    private String planReminder(int id, LocalDateTime now, boolean dryRun) throws JsonProcessingException {
+        var state = reader.read(id);
+        if (state.isEmpty()) return "skip";
+        var booking = state.get();
+        var selected = rules.select(booking, now);
+        if (selected.isEmpty()) return "skip";
+        String recipient = booking.recipient();
+        if (recipient == null || recipient.length() > 254 || !recipient.matches("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"))
+            return "invalid_recipient";
+        if (properties.isTestMode() && !recipient.equalsIgnoreCase(properties.getTestRecipient())) return "skip";
+        if (dryRun) return "preview";
 
-	private String toJson(Object value) {
-		try {
-			return new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(value);
-		} catch (com.fasterxml.jackson.core.JsonProcessingException e) {
-			throw new IllegalStateException("Cannot serialize payload", e);
-		}
-	}
+        var choice = selected.get();
+        boolean paymentReminder = choice.type() == MailEventType.PAYMENT_REMINDER;
+        String title = paymentReminder ? "Nhắc thanh toán" : "Nhắc khởi hành";
+        var format = java.time.format.DateTimeFormatter.ofPattern("HH:mm dd/MM/yyyy");
+        String details = paymentReminder ? "Hạn thanh toán: " + format.format(choice.deadline())
+                : "Giờ khởi hành: " + format.format(booking.departureAt());
+        String text = "Đơn #" + id + " · " + booking.tour() + ". " + details + " (giờ Việt Nam). "
+                + "Mở lịch sử đặt tour trên SGU Tour để kiểm tra thông tin mới nhất.";
+        String key = rules.key(booking, choice);
+        var payload = Map.of(
+                "eventKey", key, "eventType", choice.type().name(), "sourceService", "booking-service",
+                "bookingId", id, "accountId", booking.accountId(), "recipient", recipient,
+                "subject", "SGU Tour · " + title + " (#" + id + ")",
+                "html", "<p>" + org.springframework.web.util.HtmlUtils.htmlEscape(text) + "</p>",
+                "text", text, "scheduledAt", now.toString());
+        return publisher.enqueueOnce(id, key, json.writeValueAsString(payload)) ? "created" : "exists";
+    }
 }

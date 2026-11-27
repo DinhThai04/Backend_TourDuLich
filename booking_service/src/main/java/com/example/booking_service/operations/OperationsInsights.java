@@ -1,5 +1,6 @@
 package com.example.booking_service.operations;
 
+import com.example.booking_service.change.ChangeLedger;
 import com.example.booking_service.reservation.BookingAccess;
 import com.example.booking_service.repository.httpclient.InvoiceInternalClient;
 import com.example.booking_service.repository.httpclient.NotificationInternalClient;
@@ -19,6 +20,7 @@ import org.springframework.web.server.ResponseStatusException;
 
 @Service
 public class OperationsInsights {
+	public record AuditPage(List<Map<String, Object>> items, boolean hasNext, long total) {}
 	public record Review(LocalDateTime checkedAt, List<Map<String, Object>> items) {}
 	private final JdbcTemplate jdbc;
 	private final BookingAccess access;
@@ -44,30 +46,22 @@ public class OperationsInsights {
 		this.invoiceClient = invoiceClient;
 	}
 
-	@Transactional(readOnly = true, timeout = 5)
-	public Map<String, Object> report(LocalDate from, LocalDate through) {
+	public Map<String, Object> report(LocalDate from, LocalDate through, Integer tourId, String region) {
 		require("BOOKINGS_GET_ALL");
 		require("INVOICES_GET_ALL");
-		if (from == null || through == null || through.isBefore(from) || through.isAfter(from.plusDays(30)))
-			throw new IllegalArgumentException("Chỉ chọn khoảng báo cáo tối đa 31 ngày");
-		var reported = reportingClient.report(from, through);
-		if (reported.isPresent()) return reported.get();
-		// Booking-local fallback when reporting_service is disabled: never join foreign DB tables.
-		var start = from.atStartOfDay();
-		var until = through.plusDays(1).atStartOfDay();
-		return jdbc.queryForMap("""
-				SELECT
-				  totals.bookings, totals.expired,
-				  0 AS collected,
-				  (SELECT COALESCE(SUM(refund_amount),0) FROM booking_change
-					WHERE status='REFUNDED' AND updated_at>=? AND updated_at<?) AS schedule_refunds,
-				  0 AS reconciliation_refunds,
-				  (SELECT COUNT(*) FROM customer c JOIN booking b ON b.id=c.booking_id
-					WHERE b.status='CONFIRMED' AND b.tour_departure_id IS NOT NULL) AS confirmed_passengers
-				FROM (SELECT COUNT(*) AS bookings,
-						  COALESCE(SUM(CASE WHEN status='EXPIRED' THEN 1 ELSE 0 END),0) AS expired
-					FROM booking WHERE created_at>=? AND created_at<?) totals
-				""", start, until, start, until);
+		return new OperationsReport(jdbc, tourClient, paymentClient, clock).read(from, through, tourId, region);
+	}
+
+	public List<Map<String, Object>> invoiceTransactions(int bookingId) {
+		require("INVOICES_GET_ALL");
+		try {
+			if (invoiceClient.getInvoiceByBookingId(bookingId) == null) {
+				throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy hóa đơn");
+			}
+			return paymentClient.invoiceTransactions(bookingId);
+		} catch (feign.FeignException.NotFound e) {
+			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy hóa đơn", e);
+		}
 	}
 
 	public List<Map<String, Object>> delivery(int bookingId) {
@@ -76,23 +70,26 @@ public class OperationsInsights {
 		return wallClock(rows, "scheduled_at", "sent_at", "updated_at");
 	}
 
-	public void retryDelivery(int bookingId, long id) {
+	public void retryDelivery(int bookingId, long id, boolean confirmUncertain) {
 		if (!access.admin()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cần quyền quản trị để gửi lại");
 		try {
-			notificationClient.retryMail(bookingId, id);
+			notificationClient.retryMail(bookingId, id, confirmUncertain);
 		} catch (feign.FeignException.Conflict conflict) {
-			throw new ResponseStatusException(HttpStatus.CONFLICT, "Chỉ gửi lại email đã xác nhận thất bại");
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Email không còn đủ điều kiện để gửi lại hoặc cần xác nhận kết quả gửi trước");
 		}
 	}
 
-	public List<Map<String, Object>> audit(int page) {
+	public AuditPage audit(int page, int size) {
 		if (!access.admin()) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Cần quyền quản trị để xem nhật ký");
-		if (page < 0 || page > 10000) throw new IllegalArgumentException("Trang nhật ký không hợp lệ");
+		if (page < 0 || page > 10000 || size < 1 || size > 100) throw new IllegalArgumentException("Trang nhật ký không hợp lệ");
+		if (reportingClient.available()) return reportingClient.audit(page, size);
 		var rows = jdbc.queryForList("""
-				SELECT id,area,target_id,actor_id,before_value,after_value,created_at
-				FROM operation_audit ORDER BY id DESC LIMIT 21 OFFSET ?
-				""", page * 20);
-		return wallClock(rows, "created_at");
+				SELECT id,entity_type AS entityType,entity_id AS entityId,actor_id AS actorId,action,
+					before_json AS beforeValue,after_json AS afterValue,created_at AS occurredAt
+				FROM operation_audit ORDER BY id DESC LIMIT ? OFFSET ?
+				""", size, (long) page * size);
+		Long total = jdbc.queryForObject("SELECT COUNT(*) FROM operation_audit", Long.class);
+		return new AuditPage(wallClock(rows, "occurredAt"), total != null && total > ((long) page + 1) * size, total == null ? 0 : total);
 	}
 
 	private static List<Map<String, Object>> wallClock(List<Map<String, Object>> rows, String... fields) {
@@ -110,6 +107,12 @@ public class OperationsInsights {
 		require("BOOKINGS_GET_ALL");
 		var current = lastReview;
 		if (current != null) return current;
+		return scheduledReview();
+	}
+
+	@Transactional(readOnly = true, timeout = 5)
+	public Review rescan() {
+		require("BOOKINGS_GET_ALL");
 		return scheduledReview();
 	}
 
@@ -134,7 +137,6 @@ public class OperationsInsights {
 			if (departureId == null) {
 				items.add(Map.of(
 					"booking_id", row.get("id"),
-					"tour_departure_id", departureId,
 					"booking_status", status,
 					"issue", "MISSING_DEPARTURE"
 				));
@@ -176,7 +178,7 @@ public class OperationsInsights {
 			if (!reservationRows.isEmpty()) {
 				reservationStatus = (String) reservationRows.getFirst().get("status");
 				Object exp = reservationRows.getFirst().get("expires_at");
-				expiresAt = exp instanceof LocalDateTime ? (LocalDateTime) exp : ((java.sql.Timestamp) exp).toLocalDateTime();
+				expiresAt = ChangeLedger.date(exp);
 			}
 			
 			// Check payment/invoice via internal APIs
@@ -211,7 +213,7 @@ public class OperationsInsights {
 			}
 			if (paidInvoice && !paidPayment) issue = "MISSING_PAID_PAYMENT";
 
-			if (List.of("HELD", "CHECKOUT").contains(reservationStatus) && expiresAt != null) {
+			if (("HELD".equals(reservationStatus) || "CHECKOUT".equals(reservationStatus)) && expiresAt != null) {
 				if (expiresAt.isBefore(checkedAt.minusMinutes(10))
 						&& "OPEN".equals(operationalStatus) && !paidPayment && !paidInvoice
 						&& !openReconciliation && !inFlight) {

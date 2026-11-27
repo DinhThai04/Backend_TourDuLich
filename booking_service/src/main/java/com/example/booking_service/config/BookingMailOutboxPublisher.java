@@ -1,13 +1,12 @@
 package com.example.booking_service.config;
 
 import com.example.booking_service.config.NotificationMailClient;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
-import java.sql.Timestamp;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
@@ -15,7 +14,6 @@ import java.util.UUID;
 
 /** Delivers durable Booking-owned mail-requested events to Notification with at-least-once semantics. */
 @Component
-@RequiredArgsConstructor
 @Slf4j
 public class BookingMailOutboxPublisher {
     private static final int BATCH_SIZE = 25;
@@ -24,50 +22,53 @@ public class BookingMailOutboxPublisher {
 
     private final JdbcTemplate jdbc;
     private final NotificationMailClient notificationClient;
+    private final LocalDateTime dispatchCreatedFrom;
+
+    public BookingMailOutboxPublisher(JdbcTemplate jdbc, NotificationMailClient notificationClient,
+            @Value("${app.booking.mail.outbox.dispatch-created-from:1970-01-01T00:00:00}") String dispatchCreatedFrom) {
+        this.jdbc = jdbc;
+        this.notificationClient = notificationClient;
+        this.dispatchCreatedFrom = LocalDateTime.parse(dispatchCreatedFrom);
+    }
 
     @Scheduled(fixedDelayString = "${app.booking.outbox.poll-interval-ms:1000}")
     public void publishPendingEvents() {
-        LocalDateTime now = databaseNow();
         List<Map<String, Object>> candidates = jdbc.queryForList("""
-                SELECT id, event_id, aggregate_id, payload, status, available_at
+                SELECT id, payload, status, attempts
                 FROM booking_outbox
                 WHERE event_type = 'booking.mail.requested.v1'
                   AND status IN ('PENDING', 'PROCESSING')
-                  AND available_at <= ?
+                  AND available_at <= CURRENT_TIMESTAMP(6) AND created_at >= ?
                 ORDER BY id
                 LIMIT ?
-                """, Timestamp.valueOf(now), BATCH_SIZE);
+                """, dispatchCreatedFrom, BATCH_SIZE);
 
         candidates.forEach(this::deliverIfClaimed);
     }
 
     private void deliverIfClaimed(Map<String, Object> candidate) {
         long rowId = number(candidate, "id").longValue();
-        String eventId = String.valueOf(candidate.get("event_id"));
-        String aggregateId = String.valueOf(candidate.get("aggregate_id"));
         String payloadJson = String.valueOf(candidate.get("payload"));
         String previousStatus = String.valueOf(candidate.get("status"));
-        LocalDateTime availableAt = localDateTime(candidate.get("available_at"));
+        int previousAttempts = number(candidate, "attempts").intValue();
 
         int claimed = jdbc.update("""
                         UPDATE booking_outbox
-                        SET status = 'PROCESSING', available_at = ?,
+                        SET status = 'PROCESSING', available_at = TIMESTAMPADD(SECOND, ?, CURRENT_TIMESTAMP(6)),
                             attempts = attempts + 1
-                        WHERE id = ? AND status = ? AND available_at = ?
+                        WHERE id = ? AND status = ? AND attempts = ? AND available_at <= CURRENT_TIMESTAMP(6)
                         """,
-                Timestamp.valueOf(databaseNow().plusSeconds(LEASE_SECONDS)), rowId,
-                previousStatus, Timestamp.valueOf(availableAt));
+                LEASE_SECONDS, rowId, previousStatus, previousAttempts);
         if (claimed != 1) return;
 
-        int attempt = number(jdbc.queryForObject(
-                "SELECT attempts FROM booking_outbox WHERE id = ?", Integer.class, rowId)).intValue();
+        int attempt = previousAttempts + 1;
         try {
             notificationClient.sendBookingMail(payloadJson);
             jdbc.update("""
                             UPDATE booking_outbox
                             SET status = 'PUBLISHED', published_at = NOW(6), last_error = NULL
-                            WHERE id = ? AND status = 'PROCESSING'
-                            """, rowId);
+                            WHERE id = ? AND status = 'PROCESSING' AND attempts = ?
+                            """, rowId, attempt);
         } catch (RuntimeException deliveryFailure) {
             recordFailure(rowId, attempt, deliveryFailure);
         }
@@ -79,10 +80,9 @@ public class BookingMailOutboxPublisher {
         String nextStatus = exhausted ? "DEAD_LETTER" : "PENDING";
         jdbc.update("""
                         UPDATE booking_outbox
-                        SET status = ?, available_at = ?, last_error = ?
-                        WHERE id = ? AND status = 'PROCESSING'
-                        """, nextStatus, Timestamp.valueOf(databaseNow().plusSeconds(retryDelaySeconds)),
-                failure.getClass().getSimpleName(), rowId);
+                        SET status = ?, available_at = TIMESTAMPADD(SECOND, ?, CURRENT_TIMESTAMP(6)), last_error = ?
+                        WHERE id = ? AND status = 'PROCESSING' AND attempts = ?
+                        """, nextStatus, retryDelaySeconds, failure.getClass().getSimpleName(), rowId, attempt);
         log.warn("Booking mail outbox delivery failed event row {}; attempt {}; status {}",
                 rowId, attempt, nextStatus);
     }
@@ -91,21 +91,6 @@ public class BookingMailOutboxPublisher {
         Object value = row.get(key);
         if (value instanceof Number number) return number;
         throw new IllegalStateException("Invalid Booking mail outbox row");
-    }
-
-    private static Number number(Object value) {
-        if (value instanceof Number number) return number;
-        throw new IllegalStateException("Invalid Booking mail outbox attempt count");
-    }
-
-    private static LocalDateTime localDateTime(Object value) {
-        if (value instanceof LocalDateTime dateTime) return dateTime;
-        if (value instanceof Timestamp timestamp) return timestamp.toLocalDateTime();
-        throw new IllegalStateException("Invalid Booking mail outbox availability timestamp");
-    }
-
-    private LocalDateTime databaseNow() {
-        return jdbc.queryForObject("SELECT CURRENT_TIMESTAMP(6)", LocalDateTime.class);
     }
 
     /**
@@ -127,4 +112,14 @@ public class BookingMailOutboxPublisher {
                     CURRENT_TIMESTAMP(6),CURRENT_TIMESTAMP(6))
                 """, UUID.randomUUID().toString(), aggregateId, payloadJson);
     }
+    public boolean enqueueOnce(int bookingId, String eventKey, String payloadJson) {
+        String eventId = UUID.nameUUIDFromBytes(eventKey.getBytes(java.nio.charset.StandardCharsets.UTF_8)).toString();
+        return jdbc.update("""
+                INSERT IGNORE INTO booking_outbox(event_id,event_type,aggregate_type,aggregate_id,
+                    aggregate_version,payload,status,attempts,available_at,created_at)
+                VALUES (?,'booking.mail.requested.v1','Booking',?,1,?,'PENDING',0,
+                    CURRENT_TIMESTAMP(6),CURRENT_TIMESTAMP(6))
+                """, eventId, Integer.toString(bookingId), payloadJson) == 1;
+    }
+
 }

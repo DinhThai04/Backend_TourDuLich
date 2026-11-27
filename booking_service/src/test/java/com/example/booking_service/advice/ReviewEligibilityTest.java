@@ -52,11 +52,11 @@ class ReviewEligibilityTest {
         var expiry = new ReservationExpiryService(db.jdbc, db.manager, events, clock, tClient, payClient, invClient);
         lifecycle = new BookingLifecycleService(db.jdbc, db.manager, new ReservationPolicy(), expiry, events, access, clock,
                 authClient, invClient, pricingClient, tClient);
-        service = new ReviewEligibilityService(db.jdbc, access, clock, tClient, authClient, payClient, invClient);
+        service = new ReviewEligibilityService(db.jdbc, access, tClient, authClient, payClient, invClient);
     }
     BookingRequest request() {
         return BookingRequest.builder().userId("7").tourDepartureId("1").listOfCustomers(List.of(
-                CustomerRequest.builder().fullName("Danh").birthdate("2000-01-01").gender("Male").build())).build();
+                CustomerRequest.builder().fullName("Danh").birthdate("2000-01-01").gender("Male").address("12 Đường Lê Lợi, Phường Ba Đình, Thành phố Hà Nội").build())).build();
     }
     int create() { return Integer.parseInt(lifecycle.create(request()).getId()); }
     void answerDeparture(TourInternalClient tourClient) {

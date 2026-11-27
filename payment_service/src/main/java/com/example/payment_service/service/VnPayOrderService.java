@@ -26,6 +26,9 @@ public class VnPayOrderService {
 	private final PricingInternalClient pricingClient;
 	private final BookingInternalClient bookingClient;
 	private final OutboxPublisher outboxPublisher;
+	@org.springframework.beans.factory.annotation.Value("${app.booking.sales-cutoff:PT4H}")
+	private java.time.Duration salesCutoff = java.time.Duration.ofHours(4);
+
 	public record Order(String txnRef, long amountVnd, LocalDateTime createdAt, LocalDateTime expiresAt) {}
 
 	public record Quote(long amountVnd, Map<String, String> unitPrices, String singleSupplementPrice) {}
@@ -73,8 +76,7 @@ public class VnPayOrderService {
 		if (List.of("SUSPENDED", "CANCELLED").contains(String.valueOf(departure.get("operational_status"))))
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "Chuyến đang dừng do sự cố; vui lòng xem đề xuất dời lịch");
 		LocalDateTime now = LocalDateTime.now(clock).withNano(0);
-		Object depDate = departure.get("departure_date");
-		LocalDateTime departureDate = depDate instanceof LocalDateTime ? (LocalDateTime) depDate : ((java.sql.Timestamp) depDate).toLocalDateTime();
+		LocalDateTime departureDate = databaseDateTime(departure.get("departure_date"));
 		if (!departureDate.isAfter(now))
 			throw new IllegalArgumentException("Chuyến đi đã khởi hành");
 		if (jdbc.queryForObject("SELECT COUNT(*) FROM payment_reconciliation WHERE booking_id=? AND status='OPEN'", Integer.class, bookingId) > 0)
@@ -94,8 +96,7 @@ public class VnPayOrderService {
 		var hold = reservation(bookingId);
 		if (hold != null) {
 			validateHold(hold, booking, customers.size(), now);
-			Object holdDepDate = hold.get("departure_at");
-			LocalDateTime holdDepartureDate = holdDepDate instanceof LocalDateTime ? (LocalDateTime) holdDepDate : ((java.sql.Timestamp) holdDepDate).toLocalDateTime();
+			LocalDateTime holdDepartureDate = databaseDateTime(hold.get("departure_at"));
 			if (!holdDepartureDate.equals(departureDate))
 				throw new IllegalArgumentException("Lịch khởi hành đã thay đổi; vui lòng liên hệ để cập nhật booking");
 		} else if (((Number) departure.get("available_seats")).intValue() < customers.size()) {
@@ -104,36 +105,26 @@ public class VnPayOrderService {
 		var snapshot = snapshot(bookingId);
 		if (snapshot != null) return new Quote(snapshotAmount(snapshot), unitPrices(snapshot), supplement(snapshot));
 		
-		// Get price via Pricing internal API
-		Object tourIdObj = departure.get("tour_id");
-		if (tourIdObj == null) throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour không tồn tại");
-		long tourId = ((Number) tourIdObj).longValue();
-		Map<String, Object> price;
-		try {
-			price = pricingClient.getPriceById(tourId);
-		} catch (Exception e) {
-			throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để thanh toán");
-		}
-		if (price == null || price.isEmpty())
-			throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để thanh toán");
-		
-		return new Quote(calculateAmount(customers, price), unitPrices(price), supplement(price));
-	}
+        var price = tourPrice(departure);
+        return new Quote(calculateAmount(customers, price), unitPrices(price), supplement(price));
+    }
 
-	/** A tour without a price row is a data problem for the operator, not a server fault. */
-	private Map<String, Object> tourPrice(Object tourId) {
-		// Get price via Pricing internal API
-		long id = ((Number) tourId).longValue();
-		Map<String, Object> price;
-		try {
-			price = pricingClient.getPriceById(id);
-		} catch (Exception e) {
-			throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để thanh toán");
-		}
-		if (price == null || price.isEmpty())
-			throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để thanh toán");
-		return price;
-	}
+    private Map<String, Object> tourPrice(Map<String, Object> departure) {
+        // Older Tour instances omit this field during a rolling deployment.
+        Object value = departure.getOrDefault("tour_price_id", departure.get("tour_id"));
+        Map<String, Object> price;
+        try {
+            long priceId = value instanceof Number number ? number.longValue() : Long.parseLong(String.valueOf(value));
+            if (priceId < 1) throw new IllegalArgumentException("Mã bảng giá không hợp lệ");
+            price = pricingClient.getPriceById(priceId);
+        } catch (Exception unavailable) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để thanh toán");
+        }
+        if (price == null || price.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để thanh toán");
+        }
+        return price;
+    }
 
 	private static boolean payable(Object status) {
 		return List.of("PENDING_PAYMENT", "CONFIRMED").contains(String.valueOf(status));
@@ -266,16 +257,15 @@ public class VnPayOrderService {
 		if (java.util.List.of("SUSPENDED","CANCELLED").contains(String.valueOf(departure.get("operational_status"))))
 			throw new ResponseStatusException(HttpStatus.CONFLICT,"Chuyến đang dừng do sự cố; vui lòng xem đề xuất dời lịch");
 		LocalDateTime now = LocalDateTime.now(clock).withNano(0);
-		Object depDate = departure.get("departure_date");
-		LocalDateTime departureDate = depDate instanceof LocalDateTime ? (LocalDateTime) depDate : ((java.sql.Timestamp) depDate).toLocalDateTime();
-		if (!departureDate.isAfter(now))
-			throw new IllegalArgumentException("Chuyến đi đã khởi hành");
+		LocalDateTime departureDate = databaseDateTime(departure.get("departure_date"));
+		LocalDateTime checkoutCutoff = departureDate.minus(salesCutoff);
+		if (!now.isBefore(checkoutCutoff))
+			throw new ResponseStatusException(HttpStatus.CONFLICT, "Đã đóng thanh toán cho chuyến này; vui lòng liên hệ hỗ trợ");
 		var customers = bookingClient.getBookingCustomers(bookingId);
 		var hold = reservation(bookingId);
 		if (hold != null) {
 			validateHold(hold, b, customers.size(), now);
-			Object holdDepDate = hold.get("departure_at");
-			LocalDateTime holdDepartureDate = holdDepDate instanceof LocalDateTime ? (LocalDateTime) holdDepDate : ((java.sql.Timestamp) holdDepDate).toLocalDateTime();
+			LocalDateTime holdDepartureDate = databaseDateTime(hold.get("departure_at"));
 			if (!holdDepartureDate.equals(departureDate))
 				throw new IllegalArgumentException("Lịch khởi hành đã thay đổi; vui lòng liên hệ để cập nhật booking");
 		}
@@ -284,7 +274,7 @@ public class VnPayOrderService {
 		if (customers.isEmpty()) throw new IllegalArgumentException("Booking chưa có hành khách");
 		var snapshot = snapshot(bookingId);
 		long amount = snapshot != null ? snapshotAmount(snapshot)
-				: calculateAmount(customers, tourPrice(departure.get("tour_id")));
+				: calculateAmount(customers, tourPrice(departure));
 		BigDecimal expected;
 		try { expected = expectedAmount == null ? null : new BigDecimal(expectedAmount); }
 		catch (NumberFormatException malformed) { throw new IllegalArgumentException("Số tiền xác nhận không hợp lệ"); }
@@ -299,17 +289,28 @@ public class VnPayOrderService {
 		}
 		LocalDateTime expires = now.plusMinutes(15);
 		if (hold != null) {
-			Object holdExp = hold.get("expires_at");
-			LocalDateTime holdExpiresAt = holdExp instanceof LocalDateTime ? (LocalDateTime) holdExp : ((java.sql.Timestamp) holdExp).toLocalDateTime();
+			LocalDateTime holdExpiresAt = databaseDateTime(hold.get("expires_at"));
 			if (holdExpiresAt.isBefore(expires)) expires = holdExpiresAt;
 		}
-		if (departureDate.isBefore(expires)) expires = departureDate;
+		if (checkoutCutoff.isBefore(expires)) expires = checkoutCutoff;
 		return new Checkout(bookingId, departureId, amount, now, expires);
 	}
 
 	static LocalDateTime databaseDateTime(Object value) {
 		if (value instanceof LocalDateTime date) return date;
 		if (value instanceof java.sql.Timestamp date) return date.toLocalDateTime();
+		if (value instanceof String s && !s.isBlank()) {
+			return LocalDateTime.parse(s.contains(" ") && !s.contains("T") ? s.replace(' ', 'T') : s);
+		}
+		if (value instanceof List<?> list && list.size() >= 5) {
+			int year = ((Number) list.get(0)).intValue();
+			int month = ((Number) list.get(1)).intValue();
+			int day = ((Number) list.get(2)).intValue();
+			int hour = ((Number) list.get(3)).intValue();
+			int minute = ((Number) list.get(4)).intValue();
+			int second = list.size() > 5 ? ((Number) list.get(5)).intValue() : 0;
+			return LocalDateTime.of(year, month, day, hour, minute, second);
+		}
 		throw new IllegalStateException("Unexpected database date type: " + (value == null ? "null" : value.getClass().getName()));
 	}
 
@@ -338,8 +339,7 @@ public class VnPayOrderService {
 		}
 	}
 	private void validateHold(Map<String,Object> hold, Map<String,Object> b, int people, LocalDateTime now) {
-		Object holdExp = hold.get("expires_at");
-		LocalDateTime holdExpiresAt = holdExp instanceof LocalDateTime ? (LocalDateTime) holdExp : ((java.sql.Timestamp) holdExp).toLocalDateTime();
+		LocalDateTime holdExpiresAt = databaseDateTime(hold.get("expires_at"));
 		if (!List.of("HELD","CHECKOUT").contains(hold.get("status")) || !holdExpiresAt.isAfter(now))
 			throw new IllegalArgumentException("Booking đã hết hạn giữ chỗ; vui lòng đặt lại");
 		if (((Number)hold.get("seats")).intValue() != people || !hold.get("departure_id").equals(b.get("tour_departure_id")))
@@ -489,15 +489,13 @@ public class VnPayOrderService {
 		var customerRows = bookingClient.getBookingCustomers(bookingId);
 		int people = customerRows != null ? customerRows.size() : 0;
 		LocalDateTime now = LocalDateTime.now(clock).withNano(0);
-		Object depDate = departure.get("departure_date");
-		LocalDateTime departureDate = depDate instanceof LocalDateTime ? (LocalDateTime) depDate : ((java.sql.Timestamp) depDate).toLocalDateTime();
+		LocalDateTime departureDate = databaseDateTime(departure.get("departure_date"));
 		if (!departureDate.isAfter(now))
 			return reconcile(txnRef, bookingId, amountVnd, paidAt, "TOUR_ALREADY_DEPARTED");
 		if (hold != null) {
 			try { validateHold(hold, b, people, paidAt); }
 			catch (IllegalArgumentException invalid) { return reconcile(txnRef, bookingId, amountVnd, paidAt, "RESERVATION_NO_LONGER_VALID"); }
-			Object holdDepDate = hold.get("departure_at");
-			LocalDateTime holdDepartureDate = holdDepDate instanceof LocalDateTime ? (LocalDateTime) holdDepDate : ((java.sql.Timestamp) holdDepDate).toLocalDateTime();
+			LocalDateTime holdDepartureDate = databaseDateTime(hold.get("departure_at"));
 			if (!holdDepartureDate.equals(departureDate))
 				return reconcile(txnRef, bookingId, amountVnd, paidAt, "DEPARTURE_CHANGED");
 		} else {
@@ -527,14 +525,8 @@ public class VnPayOrderService {
 					"provider", provider
 			));
 		}
-		try {
-			bookingClient.markBookingPaid(bookingId);
-		} catch (Exception e) {
-			log.warn("Failed to mark booking {} paid via Booking internal API: {}", bookingId, e.getMessage());
-		}
-		if (hold != null) {
-			try { tourClient.incrementVersion(departureId); } catch (Exception ignored) {}
-		}
+		// Production Booking confirmation consumes the committed settlement from the outbox.
+		if (outboxPublisher == null) bookingClient.markBookingPaid(bookingId);
 		mail.receipt(bookingId, txnRef, amountVnd, paidAt, now, provider);
 		return "success";
 	}

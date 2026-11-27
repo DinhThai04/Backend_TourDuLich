@@ -150,3 +150,29 @@ CREATE TABLE `tour_inbox` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+CREATE TABLE IF NOT EXISTS `operation_audit` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `entity_type` varchar(50) NOT NULL,
+  `entity_id` varchar(64) NOT NULL,
+  `action` varchar(64) NOT NULL,
+  `actor_id` int DEFAULT NULL,
+  `reason` text,
+  `before_json` longtext,
+  `after_json` longtext,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_op_audit_entity` (`entity_type`, `entity_id`),
+  KEY `ix_op_audit_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `departure_meeting_point` (
+  `departure_id` int NOT NULL,
+  `address` varchar(500) NOT NULL,
+  `landmark` varchar(255) DEFAULT NULL,
+  `arrival_time` varchar(100) DEFAULT NULL,
+  `directions_url` varchar(500) DEFAULT NULL,
+  `updated_by` int DEFAULT NULL,
+  `updated_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`departure_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

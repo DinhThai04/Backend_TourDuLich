@@ -7,7 +7,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 
 import java.util.Map;
 
-@FeignClient(name = "notification-service-internal", url = "${app.services.notification-base-url:http://localhost:8090}", configuration = NotificationFeignConfiguration.class)
+@FeignClient(name = "notification-service-internal", url = "${app.services.notification-base-url:http://localhost:8093/notification}", configuration = NotificationFeignConfiguration.class)
 public interface NotificationInternalClient {
 
     @GetMapping("/internal/notifications/mail/users/{accountId}/has-history")

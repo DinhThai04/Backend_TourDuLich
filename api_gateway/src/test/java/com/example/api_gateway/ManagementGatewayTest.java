@@ -35,6 +35,8 @@ class ManagementGatewayTest {
                 MockServerHttpRequest.delete("/api/v1/tour/tours/1").build(),
                 MockServerHttpRequest.get("/api/v1/pricing/prices").build(),
                 MockServerHttpRequest.get("/api/v1/tour/tour-departures/list").build(),
+                MockServerHttpRequest.post("/api/v1/tour/tour-departures/1/open").build(),
+                MockServerHttpRequest.post("/api/v1/tour/departures/1/confirm-departure").build(),
                 MockServerHttpRequest.post("/api/v1/pricing/prices").build(),
                 MockServerHttpRequest.post("/api/v1/search/tours").build()}) {
             var exchange = MockServerWebExchange.from(request); filter.filter(exchange, chain).block();
@@ -42,6 +44,34 @@ class ManagementGatewayTest {
         }
         verifyNoInteractions(identity);
     }
+    @Test void anonymousCatalogDropsExpiredSessionHeadersWithoutAffectingProtectedReads() {
+        var identity = mock(IdentityService.class);
+        when(identity.introspect("expired")).thenReturn(Mono.just(ApiResponse.<IntrospectResponse>builder()
+                .result(IntrospectResponse.builder().valid(false).build()).build()));
+        var filter = new AuthenticationFilter(identity, new ObjectMapper(), new AuthCircuitBreaker(100, 10_000), new IntrospectionCache(0));
+        ReflectionTestUtils.setField(filter, "apiPrefix", "/api/v1");
+        var catalog = mock(GatewayFilterChain.class);
+        when(catalog.filter(any())).thenAnswer(call -> {
+            var exchange = call.<org.springframework.web.server.ServerWebExchange>getArgument(0);
+            assertNull(exchange.getRequest().getHeaders().getFirst("Authorization"));
+            return Mono.empty();
+        });
+        for (String path : java.util.List.of("/tour/locations/destinations/attractive",
+                "/tour/tours/search?page=0&size=50&sort=newest", "/tour/locations/destinations",
+                "/auth/reviews/high-rating?size=10")) {
+            var request = MockServerHttpRequest.get("/api/v1" + path).header("Authorization", "Bearer expired").build();
+            filter.filter(MockServerWebExchange.from(request), catalog).block();
+        }
+        verify(catalog, times(4)).filter(any());
+        verifyNoInteractions(identity);
+        var profile = MockServerWebExchange.from(MockServerHttpRequest.get("/api/v1/auth/users/117")
+                .header("Authorization", "Bearer expired").build());
+        var protectedChain = mock(GatewayFilterChain.class);
+        filter.filter(profile, protectedChain).block();
+        assertEquals(401, profile.getResponse().getStatusCode().value());
+        verifyNoInteractions(protectedChain);
+    }
+
     @Test void introspectionIsNeverRoutedFromTheEdge() {
         var identity = mock(IdentityService.class);
         var filter = new AuthenticationFilter(identity, new ObjectMapper(), new AuthCircuitBreaker(100, 10_000), new IntrospectionCache(0));

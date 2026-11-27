@@ -471,6 +471,12 @@ foreach ($db in $Ownership.Keys) {
     
     $output += "SET FOREIGN_KEY_CHECKS = 1;"
     
+    if ($db -eq "sgu_auth") {
+        $authAuditMigration = Join-Path $PSScriptRoot "../data_seed/migrations/V006__auth_role_operation_audit.sql"
+        $output += ""
+        $output += Get-Content -Raw -Path $authAuditMigration
+    }
+
     $outputPath = Join-Path $OutputDir "${db}.sql"
     $output -join "`n" | Set-Content -Path $outputPath -Encoding UTF8
     Write-Host "Generated: $outputPath ($($ownedTables.Count) business tables)" -ForegroundColor Green

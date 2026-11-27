@@ -65,6 +65,50 @@ class ReportingApiTest {
     }
 
     @Test
+    void showsAttributedReconciliationAndHidesAutomatedEvents() throws Exception {
+        var processor = mvc.getDispatcherServlet().getWebApplicationContext()
+                .getBean(com.example.reporting_service.consumer.ReportingEventProcessor.class);
+        for (String code : java.util.List.of("payment.settled.v1", "booking.expired.v1")) {
+            var properties = new org.springframework.amqp.core.MessageProperties();
+            properties.setMessageId(java.util.UUID.randomUUID().toString());
+            properties.setType(code);
+            processor.process(new org.springframework.amqp.core.Message("{}".getBytes(java.nio.charset.StandardCharsets.UTF_8), properties));
+        }
+        String audit = """
+                {"eventType":"admin.audit.v1","eventId":"admin-audit-test","producer":"payment-service",
+                 "occurredAt":"2026-11-26T17:35:00Z","actorId":"7","actorType":"ADMIN",
+                 "actorName":"Admin SGU Tour","actorRole":"SUPER_ADMIN","actionGroup":"FINANCE",
+                 "actionCode":"RECONCILIATION_RECORDED","targetType":"PAYMENT","targetId":"12",
+                 "targetLabel":"Thanh toán #12","summary":"Ghi nhận kết quả đối soát",
+                 "reason":"Đã đối chiếu chứng từ","before":{"status":"PENDING"},
+                 "after":{"status":"CLOSED_UNPAID","txnRef":"TEST-12"},"correlationId":"corr-12"}
+                """;
+        for (int i = 0; i < 2; i++) {
+            mvc.perform(post("/internal/reports/admin-audit/events").header("X-Internal-Reporting-Key", KEY)
+                            .contentType(MediaType.APPLICATION_JSON).content(audit))
+                    .andExpect(status().isNoContent());
+        }
+        Long id = jdbc.queryForObject("SELECT id FROM operation_audit WHERE entity_id='12'", Long.class);
+        mvc.perform(get("/internal/reports/admin-audit").header("X-Internal-Reporting-Key", KEY)
+                        .param("actorId", "7").param("actionGroup", "FINANCE").param("targetType", "PAYMENT")
+                        .param("keyword", "#12").param("fromDate", "2026-11-27").param("toDate", "2026-11-27"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1))
+                .andExpect(jsonPath("$.content[0].actorName").value("Admin SGU Tour"))
+                .andExpect(jsonPath("$.content[0].targetLabel").value("Thanh toán #12"));
+        mvc.perform(get("/internal/reports/admin-audit").header("X-Internal-Reporting-Key", KEY))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.totalElements").value(1));
+        mvc.perform(get("/internal/reports/admin-audit/actors").header("X-Internal-Reporting-Key", KEY)
+                        .param("keyword", "admin"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0].actorId").value("7"));
+        mvc.perform(get("/internal/reports/admin-audit/{id}", id).header("X-Internal-Reporting-Key", KEY))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.reason").value("Đã đối chiếu chứng từ"))
+                .andExpect(jsonPath("$.correlationId").value("corr-12"));
+        Long systemId = jdbc.queryForObject("SELECT id FROM operation_audit WHERE action='payment.settled.v1'", Long.class);
+        mvc.perform(get("/internal/reports/admin-audit/{id}", systemId).header("X-Internal-Reporting-Key", KEY))
+                .andExpect(status().isNotFound());
+    }
+
+    @Test
     void aggregatesReadModelAndUpsertsWithoutDuplicates() throws Exception {
         project("tours", """
                 {"tourId":1,"tourCode":"DN-HA","departureId":10,

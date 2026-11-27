@@ -1,6 +1,6 @@
 package com.example.file_service.entity;
 
-import jakarta.persistence.*; // Hoặc javax.persistence.* tùy version
+import jakarta.persistence.*;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 

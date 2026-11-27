@@ -1,14 +1,15 @@
 package com.example.invoice_service.dto.internal;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import lombok.*;
 
-import java.math.BigDecimal;
 import java.time.LocalDateTime;
 
 @Data
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class PaymentSettlementEvent {
     private String eventId;
     private String eventType; // "payment.settled.v1" | "payment.failed.v1" | "payment.refunded.v1"

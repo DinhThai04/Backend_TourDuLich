@@ -7,7 +7,6 @@ import com.example.booking_service.mapper.CustomerMapper;
 import com.example.booking_service.paging.PageSlice;
 import com.example.booking_service.repository.CustomerRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;

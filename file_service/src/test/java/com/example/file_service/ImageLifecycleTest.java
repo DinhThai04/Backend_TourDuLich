@@ -10,7 +10,6 @@ import com.example.file_service.service.*;
 import com.example.file_service.dto.FileInfo;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockMultipartFile;
-import org.springframework.test.util.ReflectionTestUtils;
 import java.io.IOException;
 import java.util.*;
 import static org.junit.jupiter.api.Assertions.*;
@@ -92,7 +91,7 @@ class ImageLifecycleTest {
     @Test void destroyUsesStoredPublicIdAndValidatesCloudinaryResult() throws Exception {
         var cloud=spy(new Cloudinary(ObjectUtils.asMap("cloud_name","demo","api_key","test","api_secret","test")));
         var uploader=mock(Uploader.class);doReturn(uploader).when(cloud).uploader();
-        var repository=new FileRepository();ReflectionTestUtils.setField(repository,"cloudinary",cloud);
+        var repository=new FileRepository(cloud);
         var image=orphan();when(uploader.destroy(eq("folder/asset"),anyMap())).thenReturn(Map.of("result","ok"));
         assertTrue(repository.canDelete(image));repository.delete(image);
         verify(uploader).destroy(eq("folder/asset"),argThat(options->Boolean.TRUE.equals(options.get("invalidate"))));

@@ -83,3 +83,18 @@ INSERT INTO `prices` (`id`,`adult_price`,`child_price`,`infant_price`,`single_su
 INSERT INTO `prices` (`id`,`adult_price`,`child_price`,`infant_price`,`single_supplement_price`,`toddler_price`) VALUES (9,7290000.00,5490000.00,600000.00,1600000.00,0.00);
 
 SET FOREIGN_KEY_CHECKS = 1;
+
+CREATE TABLE IF NOT EXISTS `operation_audit` (
+  `id` bigint NOT NULL AUTO_INCREMENT,
+  `entity_type` varchar(50) NOT NULL,
+  `entity_id` varchar(64) NOT NULL,
+  `action` varchar(64) NOT NULL,
+  `actor_id` int DEFAULT NULL,
+  `reason` text,
+  `before_json` longtext,
+  `after_json` longtext,
+  `created_at` datetime(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `ix_op_audit_entity` (`entity_type`, `entity_id`),
+  KEY `ix_op_audit_created` (`created_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

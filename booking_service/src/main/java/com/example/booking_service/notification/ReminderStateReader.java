@@ -55,7 +55,8 @@ public class ReminderStateReader {
         String operationalStatus;
         try {
             Map<String, Object> departure = tourClient.getDeparture(departureId);
-            tourTitle = departure.get("tour_id") != null ? "Tour #" + departure.get("tour_id") : "Tour";
+            tourTitle = departure.get("tour_title") instanceof String title && !title.isBlank() ? title
+                    : departure.get("tour_id") != null ? "Tour #" + departure.get("tour_id") : "Tour";
             departureDate = date(departure.get("departure_date"));
             Object status = departure.get("operational_status");
             operationalStatus = status != null ? status.toString() : "OPEN";
@@ -63,7 +64,7 @@ public class ReminderStateReader {
             return Optional.empty();
         }
 
-        if (!List.of("OPEN", "REPLACEMENT_ONLY").contains(operationalStatus)) {
+        if (departureDate == null || !List.of("OPEN", "REPLACEMENT_ONLY").contains(operationalStatus)) {
             return Optional.empty();
         }
 

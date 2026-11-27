@@ -78,6 +78,7 @@ public class PaymentMailOutboxWriter {
 
 		var payload = new LinkedHashMap<String, Object>();
 		payload.put("eventKey", eventKey);
+		payload.put("mailEventType", type);
 		payload.put("sourceService", "payment-service");
 		payload.put("bookingId", bookingId);
 		payload.put("accountId", accountId);

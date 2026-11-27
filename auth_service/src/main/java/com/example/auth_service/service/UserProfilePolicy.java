@@ -10,7 +10,7 @@ final class UserProfilePolicy {
 
     /** Bean validation already bounds length and format; the control-character rule is the one @Size cannot express. */
     static void validateCreation(UserCreationRequest request) {
-        text(request.getUsername(), 3, 50, "Tên tài khoản");
+        text(request.getUsername(), 2, 50, "Tên tài khoản");
         text(request.getAddress(), 1, 255, "Địa chỉ");
     }
 

@@ -10,7 +10,6 @@ import com.example.file_service.repository.FileReferenceRepository;
 import com.example.file_service.service.FileService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -40,10 +39,16 @@ public class InternalFileController {
 
     @GetMapping("/{fileId}/verify")
     public ResponseEntity<VerifyFileResponse> verifyFile(@PathVariable String fileId) {
+        UUID parsedUuid;
+        try {
+            parsedUuid = UUID.fromString(fileId);
+        } catch (IllegalArgumentException invalid) {
+            return ResponseEntity.badRequest().build();
+        }
         Optional<FileMgmt> fileOpt = fileMgmtRepository.findById(fileId);
         if (fileOpt.isEmpty()) {
             return ResponseEntity.ok(VerifyFileResponse.builder()
-                    .fileId(UUID.fromString(fileId))
+                    .fileId(parsedUuid)
                     .exists(false)
                     .build());
         }

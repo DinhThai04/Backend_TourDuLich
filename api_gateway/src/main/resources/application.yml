@@ -82,6 +82,13 @@ spring:
             - Path=${app.api-prefix}/auth/**
           filters:
             - StripPrefix=2
+        - id: admin-audit-logs
+          uri: ${BOOKING_BASE_URL:http://booking-service:8081}
+          predicates:
+            - Path=${app.api-prefix}/admin/audit-logs,${app.api-prefix}/admin/audit-logs/{id}
+          filters:
+            - StripPrefix=3
+            - PrefixPath=/booking/admin
         - id: booking-service
           uri: ${BOOKING_BASE_URL:http://booking-service:8081}
           predicates:
@@ -100,6 +107,13 @@ spring:
             - Path=${app.api-prefix}/pricing/**
           filters:
             - StripPrefix=2
+        - id: confirm-departure
+          uri: ${BOOKING_BASE_URL:http://booking-service:8081}
+          predicates:
+            - Path=${app.api-prefix}/tour/departures/{id}/confirm-departure
+            - Method=POST
+          filters:
+            - SetPath=/booking/operations/departures/{id}/confirm-departure
         - id: tour-service
           uri: ${TOUR_BASE_URL:http://tour-service:8086}
           predicates:

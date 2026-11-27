@@ -44,6 +44,7 @@ class ReconciliationTransactionTest {
         };
         jdbc=new RecordingJdbc(source);
         context=new AnnotationConfigApplicationContext();context.register(Transactions.class);
+        context.getBeanFactory().setConversionService(org.springframework.boot.convert.ApplicationConversionService.getSharedInstance());
         context.registerBean(DataSource.class,()->source);
         context.registerBean(JdbcTemplate.class,()->jdbc);
         context.registerBean(PlatformTransactionManager.class,()->new DataSourceTransactionManager(source));

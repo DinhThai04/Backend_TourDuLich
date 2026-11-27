@@ -4,6 +4,17 @@ server:
     context-path: /booking
 
 spring:
+  rabbitmq:
+    listener:
+      simple:
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+          max-attempts: 6
+          initial-interval: 2000
+          multiplier: 2
+          max-interval: 30000
+
   config:
     import: "optional:file:./.local/booking_service.properties,optional:file:../.local/booking_service.properties,optional:file:./Backend_TourDuLich/.local/booking_service.properties"
   mail:
@@ -25,7 +36,7 @@ spring:
   datasource:
     url: "${DB_URL:jdbc:mysql://localhost:3306/dbtour_v2}"
     driver-class-name: "com.mysql.cj.jdbc.Driver"
-    username: root
+    username: ${DB_USERNAME:root}
     password: ${DB_PASSWORD}
     hikari:
       # One shared MySQL box: 7 services x 10 stays under max_connections (151 by default).
@@ -66,6 +77,7 @@ app:
   booking:
     internal:
       internal-key: ${BOOKING_INTERNAL_KEY}
+      ticket-mail-key: ${NOTIFICATION_INTERNAL_KEY:}
   services:
     payment-base-url: ${APP_SERVICES_PAYMENT_BASE_URL:http://payment-service:8083/payment}
     notification-base-url: ${APP_SERVICES_NOTIFICATION_BASE_URL:http://notification-service:8093/notification}

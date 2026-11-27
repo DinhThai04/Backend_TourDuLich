@@ -123,7 +123,7 @@ public class AuthService {
         return idToken.getPayload();
     }
 
-    @Transactional(readOnly = true)
+    @Transactional(isolation = org.springframework.transaction.annotation.Isolation.READ_COMMITTED)
     public AuthenticationResponse authenticated(AuthenticationRequest request) {
         var user = userRepository.findByEmail(request.getEmail()).orElse(null);
         if (user == null) {
@@ -144,10 +144,15 @@ public class AuthService {
         if (user.getStatus() != UserStatus.ACTIVE || user.getRole() == null || !Boolean.TRUE.equals(user.getRole().getActive())) {
             throw new AppException(ErrorCode.BAD_CREDENTIALS);
         }
-        var token = generateToken(user, TokenType.ACCESS);
+        if ("admin".equalsIgnoreCase(user.getRole().getName())) {
+            userRepository.lockForLifecycle(user.getId()).orElseThrow(() -> new AppException(ErrorCode.BAD_CREDENTIALS));
+            sessionEpochService.revokeAll(java.util.List.of(user.getId()), "Đăng nhập quản trị mới, đã thu hồi phiên trước");
+        }
+        long epoch = accountEvents.sessionEpoch(user.getId());
+        var token = generateToken(user, TokenType.ACCESS, epoch);
         return AuthenticationResponse.builder()
                 .token(token)
-                .refreshToken(generateToken(user, TokenType.REFRESH))
+                .refreshToken(generateToken(user, TokenType.REFRESH, epoch))
                 .user(userResponse)
                 .expiryTime(expiryDate)
                 .build();
@@ -197,6 +202,10 @@ public class AuthService {
     }
 
     private String generateToken(User user, TokenType type) {
+        return generateToken(user, type, accountEvents.sessionEpoch(user.getId()));
+    }
+
+    private String generateToken(User user, TokenType type, long epoch) {
         if (user.getStatus() != UserStatus.ACTIVE) {
             throw new AppException(ErrorCode.ACCOUNT_INACTIVE);
         }
@@ -213,7 +222,7 @@ public class AuthService {
                         Instant.now().plus(lifetimeSeconds, ChronoUnit.SECONDS).toEpochMilli()))
                 .jwtID(UUID.randomUUID().toString())
                 .claim("tokenType", type.claimValue())
-                .claim("sessionEpoch", accountEvents.sessionEpoch(user.getId()))
+                .claim("sessionEpoch", epoch)
                 .claim("credentialVersion", CredentialVersion.of(user, SIGNER_KEY));
         if (type == TokenType.ACCESS) {
             claims.claim("scope", buildScope(user));
@@ -395,8 +404,8 @@ public class AuthService {
         Date newExpiryTime = new Date(now.getTime() + VALID_DURATION * 1000);
         var userResponse = userMapper.toUserResponse(user);
         return AuthenticationResponse.builder()
-                .token(generateToken(user, TokenType.ACCESS))
-                .refreshToken(generateToken(user, TokenType.REFRESH))
+                .token(generateToken(user, TokenType.ACCESS, epochOf(signedJWT)))
+                .refreshToken(generateToken(user, TokenType.REFRESH, epochOf(signedJWT)))
                 .user(userResponse)
                 .expiryTime(newExpiryTime)
                 .build();
@@ -446,14 +455,6 @@ public class AuthService {
     private static JWTClaimsSet claims(SignedJWT signedJWT) {
         try {
             return signedJWT.getJWTClaimsSet();
-        } catch (ParseException malformed) {
-            throw new AppException(ErrorCode.INVALID_TOKEN);
-        }
-    }
-
-    private static String stringClaim(JWTClaimsSet claims, String name) {
-        try {
-            return claims.getStringClaim(name);
         } catch (ParseException malformed) {
             throw new AppException(ErrorCode.INVALID_TOKEN);
         }

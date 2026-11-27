@@ -1,6 +1,5 @@
 package com.example.tour_service.service;
 
-import com.example.tour_service.dto.request.TourPriceBatchRequest;
 import com.example.tour_service.dto.request.UpdateTourRequest;
 import com.example.tour_service.dto.response.*;
 import com.example.tour_service.repository.TourSpecification;
@@ -68,6 +67,7 @@ public class TourService {
         private final TransactionTemplate transactions;
         private final org.springframework.jdbc.core.JdbcTemplate jdbc;
         private final TourGalleryProof galleryProof;
+    private final com.example.tour_service.operations.AdminAuditEvents adminAudit;
 
     public TourResponse getTourById(int id) {
         Tour tour = tourRepository.findById(id)
@@ -276,6 +276,16 @@ public class TourService {
                         payload, status, attempts, available_at, created_at
                     ) VALUES (?, 'tour.gallery.detach.requested.v1', 'TOUR', ?, 1, ?, 'PENDING', 0, NOW(6), NOW(6))
                     """, eventId, String.valueOf(id), payload);
+            if (adminAudit != null) {
+                var actor = adminAudit.currentActor();
+                adminAudit.record(actor, "TOUR_DELETED", "CONTENT", "TOUR", id, tour.getTourTitle(), "Xóa tour",
+                        null, java.util.Map.of("title", tour.getTourTitle()), java.util.Map.of("deleted", true));
+                for (var departure : tour.getTourDepartures() == null ? java.util.List.<com.example.tour_service.entity.TourDeparture>of() : tour.getTourDepartures()) {
+                    String label = departure.getTourCode() == null ? "Chuyến #" + departure.getId() : "Chuyến " + departure.getTourCode();
+                    adminAudit.record(actor, "DEPARTURE_DELETED", "OPERATIONS", "DEPARTURE", departure.getId(), label,
+                            "Xóa lịch khởi hành thuộc tour", null, java.util.Map.of("tourId", id), java.util.Map.of("deleted", true));
+                }
+            }
             tourRepository.delete(tour);
             // The rows disappear only at commit; clearing the cache earlier would hide a still-existing tour.
             AfterCommit.run(() -> tourImageCache.update(String.valueOf(id), List.of()),

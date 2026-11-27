@@ -14,10 +14,12 @@ public class TourDepartureResponse {
     int id;
     String tourCode;
     LocalDateTime departureDate;
+    java.time.OffsetDateTime bookingCloseAt;
     LocalDateTime returnDate;
     Short availableSeats;
     Integer capacity;
     String operationalStatus;
+    String operatingVehicleId;
     long version;
     int tourId;
     TourPriceResponse tourPrice;

@@ -26,7 +26,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.TreeMap;
 import java.util.UUID;
 
 import static com.example.booking_service.change.ChangeLedger.date;
@@ -53,6 +52,7 @@ public class BookingChangeService {
 
 	private final JdbcTemplate jdbc;
 	private final ChangeLedger ledger;
+    private final com.example.booking_service.operations.AdminAuditEvents adminAudit;
 	private final BookingAccess access;
 	private final ReservationPolicy policy;
 	private final ChangeMailEvents mail;
@@ -66,7 +66,8 @@ public class BookingChangeService {
 								ReservationPolicy policy, ChangeMailEvents mail, Clock clock,
 								PlatformTransactionManager manager, AuthInternalClient authClient,
 								TourInternalClient tourClient,
-								com.example.booking_service.repository.httpclient.PaymentInternalClient paymentClient) {
+								com.example.booking_service.repository.httpclient.PaymentInternalClient paymentClient,
+                                com.example.booking_service.operations.AdminAuditEvents adminAudit) {
 		this.jdbc = jdbc;
 		this.ledger = ledger;
 		this.access = access;
@@ -77,6 +78,7 @@ public class BookingChangeService {
 		this.authClient = authClient;
 		this.tourClient = tourClient;
 		this.paymentClient = paymentClient;
+        this.adminAudit = adminAudit;
 	}
 
 	public List<Map<String, Object>> mine() {
@@ -103,7 +105,7 @@ public class BookingChangeService {
 				try {
 					Map<String, Object> departure = tourClient.getDeparture(sourceDepartureId);
 					if (departure != null) {
-						row.put("tour_title", departure.get("tour_id") != null ? "Tour #" + departure.get("tour_id") : "Tour");
+						row.put("tour_title", Objects.requireNonNullElse(departure.get("tour_title"), "Tour"));
 					}
 				} catch (Exception ignored) {
 					row.put("tour_title", "Tour");
@@ -119,6 +121,7 @@ public class BookingChangeService {
 
 	public List<Map<String, Object>> eligible(Integer page, Integer size) {
 		PageSlice slice = PageSlice.of(page, size);
+		LocalDateTime cutoff = now().plusHours(CUSTOMER_CUTOFF_HOURS);
 		var rows = jdbc.queryForList("""
 				SELECT b.id, b.tour_departure_id FROM booking b
 				WHERE b.account_id=? AND b.status='CONFIRMED' AND b.tour_departure_id IS NOT NULL
@@ -137,13 +140,16 @@ public class BookingChangeService {
 					if (departure != null) {
 						String opStatus = (String) departure.get("operational_status");
 						LocalDateTime departureDate = ChangeLedger.date(departure.get("departure_date"));
-						if ("OPEN".equals(opStatus) && departureDate != null && departureDate.isAfter(now().plusHours(CUSTOMER_CUTOFF_HOURS))) {
+						if ("OPEN".equals(opStatus) && departureDate != null && !departureDate.isBefore(cutoff)) {
 							row.put("departure_date", departureDate);
-							row.put("tour_title", departure.get("tour_id") != null ? "Tour #" + departure.get("tour_id") : "Tour");
+							row.put("tour_title", Objects.requireNonNullElse(departure.get("tour_title"), "Tour"));
 							filtered.add(row);
 						}
 					}
-				} catch (Exception ignored) {
+				} catch (feign.FeignException.NotFound ignored) {
+					// A departure that no longer exists cannot accept a request.
+				} catch (RuntimeException e) {
+					throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Chưa kiểm tra được lịch khởi hành", e);
 				}
 			}
 		}
@@ -174,7 +180,7 @@ public class BookingChangeService {
 		try {
 			allDepartures = tourClient.getDeparturesByTour(tourId);
 		} catch (Exception e) {
-			return List.of();
+			throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Chưa tải được lịch khởi hành thay thế", e);
 		}
 		LocalDateTime current = now();
 		return allDepartures.stream()
@@ -277,7 +283,7 @@ public class BookingChangeService {
 				try {
 					Map<String, Object> departure = tourClient.getDeparture(sourceDepartureId);
 					if (departure != null) {
-						row.put("tour_title", departure.get("tour_id") != null ? "Tour #" + departure.get("tour_id") : "Tour");
+						row.put("tour_title", Objects.requireNonNullElse(departure.get("tour_title"), "Tour"));
 					}
 				} catch (Exception ignored) {
 					row.put("tour_title", "Tour");
@@ -311,8 +317,11 @@ public class BookingChangeService {
 	}
 
 	public Map<String, Object> pending(int page, Integer bookingId, java.time.LocalDate day, Boolean customerAction) {
+		return pending(page, bookingId, day, customerAction, 5);
+	}
+	public Map<String, Object> pending(int page, Integer bookingId, java.time.LocalDate day, Boolean customerAction, int size) {
 		checkPermission("CHANGES_READ");
-		PageSlice slice = PageSlice.of(page, 5);
+		PageSlice slice = PageSlice.of(page, size);
 		var filters = new StringBuilder();
 		var arguments = new ArrayList<>();
 		if (bookingId != null) {
@@ -328,20 +337,24 @@ public class BookingChangeService {
 			filters.append(customerAction ? " AND c.kind='SHOP' AND c.status='PENDING'"
 					: " AND NOT (c.kind='SHOP' AND c.status='PENDING')");
 		}
-		arguments.add(slice.size() + 1);
-		arguments.add(slice.offset());
-var requests = jdbc.queryForList("""
-			SELECT c.id,c.booking_id,c.kind,c.status,c.source_departure_at,c.source_departure_id
+		String scope = """
 			FROM booking_change c
 			WHERE c.active_key IS NOT NULL AND (
 				(c.kind='CUSTOMER' AND c.status='PENDING')
 				OR (c.kind='SHOP' AND c.status IN ('PENDING','ACCEPTED','SUPPORT_REQUIRED'))
-			)%s
+			)
+			""" + filters;
+		Long total = jdbc.queryForObject("SELECT COUNT(*) " + scope, Long.class, arguments.toArray());
+		arguments.add(slice.size());
+		arguments.add(slice.offset());
+		var requests = jdbc.queryForList("""
+			SELECT c.id,c.booking_id,c.kind,c.status,c.source_departure_at,c.source_departure_id,c.created_at
+			%s
 			ORDER BY CASE WHEN c.status='SUPPORT_REQUIRED' THEN 0
 						  WHEN c.kind='SHOP' AND c.status='PENDING' THEN 2 ELSE 1 END,
-					c.source_departure_at,c.id LIMIT ? OFFSET ?
-			""".formatted(filters), arguments.toArray());
-		
+					c.created_at DESC,c.id DESC LIMIT ? OFFSET ?
+			""".formatted(scope), arguments.toArray());
+
 		// Enrich with tour info via Tour internal API
 		for (var row : requests) {
 			Integer sourceDepartureId = n(row, "source_departure_id");
@@ -350,7 +363,7 @@ var requests = jdbc.queryForList("""
 					Map<String, Object> departure = tourClient.getDeparture(sourceDepartureId);
 					if (departure != null) {
 						row.put("tour_id", departure.get("tour_id"));
-						row.put("tour_title", departure.get("tour_id") != null ? "Tour #" + departure.get("tour_id") : "Tour");
+						row.put("tour_title", Objects.requireNonNullElse(departure.get("tour_title"), "Tour"));
 					}
 				} catch (Exception ignored) {
 					row.put("tour_title", "Tour");
@@ -358,8 +371,11 @@ var requests = jdbc.queryForList("""
 			}
 		}
 		
-		requests.forEach(row -> row.computeIfPresent("source_departure_at", (name, value) -> date(value).toString()));
-		return Map.of("items", requests.stream().limit(slice.size()).toList(), "hasNext", requests.size() > slice.size());
+		requests.forEach(row -> {
+			for (String field : List.of("source_departure_at", "created_at"))
+				row.computeIfPresent(field, (name, value) -> date(value).toString());
+		});
+		return Map.of("items", requests, "hasNext", total != null && total > slice.offset() + slice.size(), "total", total == null ? 0 : total);
 	}
 
 	/** One query for every request on the page instead of one query per request. */
@@ -387,11 +403,12 @@ var requests = jdbc.queryForList("""
 	public Map<String, Object> shop(ChangeRequests.Shop input, boolean preview) {
 		checkPermission("SHOP_CHANGE_CREATE");
 		return tx.execute(status -> {
-			// A preview reports impact without locking the departure and its bookings, which
-			// would freeze new checkouts; the confirm call re-checks expectedVersion under a lock.
-			var source = (preview ? ledger.readDepartures(input.sourceId())
-					: ledger.lockDepartures(input.sourceId())).get(input.sourceId());
+            // Serialize declaring an incident with confirming an actual departure.
 			if (!preview) {
+                jdbc.update("""
+                        INSERT INTO departure_manifest(departure_id) VALUES(?)
+                        ON DUPLICATE KEY UPDATE departure_id=departure_id
+                        """, input.sourceId());
 				var previous = jdbc.queryForList(
 						"SELECT * FROM departure_change WHERE client_key=?", input.clientKey());
 				if (!previous.isEmpty()) {
@@ -401,6 +418,8 @@ var requests = jdbc.queryForList("""
 				}
 			}
 
+            requireUnstartedManifest(input.sourceId(), !preview);
+            var source = ledger.readDepartures(input.sourceId()).get(input.sourceId());
 			int occupiedSeats = validateShop(input, source, preview);
 			var bookings = jdbc.queryForList(
 					"SELECT * FROM booking WHERE tour_departure_id=? AND status='CONFIRMED' ORDER BY id",
@@ -427,6 +446,10 @@ var requests = jdbc.queryForList("""
 					""", input.clientKey(), input.sourceId(), target, input.reasonCode(), input.reason(),
 					input.evidence(), input.responseDeadline(), access.accountId(), now());
 			tourClient.updateOperationalStatus(input.sourceId(), "SUSPENDED");
+            if (adminAudit != null) adminAudit.record(access.accountId(), "DEPARTURE_INCIDENT_DECLARED",
+                    "DEPARTURE", input.sourceId(), "Chuyến " + Objects.toString(source.get("tour_code"), "#" + input.sourceId()),
+                    "Chuyển chuyến sang xử lý sự cố", input.reason(), Map.of("status", "OPEN"),
+                    Map.of("status", "INCIDENT", "caseId", root));
 
 			for (var booking : bookings) {
 				var pendingChanges = jdbc.queryForList(
@@ -536,12 +559,18 @@ var requests = jdbc.queryForList("""
 						"Chỉ xử lý hủy booking bị ảnh hưởng bởi sự cố");
 				ledger.clearTransactions(n(booking, "id"));
 				require(!ledger.hasPaid(n(booking, "id")), "Booking có tiền, cần xử lý hoàn tiền riêng");
-				releaseAndCancel(booking, departures.get(n(change, "source_departure_id")), "SHOP_DISRUPTION");
+				ledger.assertLedger(n(change, "source_departure_id"));
+				releaseAndCancel(booking, departures.get(n(change, "source_departure_id")), "SHOP_DISRUPTION", false);
 				state(id, "CANCELLED_BY_SHOP", false, normalizeNote(input.note()));
 			} else {
 				require("APPROVE".equals(input.action()), "Thao tác không hợp lệ");
 				apply(change, booking, departures.get(n(change, "source_departure_id")),
 						departures.get(n(change, "target_departure_id")));
+                int bookingId = n(booking, "id");
+                if (adminAudit != null) adminAudit.record(access.accountId(), "BOOKING_RESCHEDULED", "BOOKING", bookingId,
+                        "Đơn #" + bookingId, "Chuyển lịch đặt chỗ", input.note(),
+                        Map.of("departureId", n(change, "source_departure_id")),
+                        Map.of("departureId", n(change, "target_departure_id")));
 			}
 			return findChange(id);
 		});
@@ -576,7 +605,12 @@ var requests = jdbc.queryForList("""
 			normalizeNote(input.note());
 
 			ledger.clearTransactions(n(booking, "id"));
-			var amount = ledger.paid(n(booking, "id"), n(booking, "account_id"));
+			int bookingId = n(booking, "id");
+			var payment = paymentClient.getPaymentStatus(bookingId);
+			// On retry, Payment accepts only the same recorded reference and amount.
+			boolean alreadyRecorded = payment != null && "REFUNDED".equals(payment.get("status"));
+			if (!alreadyRecorded) ledger.assertLedger(n(source, "id"));
+			var amount = alreadyRecorded ? input.amount() : ledger.paid(bookingId, n(booking, "account_id"));
 			require(amount.compareTo(input.amount()) == 0,
 					"Chỉ ghi nhận hoàn toàn bộ đúng số tiền đã thanh toán");
 			require(jdbc.queryForObject("""
@@ -585,15 +619,17 @@ var requests = jdbc.queryForList("""
 							""", Integer.class, input.reference(), id) == 0,
 					"Tham chiếu hoàn tiền đã dùng cho booking khác");
 
-			releaseAndCancel(booking, source, "SHOP_REFUNDED");
+			paymentClient.refund(bookingId, amount.longValueExact(), input.reference());
+			releaseAndCancel(booking, source, "SHOP_REFUNDED", true);
 			jdbc.update("""
 					UPDATE booking_change SET refund_amount=?,refund_reference=?,refund_recorded_by=?,
 					  refund_recorded_at=? WHERE id=?
 					""", amount, input.reference(), access.accountId(), now(), id);
 			state(id, "REFUNDED", false, input.note());
+            if (adminAudit != null) adminAudit.record(access.accountId(), "BOOKING_REFUND_RECORDED", "BOOKING", bookingId,
+                    "Đơn #" + bookingId, "Ghi nhận hoàn tiền hồ sơ dời lịch", input.note(),
+                    Map.of("status", change.get("status")), Map.of("status", "REFUNDED", "amountVnd", amount, "reference", input.reference()));
 			ledger.assertLedger(n(source, "id"));
-			int bookingId = n(booking, "id");
-			paymentClient.refund(bookingId, amount.longValue(), input.reference());
 			return findChange(id);
 		});
 	}
@@ -622,13 +658,26 @@ var requests = jdbc.queryForList("""
 			for (var pending : pendingChanges) {
 				state(((Number) pending.get("id")).longValue(), "WITHDRAWN", false, "Booking cũ đã kết thúc");
 			}
-			tourClient.updateOperationalStatus(n(root, "source_departure_id"), "CANCELLED");
+            int sourceId = n(root, "source_departure_id");
+            // Open first so a missing pickup point leaves the source incident available for retry.
 			tourClient.updateOperationalStatus(n(root, "target_departure_id"), "OPEN");
+			tourClient.updateOperationalStatus(sourceId, "CANCELLED");
+            var source = departures.get(sourceId);
+            if (adminAudit != null) adminAudit.record(access.accountId(), "DEPARTURE_CANCELLED", "DEPARTURE", sourceId,
+                    "Chuyến " + Objects.toString(source.get("tour_code"), "#" + sourceId), "Hủy chuyến do sự cố",
+                    Objects.toString(current.get("reason"), null), Map.of("status", "SUSPENDED"), Map.of("status", "CANCELLED"));
 			jdbc.update("UPDATE departure_change SET status='COMPLETED',completed_at=? WHERE id=?",
 					now(), rootId);
 			return jdbc.queryForMap("SELECT * FROM departure_change WHERE id=?", rootId);
 		});
 	}
+
+    private void requireUnstartedManifest(int departureId, boolean lock) {
+        var started = jdbc.query("SELECT actual_departure_at,completed_at FROM departure_manifest WHERE departure_id=?"
+                        + (lock ? " FOR UPDATE" : ""),
+                (rs, index) -> rs.getTimestamp(1) != null || rs.getTimestamp(2) != null, departureId);
+        require(!started.contains(true), "Chuyến đã xác nhận xuất phát hoặc đã chốt.");
+    }
 
 	/** @return the seats currently occupied on the source departure, already ledger-checked. */
 	private int validateShop(ChangeRequests.Shop input, Map<String, Object> source, boolean preview) {
@@ -641,9 +690,7 @@ var requests = jdbc.queryForList("""
 				"Chỉ áp dụng sự cố bắt buộc, không dùng lý do thương mại");
 		require(input.originalCannotDepart(),
 				"Cần xác nhận chuyến cũ không thể khởi hành và chịu trách nhiệm về bằng chứng");
-		require("OPEN".equals(source.get("operational_status"))
-						&& date(source.get("departure_date")).isAfter(now()),
-				"Chuyến cũ đã khởi hành hoặc đang xử lý sự cố");
+        require("OPEN".equals(source.get("operational_status")), "Chuyến cũ không còn mở hoặc đang xử lý sự cố.");
 		require(v(source) == input.expectedVersion(), "Sức chứa/lịch đã thay đổi; tải lại trước khi xác nhận");
 		require(input.departureAt() != null && input.returnAt() != null
 						&& input.departureAt().isAfter(now()) && input.returnAt().isAfter(input.departureAt()),
@@ -655,8 +702,9 @@ var requests = jdbc.queryForList("""
 		require(!input.departureAt().equals(date(source.get("departure_date"))), "Ngày mới phải khác lịch cũ");
 		require(input.responseDeadline() != null && input.responseDeadline().isAfter(now())
 						&& input.responseDeadline().isBefore(input.departureAt())
-						&& input.responseDeadline().isBefore(date(source.get("departure_date"))),
-				"Hạn phản hồi phải trước cả hai giờ khởi hành");
+                        && (!date(source.get("departure_date")).isAfter(now())
+                            || input.responseDeadline().isBefore(date(source.get("departure_date")))),
+				"Hạn phản hồi phải trước giờ khởi hành của các chuyến sắp tới.");
 
 		int occupied = ledger.assertLedger(n(source, "id"));
 		int seats = 0;
@@ -687,9 +735,6 @@ var requests = jdbc.queryForList("""
 						? "ACCEPTED".equals(change.get("status")) && change.get("consent_source") != null
 						: "PENDING".equals(change.get("status")),
 				"Chưa có xác nhận hợp lệ để chuyển lịch");
-		require(date(source.get("departure_date")).isAfter(now()),
-				"Chuyến cũ đã đến giờ đi; cần hỗ trợ thủ công");
-
 		if (shop) {
 			var root = jdbc.queryForMap(
 					"SELECT * FROM departure_change WHERE id=?", change.get("shop_change_id"));
@@ -701,6 +746,8 @@ var requests = jdbc.queryForList("""
 							|| "OPEN".equals(target.get("operational_status")),
 					"Lịch thay thế không còn phục vụ");
 		} else {
+            require(date(source.get("departure_date")).isAfter(now()),
+                    "Chuyến cũ đã đến giờ đi; cần hỗ trợ thủ công");
 			require("OPEN".equals(source.get("operational_status"))
 							&& "OPEN".equals(target.get("operational_status")),
 					"Lịch đang có sự cố");
@@ -739,10 +786,11 @@ var requests = jdbc.queryForList("""
 				"Lịch mới không còn đủ chỗ; booking vẫn ở lịch cũ");
 
 		if (release > 0) {
-			releaseSeats(source, release);
+			releaseSeats(source, release, bookingId);
 		}
 		tourClient.holdSeats(n(target, "id"), new TourInternalClient.HoldSeatsRequest(
 				seats, String.valueOf(bookingId), paid ? now() : plan.deadline()));
+		if (paid) tourClient.confirmHold(n(target, "id"), bookingId);
 		jdbc.update("UPDATE booking SET tour_departure_id=? WHERE id=?", n(target, "id"), bookingId);
 
 		if (hold == null) {
@@ -775,18 +823,17 @@ var requests = jdbc.queryForList("""
 		ledger.assertLedger(n(target, "id"));
 	}
 
-	private void releaseAndCancel(Map<String, Object> booking, Map<String, Object> source, String reason) {
-		ledger.assertLedger(n(source, "id"));
+	private void releaseAndCancel(Map<String, Object> booking, Map<String, Object> source, String reason, boolean refundRecorded) {
 		int bookingId = n(booking, "id");
 		var hold = ledger.reservation(bookingId);
 		int release;
 		if (hold == null) {
-			release = ledger.hasPaid(bookingId) ? ledger.people(bookingId) : 0;
+			release = refundRecorded || ledger.hasPaid(bookingId) ? ledger.people(bookingId) : 0;
 		} else {
 			release = OCCUPYING_HOLD_STATUSES.contains(hold.get("status")) ? n(hold, "seats") : 0;
 		}
 		if (release > 0) {
-			releaseSeats(source, release);
+			releaseSeats(source, release, bookingId);
 		}
 		jdbc.update("UPDATE booking SET status='CANCELLED' WHERE id=?", n(booking, "id"));
 		jdbc.update("""
@@ -802,8 +849,8 @@ var requests = jdbc.queryForList("""
 		return OCCUPYING_HOLD_STATUSES.contains(hold.get("status")) ? n(hold, "seats") : 0;
 	}
 
-	private void releaseSeats(Map<String, Object> departure, int seats) {
-		tourClient.releaseHold(n(departure, "id"), seats);
+	private void releaseSeats(Map<String, Object> departure, int seats, int bookingId) {
+		tourClient.releaseHold(n(departure, "id"), seats, bookingId);
 	}
 
 	private LocalDateTime now() {

@@ -38,7 +38,7 @@ class TourMutationTest {
         lenient().when(galleryProof.issue("edit", 1)).thenReturn("edit-proof");
         lenient().when(galleryProof.issue("retry", 1)).thenReturn("retry-proof");
         service=new TourService(tours,itineraries,locations,vehicles,prices,files,imageCache,departures,
-                new TransactionTemplate(mock(PlatformTransactionManager.class)),mock(org.springframework.jdbc.core.JdbcTemplate.class), galleryProof);
+                new TransactionTemplate(mock(PlatformTransactionManager.class)),mock(org.springframework.jdbc.core.JdbcTemplate.class), galleryProof, org.mockito.Mockito.mock(com.example.tour_service.operations.AdminAuditEvents.class));
         var location=Location.builder().id(1).city("City").type(com.example.tour_service.enums.LocationType.DEPARTURE).build(); var vehicle=Vehicle.builder().id("BUS").vehicleType("Bus").build();
         var tour=Tour.builder().id(1).basePrice(new BigDecimal("3000000")).tourPriceId(1L).departureLocation(location).destinationLocation(location).vehicle(vehicle).build();
         when(tours.findAllIds()).thenReturn(List.of(1));

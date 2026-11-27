@@ -61,7 +61,7 @@ public final class HttpCatalogReader implements CatalogReader {
             cards.add(new TourCard(card.tourId(),card.tourProgram(),card.title(),card.destinationName(),card.region(),
                     card.durationDays(),safeImage(card.imageUrl())?card.imageUrl():null,"/tours/detail/"+card.tourId(),price,availability));
         }
-        return new SearchResult(List.copyOf(cards),summary,page,5);
+        return new SearchResult(List.copyOf(cards),summary,page,size);
     }
     private static boolean text(String value,int limit) { return value!=null && !value.isBlank() && value.length()<=limit; }
     private static boolean safeImage(String url) {

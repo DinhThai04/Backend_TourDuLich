@@ -16,6 +16,9 @@ public class BookingService {
     public List<BookingResponse> getAllBookings(Integer page, Integer size, boolean mine) {
         return lifecycle.list(page, size, mine);
     }
+    public List<BookingResponse> getAllBookings(Integer page, Integer size, boolean mine, Integer departureId) {
+        return lifecycle.list(page, size, mine, departureId);
+    }
     public BookingResponse getBookingById(Long id) { return lifecycle.get(requireId(id)); }
     public BookingResponse createBooking(BookingRequest request) { return lifecycle.create(request); }
     public BookingResponse findOwnAttempt(String key) { return lifecycle.findOwnAttempt(key); }

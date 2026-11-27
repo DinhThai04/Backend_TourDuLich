@@ -54,7 +54,6 @@ public class VnPayService {
         params.put("vnp_IpAddr", clientIp(httpRequest));
         params.put("vnp_CreateDate", formatter.format(order.createdAt()));
         params.put("vnp_ExpireDate", formatter.format(order.expiresAt()));
-        params.put("vnp_SecureHashType", "SHA512");
         String query = canonicalQuery(params);
         return config.payUrl() + "?" + query + "&vnp_SecureHash="
             + VnPayConfig.hmacSHA512(config.secretKey(), query);

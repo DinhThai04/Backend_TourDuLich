@@ -1,5 +1,6 @@
 package com.example.booking_service.change;
 
+import com.example.booking_service.reservation.DeparturePricing;
 import com.example.booking_service.repository.httpclient.InvoiceInternalClient;
 import com.example.booking_service.repository.httpclient.PaymentInternalClient;
 import com.example.booking_service.repository.httpclient.PricingInternalClient;
@@ -60,7 +61,10 @@ public class ChangeLedger {
 	}
 
 	public static LocalDateTime date(Object value) {
-		return value instanceof LocalDateTime time ? time : ((Timestamp) value).toLocalDateTime();
+		if (value == null) return null;
+		if (value instanceof LocalDateTime time) return time;
+		if (value instanceof String isoDateTime) return LocalDateTime.parse(isoDateTime);
+		return ((Timestamp) value).toLocalDateTime();
 	}
 
 	public Map<String, Object> booking(int id) {
@@ -242,12 +246,9 @@ public class ChangeLedger {
 		} catch (Exception e) {
 			throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Không tìm thấy lịch khởi hành");
 		}
-		int tourId = n(departure, "tour_id");
-		
-		// Get price info via Pricing internal API
 		Map<String, Object> price;
 		try {
-			price = pricingClient.getPriceById((long) tourId);
+			price = pricingClient.getPriceById(DeparturePricing.priceId(departure));
 		} catch (Exception e) {
 			throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để chuyển lịch");
 		}

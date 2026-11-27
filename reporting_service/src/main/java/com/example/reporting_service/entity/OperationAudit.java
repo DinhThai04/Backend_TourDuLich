@@ -44,4 +44,26 @@ public class OperationAudit {
 
     @Column(name = "occurred_at", nullable = false)
     private LocalDateTime occurredAt;
+
+    @Column(length = 16)
+    private String actorType;
+    @Column(length = 160)
+    private String actorName;
+    @Column(length = 100)
+    private String actorRole;
+    @Column(length = 24)
+    private String actionGroup;
+    @Column(length = 160)
+    private String targetLabel;
+    @Column(length = 240)
+    private String summary;
+    @Column(length = 1000)
+    private String reason;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "JSON")
+    private String beforeJson;
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "JSON")
+    private String afterJson;
+    private LocalDateTime createdAt;
 }

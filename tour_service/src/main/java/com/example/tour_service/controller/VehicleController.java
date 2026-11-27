@@ -1,9 +1,7 @@
 package com.example.tour_service.controller;
 
 import com.example.tour_service.dto.request.ApiResponse;
-import com.example.tour_service.dto.request.TourRequest;
 import com.example.tour_service.dto.request.VehicleRequest;
-import com.example.tour_service.dto.response.TourResponse;
 import com.example.tour_service.dto.response.VehicleResponse;
 import com.example.tour_service.service.VehicleService;
 import jakarta.validation.Valid;

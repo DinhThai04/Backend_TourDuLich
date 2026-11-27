@@ -9,4 +9,5 @@ import org.springframework.stereotype.Component;
 @Data
 public class BookingInternalSecurityProperties {
     private String internalKey;
+    private String ticketMailKey;
 }

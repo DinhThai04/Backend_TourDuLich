@@ -78,6 +78,11 @@ public class NotificationEventProcessor {
 
         JsonNode data = root.path("payload").isObject() ? root.path("payload") : root;
         String recipient = firstNonBlank(text(data, "recipient"), text(data, "email"));
+        if (recipient == null && "payment.refunded.v1".equals(eventType)) {
+            // This financial integration event is not a mail command. Booking owns the customer notification.
+            jdbc.update("UPDATE notification_inbox SET processed_at=? WHERE consumer=? AND event_id=?", now, CONSUMER_ID, eventId);
+            return true;
+        }
         if (recipient == null) {
             throw new InvalidNotificationEventException("Notification event has no recipient");
         }
@@ -121,7 +126,10 @@ public class NotificationEventProcessor {
         }
         try {
             String payload = objectMapper.writeValueAsString(mail);
-            outbox.insert(eventKey, eventType, sourceService, bookingId, accountId,
+            String kind = text(data, "mailEventType");
+            String mailType = "notification.mail.v1".equals(eventType)
+                    && ("PAYMENT_SUCCEEDED".equals(kind) || "BOOKING_EXPIRED".equals(kind)) ? kind : eventType;
+            outbox.insert(eventKey, mailType, sourceService, bookingId, accountId,
                     recipient, payload, now, now);
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Could not encode notification mail payload", exception);

@@ -20,6 +20,7 @@ public class ReconciliationService {
 	private final AuthInternalClient authClient;
 	private final TourInternalClient tourClient;
 	private final BookingInternalClient bookingClient;
+	private final com.example.payment_service.outbox.OutboxPublisher outbox;
 	public enum Action { UNPAID_CONFIRMED, PAYMENT_FOUND, REFUND_RECORDED }
 	/** Fixed provider whitelist; table and reference column are never taken from user input. */
 	private enum Provider {
@@ -38,7 +39,7 @@ public class ReconciliationService {
 			""";
 	public record Decision(Action action,java.math.BigDecimal amountVnd,String reference,String note,
 						   LocalDateTime providerPaidAt,boolean confirmed) {}
-	public record Page(List<Map<String,Object>> items,boolean hasNext) {}
+	public record Page(List<Map<String,Object>> items,boolean hasNext,long total) {}
 	private LocalDateTime now(){return LocalDateTime.now(clock).withNano(0);}
 	private void require(boolean ok,String message){if(!ok)throw new ResponseStatusException(HttpStatus.CONFLICT,message);}
 	private void invalid(String message){throw new ResponseStatusException(HttpStatus.BAD_REQUEST,message);}
@@ -59,7 +60,7 @@ public class ReconciliationService {
 
 	public Page list(int page, String view, String txnRef, int size, Integer bookingId, java.time.LocalDate day) {
 		actor("RECONCILIATION_READ");
-		if(page<0 || page>100000 || size < 1 || size > 25 || !List.of("ACTIONABLE","HISTORY","ALL").contains(view) || ("ALL".equals(view) && txnRef == null))invalid("Bộ lọc đối soát không hợp lệ");
+		if(page<0 || page>100000 || size < 1 || size > 100 || !List.of("ACTIONABLE","HISTORY","ALL").contains(view) || ("ALL".equals(view) && txnRef == null && bookingId == null))invalid("Bộ lọc đối soát không hợp lệ");
 		if (txnRef != null) ref(txnRef);
 		String filter = switch (view) {
 			case "HISTORY" -> "EXISTS(SELECT 1 FROM payment_reconciliation_event e WHERE e.txn_ref=t.txn_ref)";
@@ -93,7 +94,10 @@ public class ReconciliationService {
 			WHERE %s%s
 			ORDER BY CASE WHEN r.status='OPEN' THEN 0 ELSE 1 END,t.created_at DESC,t.txn_ref LIMIT ? OFFSET ?
 			""".formatted(TRANSACTIONS, filter, scope);
-		arguments.add(size + 1);
+		String countSql = "SELECT COUNT(*) FROM (%s) t LEFT JOIN payment_reconciliation r ON r.txn_ref=t.txn_ref WHERE %s%s"
+				.formatted(TRANSACTIONS, filter, scope);
+		Long total = jdbc.queryForObject(countSql, Long.class, arguments.toArray());
+		arguments.add(size);
 		arguments.add((long) page * size);
 		var rows = jdbc.queryForList(sql, arguments.toArray());
 		
@@ -133,7 +137,7 @@ public class ReconciliationService {
 			Object transId=row.remove("provider_trans_id");
 			if(row.get("transaction_no")==null && transId!=null)row.put("transaction_no",String.valueOf(transId));
 		});
-		return new Page(rows.stream().limit(size).toList(),rows.size()>size);
+		return new Page(rows, total != null && total > ((long) page + 1) * size, total == null ? 0 : total);
 	}
 	public List<Map<String,Object>> history(String txnRef) {
 		actor("RECONCILIATION_HISTORY");ref(txnRef);
@@ -190,9 +194,9 @@ public class ReconciliationService {
 		var tx=lock(provider,txnRef);
 		var cases=jdbc.queryForList("SELECT * FROM payment_reconciliation WHERE txn_ref=? FOR UPDATE",txnRef);
 		
-		// Get actor status via Auth internal API
+		Map<String, Object> account;
 		try {
-			Map<String, Object> account = authClient.getUserById(actor);
+			account = authClient.getUserById(actor);
 			if (account == null || !"ACTIVE".equals(account.get("status")))
 				throw new ResponseStatusException(HttpStatus.FORBIDDEN,"Tài khoản xử lý không hoạt động");
 		} catch (Exception e) {
@@ -238,6 +242,23 @@ public class ReconciliationService {
 			jdbc.update("INSERT INTO payment_reconciliation_event(txn_ref,booking_id,actor_id,action,amount_vnd,reference,note,created_at) VALUES (?,?,?,?,?,?,?,?)",
 					txnRef,booking,actor,input.action().name(),amount,input.reference(),input.note(),now());
 		}catch(org.springframework.dao.DuplicateKeyException duplicate){throw new ResponseStatusException(HttpStatus.CONFLICT,"Tham chiếu vừa được sử dụng; hãy tải lại",duplicate);}
+		boolean admin=SecurityContextHolder.getContext().getAuthentication().getAuthorities().stream()
+				.anyMatch(authority -> "SGU_SUPER_ADMIN".equals(authority.getAuthority()));
+		boolean refund=input.action()==Action.REFUND_RECORDED;
+		String summary=refund ? "Ghi nhận khoản hoàn đã thực hiện" : "Ghi nhận kết quả đối soát";
+		String correlationId = Objects.toString(org.slf4j.MDC.get("requestId"), txnRef);
+		outbox.writeToOutbox("admin.audit.v1","PAYMENT",String.valueOf(booking),correlationId,txnRef,Map.ofEntries(
+				Map.entry("occurredAt", clock.instant().toString()),
+				Map.entry("actorId",String.valueOf(actor)), Map.entry("actorType",admin ? "ADMIN" : "STAFF"),
+				Map.entry("actorName",Objects.toString(account.get("username"),"Quản trị viên #" + actor)),
+				Map.entry("actorRole",admin ? "SUPER_ADMIN" : Objects.toString(account.get("role"),"Đối soát thanh toán")),
+				Map.entry("actionCode",refund ? "REFUND_CONFIRMED" : "RECONCILIATION_RECORDED"),
+				Map.entry("actionGroup","FINANCE"), Map.entry("targetType","PAYMENT"), Map.entry("targetId",String.valueOf(booking)),
+				Map.entry("targetLabel","Thanh toán #" + booking), Map.entry("summary",summary), Map.entry("reason",input.note()),
+				Map.entry("before",Map.of("status",tx.get("status"), "reconciliationStatus", cases.isEmpty() ? "NONE" : cases.getFirst().get("status"))),
+				Map.entry("after",Map.of("status",completed,"reconciliationStatus",switch (input.action()) {
+                    case UNPAID_CONFIRMED -> "NONE"; case PAYMENT_FOUND -> "OPEN"; case REFUND_RECORDED -> "REFUNDED";
+                },"decision",input.action().name(),"amountVnd",amount,"reference",input.reference(),"txnRef",txnRef))));
 		try { tourClient.incrementVersion(departure); } catch (Exception ignored) {}
 		return response(provider,txnRef);
 	}

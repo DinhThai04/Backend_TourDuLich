@@ -17,7 +17,7 @@ public class NotificationMailClient {
     private final String internalKey;
 
     public NotificationMailClient(
-            @Value("${app.notification.base-url:http://localhost:8082/notification}") String baseUrl,
+            @Value("${app.services.notification-base-url}") String baseUrl,
             @Value("${NOTIFICATION_INTERNAL_KEY:}") String internalKey,
             @Value("${app.notification.connect-timeout:2s}") Duration connectTimeout,
             @Value("${app.notification.read-timeout:3s}") Duration readTimeout) {

@@ -28,4 +28,6 @@ public class BookingRequest {
     private java.time.LocalDate pricingDate;
     @jakarta.validation.constraints.Pattern(regexp = "[0-9]{1,18}", message = "Tổng dự kiến không hợp lệ")
     private String expectedAmount;
+    @jakarta.validation.constraints.Pattern(regexp = "[a-f0-9]{64}", message = "Xác nhận điểm tập trung không hợp lệ")
+    private String pickupConfirmationKey;
 }

@@ -101,12 +101,12 @@ public class MailOutboxRepository {
                 """, bookingId);
     }
 
-    public boolean retry(int bookingId, long id, LocalDateTime now) {
+    public boolean retry(int bookingId, long id, LocalDateTime now, boolean confirmUncertain) {
         return jdbc.update("""
                 UPDATE mail_outbox SET status='RETRY',attempt_count=0,next_attempt_at=?,updated_at=?,
                     last_error=NULL,claim_token=NULL,locked_until=NULL
-                WHERE id=? AND booking_id=? AND status='FAILED' AND sent_at IS NULL
-                """, now, now, id, bookingId) == 1;
+                WHERE id=? AND booking_id=? AND status=? AND sent_at IS NULL
+                """, now, now, id, bookingId, confirmUncertain ? "UNKNOWN" : "FAILED") == 1;
     }
 
     public boolean hasAccountHistory(long accountId) {

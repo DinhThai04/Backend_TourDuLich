@@ -16,7 +16,8 @@ public interface NotificationInternalClient {
     java.util.List<Map<String, Object>> getDeliveries(@PathVariable("bookingId") Integer bookingId);
 
     @PostMapping("/internal/notifications/mail/bookings/{bookingId}/{id}/retry")
-    void retryMail(@PathVariable("bookingId") Integer bookingId, @PathVariable("id") Long id);
+    void retryMail(@PathVariable("bookingId") Integer bookingId, @PathVariable("id") Long id,
+            @RequestParam("confirmUncertain") boolean confirmUncertain);
 
     record MailEnqueueRequest(
             String eventKey,

@@ -1,0 +1,20 @@
+CREATE TABLE IF NOT EXISTS `pricing_outbox` (
+  `id` BIGINT NOT NULL AUTO_INCREMENT,
+  `event_id` VARCHAR(36) NOT NULL,
+  `event_type` VARCHAR(120) NOT NULL,
+  `aggregate_type` VARCHAR(80) NOT NULL,
+  `aggregate_id` VARCHAR(80) NOT NULL,
+  `aggregate_version` INT NOT NULL,
+  `correlation_id` VARCHAR(80),
+  `causation_id` VARCHAR(80),
+  `payload` JSON NOT NULL,
+  `status` VARCHAR(20) NOT NULL DEFAULT 'PENDING',
+  `attempts` INT NOT NULL DEFAULT 0,
+  `available_at` DATETIME(6) NOT NULL,
+  `published_at` DATETIME(6) NULL,
+  `last_error` VARCHAR(1000),
+  `created_at` DATETIME(6) NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_outbox_event_id` (`event_id`),
+  KEY `idx_outbox_status_available` (`status`, `available_at`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

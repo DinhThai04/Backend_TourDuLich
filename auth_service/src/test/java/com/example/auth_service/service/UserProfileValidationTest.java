@@ -42,7 +42,7 @@ class UserProfileValidationTest {
         var clean=com.example.auth_service.dto.request.UserCreationRequest.builder()
                 .username("customer").address("Ha Noi").build();
         assertDoesNotThrow(()->UserProfilePolicy.validateCreation(clean));
-        for(String name:new String[]{"ab","x".repeat(51),"valid\nname","valid\u200bname"}) {
+        for(String name:new String[]{"a","x".repeat(51),"valid\nname","valid\u200bname"}) {
             var bad=com.example.auth_service.dto.request.UserCreationRequest.builder()
                     .username(name).address("Ha Noi").password("password1").build();
             assertEquals(400,assertThrows(ResponseStatusException.class,()->service.createUser(bad)).getStatusCode().value());

@@ -22,6 +22,7 @@ import java.util.Set;
 @Transactional
 @RequiredArgsConstructor
 public class PermissionService {
+    private final com.example.auth_service.operations.AdminAuditEvents adminAudit;
     private static final int MAX_REFERENCE_ROWS = 1000;
 
     private final PermissionRepository permissionRepository;
@@ -54,10 +55,16 @@ public class PermissionService {
         validateUnique(request, p.getId());
         // The code is the authorization key already embedded in issued tokens; it must stay immutable.
         Set<Long> rolesBefore = roleIds(p);
+        var before = snapshot(p);
         copy(request, p);
         assignRoles(p, request.getRoleIds());
         revokeRolesThatLostThePermission(p, rolesBefore);
-        return PermissionResponse.from(permissionRepository.save(p));
+        var saved = permissionRepository.save(p);
+        if (adminAudit != null && !before.equals(snapshot(saved))) {
+            adminAudit.record("PERMISSION_UPDATED", "ACCOUNT", "PERMISSION", p.getId(), p.getCode(),
+                    "Cập nhật quyền", null, before, snapshot(saved));
+        }
+        return PermissionResponse.from(saved);
     }
 
     @Transactional(readOnly = true)
@@ -89,6 +96,16 @@ public class PermissionService {
         if (lost.isEmpty()) return;
         sessionEpochService.revokeAll(userRepository.findIdsByRoleIds(lost),
                 "Quyền \"" + permission.getCode() + "\" đã bị gỡ khỏi vai trò, đã thu hồi phiên đăng nhập cũ");
+    }
+
+    private static java.util.Map<String, Object> snapshot(Permission permission) {
+        var fields = new java.util.LinkedHashMap<String, Object>();
+        fields.put("name", permission.getName());
+        fields.put("apiPath", permission.getApiPath());
+        fields.put("method", permission.getMethod());
+        fields.put("module", permission.getModule());
+        fields.put("roleIds", new java.util.TreeSet<>(roleIds(permission)));
+        return fields;
     }
 
     private static Set<Long> roleIds(Permission permission) {

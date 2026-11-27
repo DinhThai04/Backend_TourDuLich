@@ -14,6 +14,7 @@ public class RabbitMQConfig {
     public static final String EVENT_EXCHANGE = "sgu.events";
     public static final String BOOKING_HOLD_QUEUE = "booking.hold.events";
     public static final String BOOKING_RESCHEDULE_QUEUE = "booking.reschedule.events";
+    public static final String BOOKING_PAYMENT_QUEUE = "booking.payment.settled.events";
     public static final String BOOKING_DLQ = "booking.events.dlq";
 
     @Bean
@@ -35,6 +36,18 @@ public class RabbitMQConfig {
                 .withArgument("x-dead-letter-exchange", "")
                 .withArgument("x-dead-letter-routing-key", BOOKING_DLQ)
                 .build();
+    }
+
+    @Bean
+    Queue bookingPaymentQueue() {
+        return QueueBuilder.durable(BOOKING_PAYMENT_QUEUE)
+                .withArgument("x-dead-letter-exchange", "")
+                .withArgument("x-dead-letter-routing-key", BOOKING_DLQ).build();
+    }
+
+    @Bean
+    Binding bookingPaymentBinding() {
+        return BindingBuilder.bind(bookingPaymentQueue()).to(eventExchange()).with("payment.settled.v1");
     }
 
     @Bean

@@ -46,7 +46,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity httpSecurity) throws Exception {
         httpSecurity.authorizeHttpRequests(request -> request
-                .requestMatchers("/internal/**").permitAll()
+                .requestMatchers("/internal/auth/**").authenticated()
+                .requestMatchers("/internal/**").denyAll()
                 .requestMatchers(HttpMethod.POST, PUBLIC_URLS).permitAll()
                 .requestMatchers(HttpMethod.GET, PUBLIC_GET_URLS).permitAll()
                 .anyRequest()

@@ -1,9 +1,5 @@
 package com.example.tour_service.dto.request;
 
-import com.example.tour_service.entity.Tour;
-import jakarta.persistence.Column;
-import jakarta.persistence.JoinColumn;
-import jakarta.persistence.ManyToOne;
 import lombok.*;
 import lombok.experimental.FieldDefaults;
 

@@ -21,6 +21,7 @@ import java.time.*;
 import java.util.*;
 
 @Service
+@lombok.extern.slf4j.Slf4j
 public class BookingLifecycleService {
     /** Grace shown on reads while the background worker is about to release a due hold. */
     private static final long EXPIRY_DISPLAY_GRACE_SECONDS = 60;
@@ -93,7 +94,7 @@ if (departure == null || departure.isEmpty()) {
             try {
                 userStatus = authClient.getUserStatus((long) account);
             } catch (Exception e) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Tài khoản không hoạt động");
+                throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Chưa xác minh được tài khoản, vui lòng thử lại");
             }
             if (userStatus == null || userStatus.isEmpty() || !"ACTIVE".equals(userStatus.get("status"))) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "Tài khoản không hoạt động");
@@ -104,12 +105,16 @@ if (departure == null || departure.isEmpty()) {
                 var existing = replay(account, departureId, clientKey, passengers);
                 if (existing != null) return existing;
             }
+            passengers.forEach(passenger -> validateNewPassenger(passenger, now.toLocalDate()));
             if (request.getPricingDate() != null && !now.toLocalDate().equals(request.getPricingDate()))
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "Đã sang ngày mới theo giờ Việt Nam. Vui lòng kiểm tra lại giá trước khi đặt.");
             if (!"OPEN".equals(departure.getOrDefault("operational_status","OPEN")))
                 throw new ResponseStatusException(HttpStatus.CONFLICT,"Chuyến đang dừng hoặc dành riêng cho khách bị dời lịch; không nhận đặt mới");
-            var plan = policy.plan(now, BookingMailEvents.date(departure.get("departure_date")));
+            var departureAt = BookingMailEvents.date(departure.get("departure_date"));
+            policy.requireBookable(now, departureAt);
+            Map<?, ?> pickup = confirmedPickup(departure, request.getPickupConfirmationKey());
+            var plan = policy.plan(now, departureAt);
             int seats = passengers.size();
             Integer availableSeats = (Integer) departure.get("available_seats");
             if (availableSeats == null || seats > availableSeats)
@@ -126,7 +131,7 @@ if (departure == null || departure.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "Số chỗ đang giữ chưa thanh toán vượt mức " + MAX_HELD_SEATS + "; hãy hoàn tất hoặc hủy bớt");
             // Giá được chốt ngay khi tạo booking, không đọc lại bảng giá lúc thanh toán.
-            PriceSnapshot snapshot = snapshotFor(tourIdOf(departure.get("tour_id")), passengers);
+            PriceSnapshot snapshot = snapshotFor(departure, passengers);
             String expected = request.getExpectedAmount();
             if (expected != null && BigDecimal.valueOf(snapshot.total()).compareTo(new BigDecimal(expected)) != 0)
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
@@ -139,28 +144,63 @@ if (departure == null || departure.isEmpty()) {
             }, key);
             int bookingId = Objects.requireNonNull(key.getKey()).intValue();
             for (var passenger : passengers) {
-                jdbc.update("INSERT INTO customer (booking_id,full_name,birthdate,gender,address,booking_type,status) VALUES (?,?,?,?,?,?,'BOOKED')",
-                        bookingId, passenger.fullName(), passenger.birthdate(), passenger.male(), passenger.address(), passenger.type());
+                jdbc.update("INSERT INTO customer (booking_id,full_name,birthdate,gender,address,booking_type,guardian_name,guardian_phone,status) VALUES (?,?,?,?,?,?,?,?,'BOOKED')",
+                        bookingId, passenger.fullName(), passenger.birthdate(), passenger.male(), passenger.address(), passenger.type(), passenger.guardianName(), passenger.guardianPhone());
             }
             persistSnapshot(bookingId, snapshot, now);
+            if (pickup != null) {
+                jdbc.update("""
+                        INSERT INTO booking_pickup_snapshot
+                            (booking_id,departure_id,address,landmark,arrival_time,directions_url,confirmed_at,meeting_point_id)
+                        VALUES (?,?,?,?,?,?,?,?)
+                        """, bookingId, departureId, pickup.get("address"), pickup.get("landmark"),
+                        pickup.get("arrivalTime"), pickup.get("directionsUrl"), now, pickup.get("confirmationKey"));
+            }
             // Seat consumption is owned by Tour: holdSeats locks the departure row on the Tour side
             // and decrements available_seats atomically, so Booking must not write tour_departure.
-            LocalDateTime expiresAt = plan.immediate() ? now.plusMinutes(15) : plan.deadline();
+            LocalDateTime expiresAt = policy.capDeadline(plan.deadline(), departureAt);
             try {
-                tourClient.holdSeats(departureId, new TourInternalClient.HoldSeatsRequest(seats, String.valueOf(bookingId), expiresAt));
+                tourClient.holdSeats(departureId, new TourInternalClient.HoldSeatsRequest(
+                        seats, String.valueOf(bookingId), expiresAt, Objects.toString(request.getPickupConfirmationKey(), "")));
+            } catch (feign.FeignException.Conflict changed) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "Không thể giữ chỗ theo thông tin đã hiển thị. Vui lòng kiểm tra lại giờ đóng đặt và điểm tập trung.");
             } catch (Exception e) {
                 throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể giữ chỗ tại tour-service");
             }
-            jdbc.update("""
-                INSERT INTO booking_reservation (booking_id,departure_id,departure_at,seats,status,expires_at,
-                  reminder_one_at,reminder_two_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)
-                """, bookingId, departureId, departure.get("departure_date"), seats, plan.immediate() ? "CHECKOUT" : "HELD",
-                    plan.deadline(), plan.reminderOne(), plan.reminderTwo(), now, now);
-            if (!plan.immediate()) events.enqueue(bookingId, MailEventType.BOOKING_CREATED, plan.deadline());
-            var result = response(bookingId);
-            result.setMessage(plan.immediate() ? "Vui lòng thanh toán ngay để hoàn tất đặt tour" : "Đã giữ chỗ đến hạn thanh toán");
-            return result;
+            try {
+                jdbc.update("""
+                    INSERT INTO booking_reservation (booking_id,departure_id,departure_at,seats,status,expires_at,
+                      reminder_one_at,reminder_two_at,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)
+                    """, bookingId, departureId, BookingMailEvents.date(departure.get("departure_date")), seats, plan.immediate() ? "CHECKOUT" : "HELD",
+                        expiresAt, plan.reminderOne(), plan.reminderTwo(), now, now);
+                events.enqueue(bookingId, MailEventType.BOOKING_CREATED, expiresAt);
+                var result = response(bookingId);
+                result.setMessage(plan.immediate() ? "Vui lòng thanh toán ngay để hoàn tất đặt tour" : "Đã giữ chỗ đến hạn thanh toán");
+                return result;
+            } catch (RuntimeException ex) {
+                try {
+                    tourClient.releaseHold(departureId, seats, bookingId);
+                } catch (Exception releaseEx) {
+                    log.warn("Could not release held seats after booking rollback, bookingId={}, departureId={}, error={}",
+                            bookingId, departureId, releaseEx.getClass().getSimpleName());
+                }
+                throw ex;
+            }
     }
+    private Map<?, ?> confirmedPickup(Map<String, Object> departure, String selection) {
+        List<?> options;
+        if (departure.get("meeting_points") instanceof List<?> stops) options = stops;
+        else if (departure.get("meeting_point") instanceof Map<?, ?> stop) options = List.of(stop);
+        else options = List.of();
+        if (options.isEmpty() && selection == null) return null;
+        for (Object value : options) {
+            if (value instanceof Map<?, ?> stop && selection != null && selection.equals(stop.get("confirmationKey"))) return stop;
+        }
+        throw new ResponseStatusException(HttpStatus.CONFLICT,
+                "Vui lòng tải lại trang và xác nhận thông tin điểm tập trung hiện tại.");
+    }
+
     private BookingResponse replay(int account, int departureId, String clientKey, List<Passenger> passengers) {
         var rows = jdbc.queryForList("""
                 SELECT b.id,b.account_id,b.tour_departure_id,b.status,r.status AS persisted_hold_status
@@ -185,11 +225,11 @@ if (departure == null || departure.isEmpty()) {
             return closed;
         }
         var saved = jdbc.query("""
-                SELECT full_name,birthdate,gender,address FROM customer WHERE booking_id=? ORDER BY id
+                SELECT full_name,birthdate,gender,address,guardian_name,guardian_phone FROM customer WHERE booking_id=? ORDER BY id
                 """, (rs, index) -> new PassengerIdentity(rs.getString("full_name"),
-                rs.getObject("birthdate", LocalDate.class), rs.getBoolean("gender"), rs.getString("address")), id);
+                rs.getObject("birthdate", LocalDate.class), rs.getBoolean("gender"), rs.getString("address"), rs.getString("guardian_name"), rs.getString("guardian_phone")), id);
         var submitted = passengers.stream()
-                .map(p -> new PassengerIdentity(p.fullName(), p.birthdate(), p.male(), p.address())).toList();
+                .map(p -> new PassengerIdentity(p.fullName(), p.birthdate(), p.male(), p.address(), p.guardianName(), p.guardianPhone())).toList();
         if (!saved.equals(submitted))
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "Lượt giữ chỗ trước đã được xử lý với thông tin khác. Vui lòng kiểm tra đơn trước khi đặt lại.");
@@ -201,7 +241,9 @@ if (departure == null || departure.isEmpty()) {
     private static List<Passenger> passengers(BookingRequest request, LocalDate businessDate) {
         List<Passenger> passengers = new ArrayList<>();
         for (var customer : request.getListOfCustomers()) {
-            if (customer == null || customer.getFullName() == null || customer.getFullName().isBlank() || customer.getFullName().length() > 255)
+            if (customer == null || customer.getFullName() == null || customer.getFullName().isBlank() || customer.getFullName().trim().length() < 2
+                    || customer.getFullName().trim().length() > 100
+                    || !customer.getFullName().trim().matches("[\\p{L}\\p{M}]+(?: +[\\p{L}\\p{M}]+)*"))
                 throw new IllegalArgumentException("Tên hành khách không hợp lệ");
             LocalDate birth;
             try { birth = LocalDate.parse(customer.getBirthdate()); }
@@ -210,17 +252,32 @@ if (departure == null || departure.isEmpty()) {
             if (!"Male".equalsIgnoreCase(customer.getGender()) && !"Female".equalsIgnoreCase(customer.getGender()))
                 throw new IllegalArgumentException("Giới tính không hợp lệ");
             String address = customer.getAddress() == null ? null : customer.getAddress().trim();
-            if (address != null && address.length() > 255)
-                throw new IllegalArgumentException("Địa chỉ không được vượt quá 255 ký tự");
+            if (address != null && (address.length() > 255 || !address.matches("[\\p{L}\\p{M}\\p{N} .,/()–-]*")))
+                throw new IllegalArgumentException("Địa chỉ không hợp lệ hoặc vượt quá 255 ký tự");
             int age = Period.between(birth, businessDate).getYears();
             String type = age < 2 ? "INFANT" : age <= 4 ? "TODDLER" : age <= 11 ? "CHILD" : "ADULT";
+            String guardianName = customer.getGuardianName() == null ? null : customer.getGuardianName().strip();
+            String guardianPhone = customer.getGuardianPhone() == null ? null : customer.getGuardianPhone().strip();
+            if (guardianName != null || guardianPhone != null) {
+                if (age >= 18 || guardianName == null || guardianName.length() < 2 || guardianName.length() > 100
+                        || !guardianName.matches("[\\p{L}\\p{M}]+(?: +[\\p{L}\\p{M}]+)*")
+                        || guardianPhone == null || !guardianPhone.matches("0[0-9]{9,10}"))
+                    throw new IllegalArgumentException("Thông tin người giám hộ không hợp lệ");
+            }
             passengers.add(new Passenger(customer.getFullName().trim(), birth,
-                    "Male".equalsIgnoreCase(customer.getGender()), address, type));
+                    "Male".equalsIgnoreCase(customer.getGender()), address, type, guardianName, guardianPhone));
         }
         return passengers;
     }
 
-    private record PassengerIdentity(String fullName, LocalDate birthdate, boolean male, String address) {}
+    private static void validateNewPassenger(Passenger passenger, LocalDate businessDate) {
+        if (!PassengerAddress.isValid(passenger.address()))
+            throw new IllegalArgumentException("Địa chỉ hành khách phải có số nhà/tên đường, xã/phường thuộc đúng tỉnh/thành phố");
+        if (Period.between(passenger.birthdate(), businessDate).getYears() < 18 && passenger.guardianName() == null)
+            throw new IllegalArgumentException("Hành khách dưới 18 tuổi cần thông tin người giám hộ");
+    }
+
+    private record PassengerIdentity(String fullName, LocalDate birthdate, boolean male, String address, String guardianName, String guardianPhone) {}
 
     /** Optional idempotency key. Only a replay of the same booking request can reuse it. */
     private static String clientKey(String value) {
@@ -271,7 +328,7 @@ if (departure == null || departure.isEmpty()) {
                 if (List.of("HELD","CHECKOUT").contains(hold.get("status"))) {
                     // Release seats via Tour internal API
                     try {
-                        tourClient.releaseHold(departureId, seats);
+                        tourClient.releaseHold(departureId, seats, id);
                     } catch (Exception e) {
                         throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Không thể giải phóng chỗ tại tour-service");
                     }
@@ -308,7 +365,14 @@ if (departure == null || departure.isEmpty()) {
             access.requireReadOwner(owner, "BOOKINGS_GET_ALL");
         // Reading must not expire holds; the background worker does that. toResponse()
         // still presents an already-due hold as expired without writing anything.
-        return response(id);
+        var result = response(id);
+        var pickup = jdbc.query("""
+                SELECT address,landmark,arrival_time,directions_url FROM booking_pickup_snapshot
+                WHERE booking_id=? AND departure_id=?
+                """, (rs, row) -> new BookingResponse.Pickup(rs.getString("address"), rs.getString("landmark"),
+                rs.getString("arrival_time"), rs.getString("directions_url")), id, Integer.parseInt(result.getTourDepartureId()));
+        pickup.stream().findFirst().ifPresent(result::setPickup);
+        return result;
     }
 
     public BookingResponse findOwnAttempt(String key) {
@@ -328,7 +392,7 @@ if (departure == null || departure.isEmpty()) {
     }
 
     public record HistoryRow(BookingResponse booking, String tourCode, String tourTitle,
-                             String departureDate, String returnDate, String invoiceStatus) {}
+                             String departureDate, String returnDate, String invoiceStatus, Long totalAmount) {}
     public record HistoryPage(List<HistoryRow> items, boolean hasNext) {}
 
     public HistoryPage ownHistory(int page, Long bookingId, String status, LocalDate from, LocalDate to) {
@@ -357,58 +421,84 @@ if (departure == null || departure.isEmpty()) {
         args.add(bookingId == null ? page * limit : 0);
         var rows = jdbc.queryForList(sql + clauses + " ORDER BY b.id DESC LIMIT ? OFFSET ?", args.toArray());
         
-        // Enrich with tour and invoice data via Feign clients
+        // Enrich with tour, price snapshot, and invoice data
         List<HistoryRow> items = new ArrayList<>();
         for (var row : rows.stream().limit(limit).toList()) {
             BookingResponse bookingResp = toResponse(row);
             String tourCode = null, tourTitle = null, departureDate = null, returnDate = null, invoiceStatus = null;
-            
-            // Get tour info via Tour internal API
-            Integer departureId = (Integer) row.get("hold_departure_id");
+            Long totalAmount = null;
+
+            Object depObj = row.get("hold_departure_id") != null ? row.get("hold_departure_id") : row.get("tour_departure_id");
+            Integer departureId = depObj instanceof Number n ? n.intValue() : null;
             if (departureId != null) {
                 try {
                     Map<String, Object> departure = tourClient.getDeparture(departureId);
                     if (departure != null) {
-                        tourCode = (String) departure.get("tour_code");
-                        tourTitle = (String) departure.get("tour_id") != null ? 
-                            "Tour #" + departure.get("tour_id") : null; // Would need another call for full title
+                        tourCode = departure.get("tour_code") != null ? String.valueOf(departure.get("tour_code")) : null;
+                        Object titleObj = departure.get("tour_title");
+                        if (titleObj != null && !String.valueOf(titleObj).isBlank()) {
+                            tourTitle = String.valueOf(titleObj);
+                        } else if (departure.get("tour_id") != null) {
+                            tourTitle = "Tour #" + departure.get("tour_id");
+                        }
                         Object depDate = departure.get("departure_date");
                         Object retDate = departure.get("return_date");
                         departureDate = depDate != null ? BookingMailEvents.date(depDate).toString() : null;
                         returnDate = retDate != null ? BookingMailEvents.date(retDate).toString() : null;
                     }
-                } catch (Exception ignored) {
-                    // Tour service unavailable, continue without tour info
+                } catch (Exception unavailable) {
+                    log.debug("Could not enrich booking history with departure {}", departureId);
                 }
             }
-            
-            // Get invoice status via Invoice internal API
+
             Integer bookingIdInt = ((Number) row.get("id")).intValue();
+            try {
+                var snap = jdbc.queryForList("SELECT total_amount FROM booking_price_snapshot WHERE booking_id=?", bookingIdInt);
+                if (!snap.isEmpty() && snap.get(0).get("total_amount") instanceof Number amt) {
+                    totalAmount = amt.longValue();
+                }
+            } catch (Exception unavailable) {
+                log.debug("Could not read the price snapshot for booking {}", bookingIdInt);
+            }
+
             try {
                 Map<String, Object> invoice = invoiceClient.getInvoiceByBookingId(bookingIdInt);
                 if (invoice != null) {
-                    invoiceStatus = (String) invoice.get("status");
+                    invoiceStatus = invoice.get("status") != null ? String.valueOf(invoice.get("status")) : null;
+                    if (totalAmount == null && invoice.get("totalBookingTourExpense") instanceof Number invAmt) {
+                        totalAmount = invAmt.longValue();
+                    }
                 }
-            } catch (Exception ignored) {
-                // Invoice service unavailable, continue without invoice info
+            } catch (feign.FeignException.NotFound missing) {
+                log.trace("No invoice yet for booking {}", bookingIdInt);
+            } catch (Exception unavailable) {
+                log.debug("Could not enrich booking history with an invoice for booking {}", bookingIdInt);
             }
             
-            items.add(new HistoryRow(bookingResp, tourCode, tourTitle, departureDate, returnDate, invoiceStatus));
+            items.add(new HistoryRow(bookingResp, tourCode, tourTitle, departureDate, returnDate, invoiceStatus, totalAmount));
         }
         return new HistoryPage(items, rows.size() > limit);
     }
 
-    private static String historyDate(Object value) {
-        return value == null ? null : BookingMailEvents.date(value).toString();
-    }
     /**
      * {@code mine} is what the profile page sends: a staff account also holds BOOKINGS_GET_ALL, and
      * the global page would show it somebody else's newest bookings instead of its own history.
      */
     public List<BookingResponse> list(Integer page, Integer size, boolean mine) {
+        return list(page, size, mine, null);
+    }
+    public List<BookingResponse> list(Integer page, Integer size, boolean mine, Integer departureId) {
         int account = access.accountId();
         boolean all = !mine && access.can("BOOKINGS_GET_ALL");
         PageSlice slice = PageSlice.of(page, size);
+        if (departureId != null) {
+            var scoped = all
+                    ? jdbc.queryForList(SELECT_BOOKING + " WHERE b.tour_departure_id=? ORDER BY b.id DESC LIMIT ? OFFSET ?",
+                            departureId, slice.size(), slice.offset())
+                    : jdbc.queryForList(SELECT_BOOKING + " WHERE b.tour_departure_id=? AND b.account_id=? ORDER BY b.id DESC LIMIT ? OFFSET ?",
+                            departureId, account, slice.size(), slice.offset());
+            return scoped.stream().map(this::toResponse).toList();
+        }
         var rows = all
                 ? jdbc.queryForList(SELECT_BOOKING + " ORDER BY b.id DESC LIMIT ? OFFSET ?",
                         slice.size(), slice.offset())
@@ -420,6 +510,12 @@ if (departure == null || departure.isEmpty()) {
             SELECT b.*,r.status AS reservation_status,r.expires_at AS payment_deadline,
               r.seats AS hold_seats,r.departure_id AS hold_departure_id,
               (SELECT COUNT(*) FROM customer c WHERE c.booking_id=b.id) AS passenger_count,
+              CASE WHEN b.status='CONFIRMED' AND EXISTS (
+                SELECT 1 FROM departure_manifest m JOIN departure_attendance a ON a.departure_id=m.departure_id
+                JOIN customer c ON c.id=a.customer_id
+                WHERE m.departure_id=b.tour_departure_id AND m.completed_at IS NOT NULL
+                  AND a.status IN ('RETURNED','SEPARATED') AND c.booking_id=b.id
+              ) THEN 1 ELSE 0 END AS trip_completed,
               r.reminder_one_at,r.reminder_two_at,
               s.adult_price AS snap_adult,s.child_price AS snap_child,s.toddler_price AS snap_toddler,
               s.infant_price AS snap_infant,s.total_amount AS snap_total,s.currency AS snap_currency,
@@ -442,7 +538,6 @@ if (departure == null || departure.isEmpty()) {
         int bookingId = ((Number) row.get("id")).intValue();
         LocalDateTime now = LocalDateTime.now(clock);
         
-        // Fetch departure status via Tour internal API (replaces direct tour_departure JOIN)
         String departureStatus = "OPEN";
         Integer departureId = (Integer) row.get("hold_departure_id");
         if (departureId != null) {
@@ -452,8 +547,8 @@ if (departure == null || departure.isEmpty()) {
                     Object status = departure.get("operational_status");
                     if (status != null) departureStatus = status.toString();
                 }
-            } catch (Exception ignored) {
-                // Tour service unavailable, assume OPEN
+            } catch (Exception unavailable) {
+                log.debug("Could not refresh departure status for booking {}", bookingId);
             }
         }
         
@@ -477,6 +572,7 @@ if (departure == null || departure.isEmpty()) {
                 .tourDepartureId(String.valueOf(row.get("tour_departure_id")))
                 .createdAt(BookingMailEvents.date(row.get("created_at")).toString())
                 .status(dueHold ? "EXPIRED" : storedStatus).reservationStatus(dueHold ? "EXPIRED" : hold)
+                .tripCompleted(row.get("trip_completed") instanceof Number completed && completed.intValue() == 1)
                 .paymentDeadline(deadline == null ? null : deadline.toString())
                 // Same payable-departure rule the payment service applies when an order is created:
                 // a stopped or missing schedule must not invite a checkout that can only be rejected.
@@ -503,25 +599,16 @@ if (departure == null || departure.isEmpty()) {
         return units;
     }
 
-    private record Passenger(String fullName, LocalDate birthdate, boolean male, String address, String type) {}
+    private record Passenger(String fullName, LocalDate birthdate, boolean male, String address, String type, String guardianName, String guardianPhone) {}
 
     private record PriceSnapshot(long priceId, BigDecimal adult, BigDecimal child, BigDecimal toddler,
             BigDecimal infant, BigDecimal supplement, long total) {}
 
-    private int tourIdOf(Object value) {
-        if (value instanceof Number number) return number.intValue();
-        if (value instanceof String text) {
-            try { return Integer.parseInt(text.trim()); }
-            catch (RuntimeException invalid) { throw new IllegalArgumentException("Tour ID không hợp lệ"); }
-        }
-        throw new IllegalArgumentException("Tour ID không hợp lệ");
-    }
-
-    private PriceSnapshot snapshotFor(int tourId, List<Passenger> passengers) {
+    private PriceSnapshot snapshotFor(Map<String, Object> departure, List<Passenger> passengers) {
         // Get price info via Pricing internal API (replaces direct prices+tour JOIN)
         Map<String, Object> price;
         try {
-            price = pricingClient.getPriceById((long) tourId);
+            price = pricingClient.getPriceById(DeparturePricing.priceId(departure));
         } catch (Exception e) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Tour chưa có bảng giá để đặt");
         }

@@ -64,10 +64,13 @@ public class InboxConsumer {
         }
     }
 
+    private static final String CONSUMER_NAME = "invoice-service";
+
     private boolean isDuplicate(String messageId) {
+        if (messageId == null || messageId.isBlank()) return false;
         Integer count = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM " + INBOX_TABLE + " WHERE message_id = ? AND processed = TRUE",
-                Integer.class, messageId);
+                "SELECT COUNT(*) FROM " + INBOX_TABLE + " WHERE consumer = ? AND event_id = ? AND processed_at IS NOT NULL",
+                Integer.class, CONSUMER_NAME, messageId);
         return count != null && count > 0;
     }
 
@@ -84,36 +87,24 @@ public class InboxConsumer {
     private void markProcessed(String messageId, String eventType, String payload,
                                String aggregateType, String aggregateId, String correlationId,
                                String causationId, String sourceService) {
-        String sql = "INSERT INTO " + INBOX_TABLE + " (message_id, event_type, aggregate_type, aggregate_id, correlation_id, causation_id, source_service, payload, processed, processed_at, created_at) " +
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?, ?) " +
-                "ON DUPLICATE KEY UPDATE processed = TRUE, processed_at = ?";
-        jdbc.update(sql, messageId, eventType, aggregateType, aggregateId, correlationId, causationId, sourceService, payload,
-                LocalDateTime.now(), LocalDateTime.now(), LocalDateTime.now());
+        String eventId = (messageId != null && !messageId.isBlank()) ? messageId : UUID.randomUUID().toString();
+        LocalDateTime now = LocalDateTime.now();
+        String sql = "INSERT INTO " + INBOX_TABLE + " (consumer, event_id, event_type, received_at, processed_at) " +
+                "VALUES (?, ?, ?, ?, ?) " +
+                "ON DUPLICATE KEY UPDATE processed_at = VALUES(processed_at)";
+        jdbc.update(sql, CONSUMER_NAME, eventId, eventType != null ? eventType : "unknown", now, now);
     }
 
     private void handleFailure(String messageId, String eventType, String payload,
                                long deliveryTag, Channel channel, Exception e) throws Exception {
-        Integer retryCount = jdbc.queryForObject(
-                "SELECT retry_count FROM " + INBOX_TABLE + " WHERE message_id = ?",
-                Integer.class, messageId);
-
-        int nextRetry = (retryCount == null) ? 1 : retryCount + 1;
-
-        if (nextRetry > MAX_RETRIES) {
-            moveToDLQ(messageId, eventType, payload, e.getMessage());
-            channel.basicAck(deliveryTag, false);
-            log.error("Event {} moved to DLQ after {} retries", messageId, MAX_RETRIES);
-        } else {
-            long delay = BACKOFF_MS[Math.min(nextRetry - 1, BACKOFF_MS.length - 1)];
-            String sql = "INSERT INTO " + INBOX_TABLE + " (message_id, event_type, payload, retry_count, last_error, last_attempt_at, created_at) " +
-                    "VALUES (?, ?, ?, ?, ?, ?, ?) " +
-                    "ON DUPLICATE KEY UPDATE retry_count = ?, last_error = ?, last_attempt_at = ?";
-            jdbc.update(sql, messageId, eventType, payload, nextRetry, e.getMessage(), LocalDateTime.now(), LocalDateTime.now(),
-                    nextRetry, e.getMessage(), LocalDateTime.now());
-
-            channel.basicNack(deliveryTag, false, true);
-            log.warn("Event {} scheduled for retry {} in {} ms", messageId, nextRetry, delay);
+        String eventId = (messageId != null && !messageId.isBlank()) ? messageId : UUID.randomUUID().toString();
+        try {
+            moveToDLQ(eventId, eventType != null ? eventType : "unknown", payload, e.getMessage());
+        } catch (Exception dlqEx) {
+            log.error("Failed to persist invoice DLQ for event {}: {}", eventId, dlqEx.getMessage());
         }
+        channel.basicAck(deliveryTag, false);
+        log.error("Event {} moved to DLQ after processing error: {}", eventId, e.getMessage());
     }
 
     private void moveToDLQ(String messageId, String eventType, String payload, String error) {

@@ -1,14 +1,10 @@
 package com.example.booking_service.entity;
 
 import jakarta.persistence.*;
-import jakarta.validation.OverridesAttribute;
 import jakarta.validation.constraints.NotNull;
 import lombok.*;
-import org.springframework.format.annotation.DateTimeFormat;
 
 import java.time.LocalDate;
-import java.util.HashSet;
-import java.util.Set;
 
 @Entity
 @Table(name = "customer")

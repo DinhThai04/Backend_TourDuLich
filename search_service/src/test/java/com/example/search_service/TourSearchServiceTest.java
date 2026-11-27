@@ -46,14 +46,16 @@ class TourSearchServiceIntegrationTest {
     TourDocument tour(int id,String title){return new TourDocument(id,"TEST_"+id,title,new BigDecimal("3000000"),"Origin","Destination","Bus",List.of("2026-12-01"));}
     @Test void snapshotSyncCreatesACompleteDocumentAndAdvancesTheCacheGeneration() {
         var doc=tour(1,"New tour");assertEquals(new TourSearchService.SyncResult(1,1,0),service.replaceSnapshot(List.of(doc)));
-        assertEquals(doc,repo.findById(1).orElseThrow());
+        org.assertj.core.api.Assertions.assertThat(repo.findById(1).orElseThrow())
+                .usingRecursiveComparison().withComparatorForType(BigDecimal::compareTo, BigDecimal.class).isEqualTo(doc);
         var generation=redis.opsForValue().get("sgu-tour:search:v2:generation");
         assertInstanceOf(Number.class,generation);assertTrue(((Number)generation).longValue()>0);
     }
     @Test void snapshotSyncUpdatesTheIndexedPriceAndDepartureDates() {
         repo.save(tour(2,"Old title"));var changed=tour(2,"Updated title");
         changed.setBasePrice(new BigDecimal("4000000"));changed.setDepartureDates(List.of("2026-12-15"));
-        service.replaceSnapshot(List.of(changed));assertEquals(changed,repo.findById(2).orElseThrow());
+        service.replaceSnapshot(List.of(changed));org.assertj.core.api.Assertions.assertThat(repo.findById(2).orElseThrow())
+                .usingRecursiveComparison().withComparatorForType(BigDecimal::compareTo, BigDecimal.class).isEqualTo(changed);
     }
     @Test void filtersMatchDestinationAndDepartureDateExactly() {
         repo.saveAll(java.util.stream.IntStream.rangeClosed(1,3).mapToObj(id->tour(id,"Tour "+id)).toList());

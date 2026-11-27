@@ -65,9 +65,10 @@ class CatalogBoundaryTest {
             assertThatThrownBy(()->new CatalogConfiguration().catalogReader(url,json)).hasMessage("Invalid local catalog URL.");
     }
     @Test void configurationAcceptsComposeServiceHosts() {
-        assertThatCode(()->new CatalogConfiguration().catalogReader("http://api_gateway:8888/api/v1/tour",json)).doesNotThrowAnyException();
+        assertThatCode(()->new CatalogConfiguration().catalogReader("http://tour-service:8086/tour",json)).doesNotThrowAnyException();
         assertThatCode(()->new CatalogConfiguration().catalogReader("http://api-gateway:8888/api/v1/tour",json)).doesNotThrowAnyException();
-        assertThatCode(()->new com.example.ai_service.account.HttpBookingReader("http://booking_service:8081/booking",json)).doesNotThrowAnyException();
+        assertThatThrownBy(()->new CatalogConfiguration().catalogReader("http://api_gateway:8888/api/v1/tour",json))
+                .hasMessage("Invalid local catalog URL.");
         assertThatCode(()->new com.example.ai_service.account.HttpBookingReader("http://booking-service:8081/booking",json)).doesNotThrowAnyException();
     }
 }

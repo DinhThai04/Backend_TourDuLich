@@ -21,8 +21,8 @@ public class TourPriceService {
     private static final int MAX_LIST_SIZE = 500;
 
     private final TourPriceRepository repository;
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.example.pricing_service.operations.OperationAudit audit;
+    private final com.example.pricing_service.operations.OperationAudit audit;
+    private final com.example.pricing_service.operations.AdminAuditEvents adminAudit;
 
     public TourPriceResponse createPrice(TourPriceRequest request) {
         VndPricePolicy.validate(request);
@@ -53,6 +53,10 @@ public class TourPriceService {
 
         var updated = toResponse(repository.save(existing));
         if (audit != null) audit.record("PRICE", id, previous.toString(), updated.toString());
+        if (adminAudit != null && !previous.toString().equals(updated.toString())) {
+            adminAudit.record("PRICE_UPDATED", "FINANCE", "PRICE", id, "Bảng giá #" + id, "Cập nhật bảng giá",
+                    null, priceSnapshot(previous), priceSnapshot(updated));
+        }
         return updated;
     }
 
@@ -74,6 +78,16 @@ public class TourPriceService {
             throw new org.springframework.web.server.ResponseStatusException(org.springframework.http.HttpStatus.BAD_REQUEST,"Cần từ 1 đến 100 mã bảng giá hợp lệ");
         List<TourPrice> prices = repository.findAllById(ids.stream().distinct().toList());
         return prices.stream().map(this::toResponse).collect(Collectors.toList());
+    }
+
+    private java.util.Map<String, Object> priceSnapshot(TourPriceResponse price) {
+        var values = new java.util.LinkedHashMap<String, Object>();
+        values.put("adultPrice", price.getAdultPrice());
+        values.put("childPrice", price.getChildPrice());
+        values.put("toddlerPrice", price.getToddlerPrice());
+        values.put("infantPrice", price.getInfantPrice());
+        values.put("singleSupplementPrice", price.getSingleSupplementPrice());
+        return values;
     }
 
     private TourPriceResponse toResponse(TourPrice tourPrice) {

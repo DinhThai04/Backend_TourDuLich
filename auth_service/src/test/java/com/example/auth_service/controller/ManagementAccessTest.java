@@ -93,4 +93,31 @@ class ManagementAccessTest {
         mvc.perform(delete("/permissions/11").with(jwt().jwt(j->j.subject("8")))).andExpect(status().isForbidden());
         verifyNoInteractions(permissionService);
     }
+
+    @Test void roleUpdateKeepsLegacyPermissionReferencesAndResponseShape() throws Exception {
+        var permission = new Permission("REVIEW_VIEW", "Xem đánh giá", "/api/v1/auth/reviews", "GET", "REVIEWS");
+        permission.setId(7L);
+        var saved = new Role();
+        saved.setId(42L);
+        saved.setName("Staff");
+        saved.setActive(true);
+        saved.setPermissions(List.of(permission));
+        when(roleService.update(any(Role.class))).thenAnswer(invocation -> {
+            Role input = invocation.getArgument(0);
+            org.junit.jupiter.api.Assertions.assertNull(input.getActive());
+            org.junit.jupiter.api.Assertions.assertEquals(7L, input.getPermissions().getFirst().getId());
+            return saved;
+        });
+
+        mvc.perform(put("/roles").with(jwt().jwt(token -> token.subject("3")))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"id":42,"name":"Staff","permissions":[{"id":7,"code":"REVIEW_VIEW"}]}
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.result.active").value(true))
+                .andExpect(jsonPath("$.result.permissions[0].id").value(7))
+                .andExpect(jsonPath("$.result.permissions[0].apiPath").value("/api/v1/auth/reviews"))
+                .andExpect(jsonPath("$.result.permissions[0].roles").doesNotExist());
+    }
 }

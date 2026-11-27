@@ -3,9 +3,6 @@ package com.example.auth_service.service;
 import org.springframework.stereotype.Service;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.data.domain.Page;
-import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.domain.Specification;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
@@ -31,8 +28,8 @@ public class RoleService {
     private final AdminContinuity adminContinuity;
     private final com.example.auth_service.repository.UserRepository userRepository;
     private final SessionEpochService sessionEpochService;
-    @org.springframework.beans.factory.annotation.Autowired(required = false)
-    private com.example.auth_service.operations.OperationAudit audit;
+    private final com.example.auth_service.operations.OperationAudit audit;
+    private final com.example.auth_service.operations.AdminAuditEvents adminAudit;
 
     @Value("${app.registration.customer-role-name:Khách Hàng}")
     private String customerRoleName;
@@ -162,6 +159,12 @@ public class RoleService {
         if (audit != null && authorizationChanged) {
             audit.record("ROLE", role.getId(), previousName + " / " + previousActive + " / " + new java.util.TreeSet<>(previousPermissions),
                     name + " / " + active + " / " + new java.util.TreeSet<>(permissionIds(saved)));
+        }
+        if (adminAudit != null && authorizationChanged) {
+            adminAudit.record("ROLE_PERMISSION_CHANGED", "ACCOUNT", "ROLE", saved.getId(), name,
+                    "Thay đổi vai trò hoặc quyền", null,
+                    java.util.Map.of("name", previousName, "active", previousActive, "permissionIds", new java.util.TreeSet<>(previousPermissions)),
+                    java.util.Map.of("name", name, "active", active, "permissionIds", new java.util.TreeSet<>(permissionIds(saved))));
         }
         return saved;
     }

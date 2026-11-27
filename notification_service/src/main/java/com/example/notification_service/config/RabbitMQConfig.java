@@ -85,11 +85,6 @@ public class RabbitMQConfig {
     }
 
     @Bean
-    Binding paymentSettledBinding() {
-        return bind("payment.settled.v1");
-    }
-
-    @Bean
     Binding paymentRefundedBinding() {
         return bind("payment.refunded.v1");
     }

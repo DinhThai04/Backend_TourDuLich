@@ -66,8 +66,9 @@ class HandoffFlowTest {
         context=new SpringApplicationBuilder(AiServiceApplication.class,Wiring.class).run("--server.port=0","--app.ai.enabled=false","--app.ai.probe=false","--app.ai.faq-approved-version=");
         time=context.getBean(Time.class);int aiPort=((ServletWebServerApplicationContext)context).getWebServer().getPort();
         int gatewayPort;try(var socket=new ServerSocket(0,1,InetAddress.getByName("127.0.0.1"))){gatewayPort=socket.getLocalPort();}
-        Path java=Path.of(System.getProperty("java.home"),"bin","java.exe");
-        gateway=new ProcessBuilder(java.toString(),"-Xms64m","-Xmx192m","-jar",gatewayJar.toString(),"--server.address=127.0.0.1","--server.port="+gatewayPort,"--app.ai.base-url=http://127.0.0.1:"+aiPort)
+        String executable = System.getProperty("os.name").startsWith("Windows") ? "java.exe" : "java";
+        Path java=Path.of(System.getProperty("java.home"),"bin",executable);
+        gateway=new ProcessBuilder(java.toString(),"-Xms64m","-Xmx192m","-jar",gatewayJar.toString(),"--server.address=127.0.0.1","--server.port="+gatewayPort,"--AI_BASE_URL=http://127.0.0.1:"+aiPort, "--AI_CHAT_MINUTE_LIMIT=20")
                 .redirectErrorStream(true).redirectOutput(Path.of("target","H_gateway_flow.log").toFile()).start();
         base="http://127.0.0.1:"+gatewayPort+"/api/v1/ai";
         boolean ready=false;for(int i=0;i<100;i++){
@@ -134,7 +135,8 @@ class HandoffFlowTest {
         var detail=ask(token,new Plan(Intent.DETAIL_TOUR,false,List.of(),List.of(1),Hint.NONE),"Lịch trình tour thứ nhất");assertThat(detail.result().path("detail").path("tourId").asInt()).isEqualTo(3);assertThat(detail.result().path("detail").toString()).doesNotContain("<script>","ignore_rules");
         var resetPlan=new Plan(Intent.SEARCH_TOURS,true,initial.changes(),List.of(),Hint.NONE);assertThat(ask(token,resetPlan,"Tìm lại từ đầu: miền Trung dưới 5 triệu cho một người lớn").result().path("tours").size()).isEqualTo(2);
         fares.set(0,2500000L);var compare=ask(token,new Plan(Intent.COMPARE_TOURS,false,List.of(),List.of(1,2),Hint.NONE),"So sánh tour thứ nhất và thứ hai");assertThat(compare.result().path("comparison").path("items").get(0).path("referenceAdultPriceVnd").asLong()).isEqualTo(2500000);assertThat(compare.result().path("criteria").path("region").asText()).isEqualTo("CENTRAL");
-        var place=ask(token,plan(set(Field.DESTINATION,"Huế")),"Tôi muốn đi Huế");assertThat(place.result().path("criteria").path("destinationId").asInt()).isEqualTo(2);assertThat(place.result().path("tours").get(0).path("tourId").asInt()).isEqualTo(2);
+        var place=ask(token,plan(set(Field.DESTINATION,"Huế")),"Tôi muốn đi Huế");assertThat(place.result().path("criteria").path("destinationId").asInt()).as("Destination criteria in %s",place.json()).isEqualTo(2);
+        assertThat(place.result().path("tours").path(0).path("tourId").asInt()).as("Matching destination tour in %s",place.json()).isEqualTo(2);
         var empty=ask(token,plan(set(Field.MAX_BUDGET_VND,"1000000")),"Ngân sách chỉ 1 triệu");assertThat(empty.result().path("status").asText()).isEqualTo("NO_RESULTS");
         var clarify=ask(token,plan(set(Field.MAX_BUDGET_VND,"2000000"),new Change(Field.BUDGET_SCOPE,Action.CLEAR,"")),"Ngân sách 2 triệu, chưa rõ cho ai");assertThat(clarify.result().path("status").asText()).isEqualTo("CLARIFICATION");assertThat(clarify.result().path("clarification").path("reason").asText()).isEqualTo("BUDGET_SCOPE_REQUIRED");
         int beforeChoice=modelCalls.get();
