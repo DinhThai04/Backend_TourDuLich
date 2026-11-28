@@ -1,0 +1,381 @@
+\chapter{PHẦN IV: TRIỂN KHAI VÀ GIAO DIỆN NGƯỜI DÙNG}
+\label{chap:trien-khai}
+
+Phần này trình bày môi trường triển khai, cấu trúc mã nguồn, kết quả đóng gói và chạy hệ thống bằng Docker Compose, các màn hình giao diện quản trị và khách hàng, quy trình tự động hóa với n8n/AI, kịch bản demo end-to-end, kết quả kiểm thử và đánh giá chung.
+
+\section{Môi trường triển khai}
+\label{sec:moi-truong}
+
+Hệ thống hỗ trợ hai cách chạy: chạy toàn bộ bằng Docker Compose (9 database) và chạy từng module bằng Maven/IDE trong lúc phát triển. Bảng~\ref{tab:moi-truong} liệt kê yêu cầu tối thiểu.
+
+\begin{table}[H]
+\centering
+\caption{Yêu cầu môi trường triển khai}
+\label{tab:moi-truong}
+\small
+\begin{tabularx}{\textwidth}{@{}L{3.0cm}L{4.3cm}Y@{}}
+\toprule
+\textbf{Thành phần} & \textbf{Yêu cầu} & \textbf{Ghi chú}\\
+\midrule
+Hệ điều hành & Windows, macOS hoặc Linux & Đã kiểm tra trên Windows với Docker Desktop và WSL2.\\
+Docker & Docker Desktop (Linux container) & Cần cho Cách~1; không cần cài Java/MySQL trên host.\\
+JDK & Java 21 & Cần cho Cách~2 và khi chạy Maven ngoài Docker.\\
+Maven & 3.9.x & Quản lý dependency và build từng module.\\
+Node.js & 20 trở lên (kèm npm) & Cần khi chạy hoặc build frontend.\\
+Cơ sở dữ liệu & 9 × MySQL 8.4 & Docker Compose cung cấp sẵn; mỗi database một container.\\
+Message broker & RabbitMQ 3.13 & Exchange \code{sgu.events}, DLQ.\\
+Tài nguyên & Khoảng 8--12~GB RAM khi bật đủ profile & 9 MySQL, RabbitMQ và các container Java chiếm nhiều bộ nhớ nhất.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Trong môi trường Docker Compose, Java, Maven và MySQL đã có sẵn trong image nên máy host không cần cài đặt thêm. Khi phát triển bằng IDE, cần cấu hình biến môi trường và file \code{.local/*.properties} cho từng module.
+
+\section{Cấu trúc mã nguồn}
+\label{sec:cau-truc-ma-nguon}
+
+Backend được tổ chức thành mười hai Maven project độc lập nằm cùng một thư mục gốc; frontend là một project Node riêng. Mỗi project backend có cấu trúc package theo tầng, dùng chung quy ước đặt tên gói \code{com.example.<tên\_dịch\_vụ>}.
+
+\begin{lstlisting}[style=json,caption={Bố cục thư mục dự án},label={lst:tree}]
+Backend_TourDuLich/
+  api_gateway/            # Spring Cloud Gateway, filter xác thực, rate limit
+  auth_service/           # tài khoản, JWT, vai trò/quyền, đánh giá, Socket.IO
+  tour_service/           # tour, lịch trình, địa điểm, lịch khởi hành, giữ chỗ
+  pricing_service/        # bảng giá theo nhóm tuổi, phụ thu
+  booking_service/        # đặt tour, giữ chỗ, dời lịch, saga, outbox mail
+  payment_service/        # VNPay, MoMo, đối soát, outbox sự kiện
+  invoice_service/        # hóa đơn theo booking, inbox payment.settled
+  file_service/           # upload/quản lý ảnh Cloudinary, tombstone
+  notification_service/   # mail outbox, template, worker SMTP, DLQ
+  reporting_service/      # read model ops_*, audit timeline
+  search_service/         # Elasticsearch, Redis, đồng bộ snapshot
+  ai_service/             # Spring AI, Groq, tư vấn và booking-help
+  data_seed/              # SQL cho 9 database + migration
+  docs/                   # kiến trúc, internal API, Docker, mail
+  .local/                 # mẫu cấu hình cục bộ (*.properties.example)
+  .github/workflows/      # pipeline CI
+  docker-compose.yml
+  docker-compose.microservice.yml
+  README.md
+Frontend_TourDuLich/      # React 19 + TypeScript + Vite + Ant Design
+\end{lstlisting}
+
+Bên trong mỗi module backend, mã nguồn được chia theo trách nhiệm: \code{controller} tiếp nhận request và kiểm tra quyền; \code{service} xử lý nghiệp vụ và transaction; \code{repository} truy cập dữ liệu; \code{dto} và \code{mapper} chuyển đổi dữ liệu; \code{config} khai báo bảo mật, client gọi dịch vụ ngoài và các bean hạ tầng; \code{exception} chuẩn hóa lỗi trả về. Cách chia này giữ controller mỏng và tập trung quy tắc nghiệp vụ vào tầng service để dễ kiểm thử.
+
+\begin{lstlisting}[style=json,caption={Cấu trúc package tiêu biểu của một module nghiệp vụ},label={lst:package}]
+booking_service/
+  pom.xml
+  Dockerfile
+  src/main/java/com/example/booking_service/
+    BookingServiceApplication.java
+    controller/         # BookingController, BookingChangeController, ...
+    service/            # BookingService, ReservationService, saga, outbox
+    repository/         # JPA repository và truy vấn JDBC
+    dto/ + mapper/      # đối tượng truyền dữ liệu, MapStruct
+    config/             # SecurityConfig, FeignClient config, RabbitMQConfig
+    exception/          # GlobalExceptionHandler
+  src/main/resources/
+    application.yml
+  src/test/java/...     # unit test và integration test (H2, mock)
+\end{lstlisting}
+
+\section{Kết quả đóng gói và chạy hệ thống}
+\label{sec:ket-qua-trien-khai}
+
+Mỗi module có Dockerfile build nhiều tầng: tầng đầu dùng Maven và JDK để tạo JAR, tầng sau chỉ chứa JRE và JAR để giảm kích thước image. Toàn bộ hệ thống được điều phối bằng \code{docker-compose.microservice.yml} với 9 database, RabbitMQ, Redis và 12 dịch vụ.
+
+\begin{lstlisting}[style=json,caption={Lệnh đóng gói và khởi chạy hệ thống microservice},label={lst:compose-cmd}]
+cp .env.microservice.example .env.microservice
+# Điền secret: JWT_SIGNER_KEY (>=64 byte), các internal key (>=32 ký tự),
+# mật khẩu MySQL cho từng database, VNPAY_HASH_SECRET, credential Cloudinary.
+docker compose -f docker-compose.microservice.yml --env-file .env.microservice up -d --build
+docker compose -f docker-compose.microservice.yml ps
+\end{lstlisting}
+
+Sau khi các container healthy, hệ thống truy cập được tại các địa chỉ trong Bảng~\ref{tab:diem-truy-cap}.
+
+\begin{table}[H]
+\centering
+\caption{Điểm truy cập sau khi khởi chạy}
+\label{tab:diem-truy-cap}
+\small
+\begin{tabularx}{\textwidth}{@{}L{4.2cm}L{5.0cm}Y@{}}
+\toprule
+\textbf{Thành phần} & \textbf{Địa chỉ} & \textbf{Ghi chú}\\
+\midrule
+Website (frontend) & \code{http://localhost} & Nginx phục vụ bản build React và proxy API.\\
+API Gateway & \code{http://localhost:8888/\hspace{0pt}api/v1} & Điểm vào duy nhất cho client.\\
+Auth Socket.IO & \code{http://localhost:8099} & Phát sự kiện đánh giá theo thời gian thực.\\
+n8n & \code{http://localhost:5678} & Chỉ có khi chạy Compose gốc với profile \code{mail}; không nằm trong Compose microservice.\\
+RabbitMQ & \code{http://localhost:15672} & Quản lý exchange/queue/DLQ.\\
+Elasticsearch/\hspace{0pt}Redis & \code{9200} / \code{6379} & Redis luôn bật; Elasticsearch mặc định tắt trong Compose, bật khi đủ RAM.\\
+MySQL & Nội bộ mạng Docker & 9 schema riêng; không publish ra host để bảo mật.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{notebox}[Quan sát khi chạy Compose]
+Trạng thái container được kiểm tra bằng \code{docker compose ps}. Khi một dịch vụ chưa lên, Compose giữ container để đọc log (\code{docker compose logs <tên>}) thay vì restart vô hạn. Trên máy ít RAM có thể tạm tắt Elasticsearch và AI; luồng đặt tour, thanh toán và hóa đơn vẫn chạy độc lập với hai thành phần này.
+\end{notebox}
+
+\section{Giao diện quản trị}
+\label{sec:giao-dien-quan-tri}
+
+Giao diện quản trị được xây dựng bằng Ant Design và ProComponents, có sidebar lọc theo quyền của tài khoản. Mỗi mục menu chỉ hiển thị khi người dùng có quyền tương ứng; truy cập trực tiếp bằng URL vẫn bị chặn bởi \code{RouteGuard} và \code{PermissionGate}.
+
+\subsection{Tổng quan vận hành}
+
+Trang tổng quan hiển thị các chỉ số doanh thu, booking, tỷ lệ lấp chỗ và booking hết hạn; biểu đồ doanh thu theo tháng; danh sách tour bán chạy và booking gần đây. Dữ liệu được tổng hợp từ reporting service và booking service.
+
+\screenshot{14-admin-tong-quan.png}{Màn hình tổng quan vận hành dành cho quản trị viên}{fig:ui-admin-dash}
+
+\subsection{Quản lý người dùng}
+
+Màn hình quản lý người dùng hỗ trợ tìm kiếm, lọc theo trạng thái/vai trò, tạo tài khoản, cập nhật hồ sơ, khóa/mở khóa, lưu trữ và xem lịch sử sự kiện tài khoản. Thao tác xóa chỉ khả dụng với tài khoản đã khóa và không có lịch sử nghiệp vụ.
+
+\screenshot{15-admin-nguoi-dung.png}{Màn hình quản lý người dùng và trạng thái tài khoản}{fig:ui-admin-user}
+
+\subsection{Quản lý tour}
+
+Danh sách tour hiển thị ảnh, mã tour, điểm đến, thời lượng, giá người lớn, số lịch khởi hành và trạng thái mở bán. Biểu mẫu thêm/sửa tour cho phép nhập thông tin, chọn địa điểm/phương tiện, nhập giá và tải lên tối đa 10 ảnh mỗi lượt.
+
+\screenshot{16-admin-tour.png}{Màn hình quản lý tour}{fig:ui-admin-tour}
+
+\screenshot{17-admin-tour-form.png}{Biểu mẫu thêm tour mới}{fig:ui-admin-tour-form}
+
+\subsection{Quản lý lịch khởi hành}
+
+Màn hình lịch khởi hành theo dõi sức chứa, số chỗ đã giữ, số chỗ còn lại và trạng thái vận hành của từng lịch. Lịch hết chỗ không thể nhận booking mới; lịch đã có booking hoặc dời lịch không được xóa.
+
+\screenshot{18-admin-lich-khoi-hanh.png}{Màn hình quản lý lịch khởi hành và sức chứa}{fig:ui-admin-departure}
+
+\subsection{Quản lý lịch trình}
+
+Lịch trình được quản lý theo từng ngày của tour, gồm giờ, hoạt động và mô tả. Mỗi tour chỉ có một mục lịch trình cho mỗi ngày (ràng buộc \code{ux\_itinerary\_tour\_day}).
+
+\screenshot{19-admin-lich-trinh.png}{Màn hình quản lý lịch trình theo ngày}{fig:ui-admin-itinerary}
+
+\subsection{Quản lý địa điểm}
+
+Địa điểm được phân loại \code{DEPARTURE} (điểm khởi hành) hoặc \code{DESTINATION} (điểm đến), có ảnh và số tour đang sử dụng. Ảnh địa điểm được lưu qua file service và Cloudinary.
+
+\screenshot{20-admin-dia-diem.png}{Màn hình quản lý địa điểm khởi hành và điểm đến}{fig:ui-admin-location}
+
+\subsection{Quản lý combo giá}
+
+Bảng giá theo nhóm tuổi gồm người lớn, trẻ em, trẻ nhỏ, em bé và phụ thu phòng đơn. Giá là số nguyên VND; tour và booking lấy giá qua pricing service, không lưu bản sao giá ngoài snapshot tại thời điểm đặt.
+
+\screenshot{21-admin-gia.png}{Màn hình quản lý combo giá theo nhóm tuổi}{fig:ui-admin-price}
+
+\subsection{Quản lý booking}
+
+Màn hình booking hiển thị mã booking, khách hàng, tour, ngày đi, số khách, tổng tiền, trạng thái giữ chỗ và trạng thái booking. Quản trị viên có thể mở chi tiết để xem hành khách, lịch sử thanh toán và hóa đơn.
+
+\screenshot{22-admin-booking.png}{Màn hình quản lý booking và trạng thái giữ chỗ}{fig:ui-admin-booking}
+
+\subsection{Quản lý hóa đơn}
+
+Hóa đơn gắn với booking và tài khoản; mỗi booking chỉ có một hóa đơn. Màn hình hỗ trợ lọc theo trạng thái (đã thanh toán, chờ thanh toán, đã hoàn tiền) và xem chi tiết.
+
+\screenshot{23-admin-hoa-don.png}{Màn hình quản lý hóa đơn}{fig:ui-admin-invoice}
+
+\subsection{Quản lý vai trò và quyền}
+
+Màn hình vai trò và quyền cho phép tạo/sửa/xóa vai trò, gán quyền theo module và xem ma trận quyền. Thay đổi quyền làm tăng \code{sessionEpoch} của tài khoản bị ảnh hưởng, khiến token cũ hết hiệu lực.
+
+\screenshot{24-admin-phan-quyen.png}{Màn hình quản lý vai trò và ma trận quyền}{fig:ui-admin-role}
+
+\subsection{Quản lý đánh giá}
+
+Màn hình đánh giá hiển thị đánh giá theo tour, số sao, trạng thái duyệt và cho phép duyệt hoặc ẩn đánh giá. Đánh giá đã duyệt được hiển thị công khai và cập nhật realtime qua Socket.IO.
+
+\screenshot{25-admin-danh-gia.png}{Màn hình quản lý và duyệt đánh giá tour}{fig:ui-admin-review}
+
+\section{Quy trình nghiệp vụ tự động}
+\label{sec:quy-trinh-tu-dong}
+
+\subsection{Workflow n8n nhắc thanh toán và khởi hành}
+
+n8n chạy theo lịch, gọi API nội bộ của backend để lấy các booking đến hạn nhắc. Backend kiểm tra điều kiện, tạo lượt nhắc và ghi vào outbox; notification service gửi email qua SMTP. n8n không quyết định số ghế hay trạng thái thanh toán.
+
+\screenshot{26-n8n-email.png}{Workflow n8n nhắc thanh toán và khởi hành qua email}{fig:ui-n8n}
+
+\subsection{Luồng xử lý trợ lý AI}
+
+Trợ lý AI nhận câu hỏi, kiểm tra nội dung, lập kế hoạch có cấu trúc rồi gọi API tour/\hspace{0pt}pricing/\hspace{0pt}booking. Dữ liệu giá, lịch và chỗ do backend cung cấp; mô hình không tự suy ra và không có quyền ghi dữ liệu. Booking-help chỉ trả booking thuộc tài khoản đang đăng nhập.
+
+\screenshot{27-ai-flow.png}{Luồng xử lý trợ lý AI có kiểm soát}{fig:ui-ai-flow}
+
+\section{Giao diện khách hàng}
+\label{sec:giao-dien-khach-hang}
+
+\subsection{Khách chưa đăng nhập}
+
+Khách có thể xem trang chủ, tìm kiếm tour, xem chi tiết, đọc chính sách và hỏi trợ lý AI công khai. Các thao tác đặt tour, thanh toán và xem lịch sử yêu cầu đăng nhập.
+
+\screenshot{10-dang-nhap.png}{Màn hình đăng nhập (email/mật khẩu hoặc Google)}{fig:ui-login}
+
+\screenshot{11-dang-ky.png}{Màn hình đăng ký tài khoản khách hàng}{fig:ui-register}
+
+\screenshot{01-trang-chu.png}{Trang chủ với banner, thanh tìm kiếm và tour nổi bật}{fig:ui-home}
+
+\screenshot{02-danh-sach-tour.png}{Màn hình danh sách tour với bộ lọc và phân trang}{fig:ui-tour-list}
+
+\screenshot{03-chi-tiet-tour.png}{Màn hình chi tiết tour: gallery, lịch trình, giá và lịch khởi hành}{fig:ui-tour-detail}
+
+\subsection{Khách đã đăng nhập}
+
+Khách đã đăng nhập có thể đặt tour, thanh toán, xem hóa đơn, theo dõi lịch sử, đánh giá sau chuyến đi và quản lý hồ sơ.
+
+\screenshot{04-dat-tour.png}{Biểu mẫu đặt tour với danh sách hành khách và tóm tắt đơn hàng}{fig:ui-booking}
+
+\screenshot{05-thanh-toan.png}{Màn hình chọn phương thức thanh toán VNPay/MoMo}{fig:ui-payment}
+
+\screenshot{06-vnpay.png}{Cổng thanh toán VNPay sandbox}{fig:ui-vnpay}
+
+\screenshot{07-hoa-don.png}{Hóa đơn thanh toán thành công}{fig:ui-invoice}
+
+\screenshot{08-lich-su-dat-tour.png}{Màn hình lịch sử đặt tour và trạng thái thanh toán}{fig:ui-history}
+
+\screenshot{09-danh-gia.png}{Màn hình đánh giá chuyến đi}{fig:ui-review}
+
+\screenshot{13-thong-tin-ca-nhan.png}{Màn hình thông tin cá nhân và bảo mật tài khoản}{fig:ui-profile}
+
+\screenshot{12-tro-ly-ai.png}{Trợ lý AI tư vấn tour theo ngân sách và tra cứu booking}{fig:ui-ai}
+
+Bảng~\ref{tab:man-hinh} tóm tắt chức năng tương ứng của từng màn hình và API backend mà màn hình đó sử dụng.
+
+\begin{table}[H]
+\centering
+\caption{Chức năng giao diện và API backend tương ứng}
+\label{tab:man-hinh}
+\small
+\begin{tabularx}{\textwidth}{@{}L{3.4cm}L{4.6cm}Y@{}}
+\toprule
+\textbf{Màn hình} & \textbf{Chức năng chính} & \textbf{API backend}\\
+\midrule
+Trang chủ & Tour nổi bật, tìm kiếm theo điểm đến/giá/ngày & \code{/tour/tours/random-3}, \code{/tour/locations/\hspace{0pt}destinations/attractive}, \code{/search/tours/\hspace{0pt}search}.\\
+Danh sách tour & Lọc, sắp xếp, phân trang, so sánh tour & \code{/tour/tours/list}, \code{/search/tours/search}.\\
+Chi tiết tour & Lịch trình, địa điểm, ảnh, giá, lịch khởi hành, đánh giá & \code{/tour/tours/\{id\}}, \code{/tour/itineraries/tour/\{id\}}, \code{/tour/tour-departures/tour/\{id\}}, \code{/pricing/prices/batch}, \code{/auth/reviews/tour/\{id\}}.\\
+Đặt tour & Nhập hành khách, chọn lịch, tạo booking và giữ chỗ & \code{/booking/book/create}, \code{/booking/book/attempt}.\\
+Thanh toán & Lấy quote, tạo phiên thanh toán & \code{/payment/vnpay/bookings/\{id\}/quote}, \code{/payment/vnpay/bookings}.\\
+Hóa đơn & Xem hóa đơn của booking & \code{/invoice/direct/booking/\{id\}}.\\
+Lịch sử & Danh sách booking, trạng thái, hóa đơn & \code{/booking/book/history}, \code{/invoice/direct/booking/\{id\}}.\\
+Đánh giá & Gửi đánh giá sau chuyến, xem đánh giá đã duyệt & \code{/auth/reviews/eligibility}, \code{/auth/reviews}.\\
+Hồ sơ & Cập nhật thông tin, đổi avatar/mật khẩu & \code{/auth/users/\{id\}}, \code{/auth/users/updateAvtUser/\{id\}}.\\
+Trợ lý AI & Tư vấn tour, chính sách, tra cứu booking & \code{/ai/conversations}, \code{/ai/chat}, \code{/ai/policies}, \code{/ai/booking-help}.\\
+Quản trị & CRUD tour, lịch, giá, địa điểm; quản lý booking/hóa đơn/người dùng & \code{/tour/**}, \code{/pricing/**}, \code{/booking/**}, \code{/invoice/**}, \code{/auth/**}.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Kịch bản trình diễn end-to-end}
+\label{sec:kich-ban-demo}
+
+Kịch bản demo dưới đây đi qua toàn bộ luồng quan trọng nhất của hệ thống, từ khám phá tour đến thanh toán, nhận thông báo và báo cáo. Mỗi bước ghi rõ thành phần tham gia và kết quả mong đợi để thuận tiện kiểm tra.
+
+\begin{longtable}{@{}L{0.9cm}L{4.0cm}L{4.4cm}L{4.2cm}@{}}
+\caption{Kịch bản trình diễn end-to-end}
+\label{tab:demo}\\
+\toprule
+\textbf{B.} & \textbf{Thao tác} & \textbf{Thành phần tham gia} & \textbf{Kết quả mong đợi}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{B.} & \textbf{Thao tác} & \textbf{Thành phần tham gia} & \textbf{Kết quả mong đợi}\\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+1 & Đăng nhập bằng tài khoản khách hàng demo. & Gateway, auth & Nhận access/refresh token; chuyển về trang chủ.\\
+2 & Tìm kiếm tour theo điểm đến và ngày khởi hành. & Gateway, search, Elasticsearch, Redis & Danh sách tour có phân trang, ảnh và giá chuẩn.\\
+3 & Mở chi tiết tour và chọn một lịch còn chỗ. & Tour, pricing, file, auth & Lịch trình, ảnh, giá theo nhóm tuổi, số chỗ còn lại và đánh giá.\\
+4 & Nhập danh sách hành khách và tạo booking. & Booking, tour, pricing & Booking được tạo với giá chốt; tour giữ chỗ; hạn thanh toán được tính.\\
+5 & Kiểm tra email xác nhận. & Booking, notification, SMTP & Outbox chuyển trạng thái đã gửi; email chứa mã booking.\\
+6 & Thanh toán qua VNPay sandbox. & Payment, booking, VNPay & Chữ ký và số tiền hợp lệ; booking chuyển sang đã thanh toán.\\
+7 & Kiểm tra hóa đơn vừa phát hành. & Payment, invoice, RabbitMQ & \code{payment.settled.v1} được tiêu thụ; một hóa đơn duy nhất được tạo.\\
+8 & Hỏi trợ lý AI về tour và tra cứu booking. & AI, tour, pricing, booking & Câu trả lời dựa trên dữ liệu backend; chỉ trả booking của tài khoản hiện tại.\\
+9 & Thử gửi lại callback thanh toán đã xử lý. & Payment & Trả kết quả cũ, không tạo giao dịch/hóa đơn trùng.\\
+10 & Mở trang báo cáo vận hành. & Reporting, RabbitMQ & Read model \code{ops\_*} cập nhật; không hiển thị PII.\\
+\end{longtable}
+
+\begin{warningbox}[Lưu ý khi demo]
+Booking ở trạng thái \code{CONFIRMED} không đồng nghĩa đã thanh toán; cần kiểm tra đồng thời reservation, giao dịch thanh toán và hóa đơn. Với lịch khởi hành còn hơn bảy ngày, hạn thanh toán tính theo ngày đặt và ngày đi; với lịch gần, thời gian giữ chỗ ngắn hơn nhiều. Worker trả chỗ vẫn chạy kể cả khi chức năng gửi mail bị tắt.
+\end{warningbox}
+
+\section{Kết quả kiểm thử}
+\label{sec:ket-qua-kiem-thu}
+
+Bộ kiểm thử được tổ chức theo từng module và chạy độc lập, sử dụng JUnit~5, Mockito, Spring Test và H2. Bảng~\ref{tab:test-scope} tóm tắt phạm vi và mức độ phụ thuộc môi trường của từng nhóm; đây là mô tả phạm vi, không phải bảng điểm đỗ/trượt.
+
+\begin{table}[H]
+\centering
+\caption{Phạm vi kiểm thử theo module}
+\label{tab:test-scope}
+\small
+\begin{tabularx}{\textwidth}{@{}L{2.9cm}L{6.8cm}Y@{}}
+\toprule
+\textbf{Module} & \textbf{Phạm vi chính} & \textbf{Mức độ phụ thuộc môi trường}\\
+\midrule
+auth & Đăng nhập/JWT, refresh và thu hồi, Google Sign-In, vai trò/quyền, đánh giá & H2 và mock; Google thật cần client ID riêng.\\
+tour & Danh mục, địa điểm, lịch trình, sức chứa, giữ/trả chỗ & H2; kiểm tra sức chứa liên module có điều kiện.\\
+pricing & Giá nguyên VND, kiểm tra đầu vào, lấy giá theo lô & H2, phần lớn là unit test.\\
+booking & Giữ/trả chỗ, hết hạn, snapshot giá, dời lịch, saga, outbox & H2 mặc định; SMTP và cross-service bật tường minh.\\
+payment & VNPay/MoMo, chữ ký, số tiền, callback lặp, đối soát & Mock cổng thanh toán; sandbox thật cần cấu hình.\\
+invoice & Quyền đọc, chủ đơn, số tiền, inbox idempotent & H2 và mock.\\
+file & Avatar/gallery, chính sách upload, quyền tài khoản đích, dọn ảnh & Mock Cloudinary; upload thật cần tài khoản.\\
+notification & Enqueue, template, worker, retry, DLQ & SMTP test mode.\\
+reporting & Projection, audit, giới hạn khoảng ngày & H2 và mock event.\\
+gateway & Route công khai/bảo vệ, introspection, rate limit, breaker, lỗi API & WireMock/HTTP fixture; auth thật cần chạy auth.\\
+search & Đồng bộ danh mục, lọc, phân trang, cache & Một số ca cần Elasticsearch/Redis thật.\\
+ai & Hội thoại, trích xuất tiêu chí, dữ liệu tư vấn, booking-help, adapter model & Mock model; gọi Groq thật cần API key.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Các lệnh kiểm thử được chạy tại thư mục từng module, ví dụ:
+
+\begin{lstlisting}[style=json,caption={Lệnh kiểm thử tiêu biểu},label={lst:test-cmd}]
+mvn -f auth_service/pom.xml test
+mvn -f booking_service/pom.xml test
+mvn -f payment_service/pom.xml -Dtest=ReservedVnPayTest test
+mvn -f booking_service/pom.xml test-compile &&
+  MAIL_CROSS_SERVICE_TEST=true mvn -f booking_service/pom.xml -Dtest=CrossServiceLifecycleTest test
+\end{lstlisting}
+
+Kết quả chi tiết của mỗi lần chạy được lưu trong \code{<module>/target/surefire-reports/}. Khi đọc kết quả cần đối chiếu bốn chỉ số \code{Tests run}, \code{Failures}, \code{Errors} và \code{Skipped}; một lần build Maven thành công không đồng nghĩa mọi kiểm thử tích hợp đã thực sự chạy.
+
+\begin{warningbox}[Giới hạn của kết quả kiểm thử]
+Các kiểm thử dùng H2, mock hoặc HTTP fixture xác minh logic đã mô hình hóa nhưng không chứng minh giao dịch ngân hàng, Cloudinary, Google, Groq hay SMTP thật thành công. Những kiểm tra phụ thuộc nhà cung cấp cần môi trường sandbox, dữ liệu cô lập và credential riêng, do đó báo cáo không khẳng định mọi bài kiểm thử đều đạt trong mọi môi trường.
+\end{warningbox}
+
+Pipeline CI trên GitHub Actions~\cite{github} chạy build và test cho mười module (matrix hiện chưa gồm \code{notification\_service} và \code{reporting\_service}), kiểm tra cú pháp Docker Compose và thử import \code{database\_all.sql} trên database cô lập. Pipeline không khởi động nhà cung cấp thật, nhưng giúp phát hiện sớm lỗi biên dịch, lỗi cấu hình và hồi quy.
+
+\section{Đánh giá kết quả}
+\label{sec:danh-gia}
+
+\begin{table}[H]
+\centering
+\caption{Đối chiếu mục tiêu và kết quả đạt được}
+\label{tab:danh-gia}
+\small
+\begin{tabularx}{\textwidth}{@{}L{5.4cm}L{2.6cm}Y@{}}
+\toprule
+\textbf{Mục tiêu} & \textbf{Mức độ} & \textbf{Minh chứng}\\
+\midrule
+Mười hai ứng dụng Spring Boot độc lập và gateway & Đạt & Cấu trúc mười hai module, cổng và Dockerfile riêng.\\
+Chín database vật lý, database-per-service & Đạt & 9 container MySQL, user/grant/volume riêng, không cross-DB SQL.\\
+Outbox/inbox, saga và RabbitMQ & Đạt & Exchange \code{sgu.events}, bảng outbox/inbox, DLQ, saga booking/payment.\\
+Xác thực JWT, phân quyền, vòng đời tài khoản & Đạt & Access/refresh token, \code{sessionEpoch}, trạng thái \code{ACTIVE}/\code{LOCKED}/\code{ARCHIVED}.\\
+Quản lý tour, lịch khởi hành, sức chứa và giá & Đạt & tour và pricing service, giá theo nhóm tuổi, snapshot giá.\\
+Luồng đặt tour có giữ chỗ và chống trùng & Đạt & Reservation có hạn, worker trả chỗ, idempotency theo \code{clientKey}.\\
+Thanh toán VNPay/MoMo sandbox và đối soát & Đạt & Kiểm tra chữ ký, số tiền, callback lặp và danh sách đối soát.\\
+Hóa đơn, thông báo, báo cáo và nhắc lịch n8n & Đạt & Invoice idempotent, notification outbox/SMTP, read model \code{ops\_*}, API nội bộ cho n8n.\\
+Tìm kiếm Elasticsearch/Redis và tư vấn AI & Đạt & Đồng bộ snapshot, cache theo thế hệ; trợ lý AI có kiểm soát dữ liệu.\\
+Giao diện khách hàng và quản trị & Đạt & React 19 + Ant Design; các màn hình ở mục~\ref{sec:giao-dien-quan-tri} và~\ref{sec:giao-dien-khach-hang}.\\
+Đóng gói Compose, kiểm thử và CI & Đạt & Compose có healthcheck; CI chạy test cho 10/12 module và kiểm tra cấu hình.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Tổng thể, hệ thống đáp ứng các mục tiêu đã đặt ra: có kiến trúc microservices rõ ràng, cô lập dữ liệu theo service, luồng nghiệp vụ chính hoàn chỉnh, cơ chế bảo mật nhiều lớp, giao diện đầy đủ và quy trình kiểm thử, đóng gói tự động. Hệ thống phù hợp cho môi trường đồ án và trình diễn; để vận hành production quy mô lớn còn cần bổ sung các thành phần hạ tầng phân tán và cấu hình bảo mật triển khai thực tế, được nêu trong Phần~V.

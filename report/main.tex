@@ -1,0 +1,40 @@
+% =====================================================================
+%  SGU Tour — Báo cáo đồ án Chuyên đề J2EE
+%  Biên dịch:
+%    latexmk -xelatex -interaction=nonstopmode main.tex
+%  hoặc:
+%    xelatex main.tex  (chạy 2-3 lần để cập nhật mục lục)
+% =====================================================================
+\documentclass[12pt,a4paper,oneside]{report}
+\input{preamble}
+
+\begin{document}
+
+% ------------------------- Bìa và phần đầu -------------------------
+\input{chapters/00-cover}
+
+\pagenumbering{roman}
+\input{chapters/00-frontmatter}
+
+% ------------------------- Nội dung chính --------------------------
+\clearpage
+\pagenumbering{arabic}
+\setcounter{page}{1}
+
+\input{chapters/01-gioi-thieu}
+\input{chapters/02-phan-tich}
+\input{chapters/03-thiet-ke}
+\input{chapters/04-trien-khai}
+\input{chapters/05-ket-luan}
+
+% ------------------------- Phụ lục và tài liệu ---------------------
+\appendix
+\renewcommand{\thechapter}{\Alph{chapter}}
+\renewcommand{\thesection}{\Alph{chapter}.\arabic{section}}
+\renewcommand{\thesubsection}{\Alph{chapter}.\arabic{section}.\arabic{subsection}}
+\renewcommand{\thefigure}{\Alph{chapter}.\arabic{figure}}
+\renewcommand{\thetable}{\Alph{chapter}.\arabic{table}}
+\input{chapters/06-phu-luc}
+\input{chapters/07-tai-lieu}
+
+\end{document}

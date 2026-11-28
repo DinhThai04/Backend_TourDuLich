@@ -1,0 +1,795 @@
+﻿This is XeTeX, Version 3.141592653-2.6-0.999997 (MiKTeX 25.12) (preloaded format=xelatex.fmt)
+ restricted \write18 enabled.
+entering extended mode
+(main.tex
+LaTeX2e <2025-11-01>
+L3 programming layer <2025-12-24>
+
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/base\report.cls
+Document Class: report 2025/01/22 v1.4n Standard LaTeX document class
+
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/base\size12.clo
+)) (preamble.tex
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/geometry\geomet
+ry.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/graphics\keyval
+.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/iftex\ifvtex.
+sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/iftex\iftex.s
+ty))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/geometry\geomet
+ry.cfg))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/fontspec\fontsp
+ec.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/l3packages/xpar
+se\xparse.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/l3kernel\expl3.
+sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/l3backend\l3bac
+kend-xetex.def)))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/fontspec\fontsp
+ec-xetex.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/base\fontenc.st
+y)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/fontspec\fontsp
+ec.cfg)))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/polyglossia\pol
+yglossia.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/etoolbox\etoolb
+ox.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/polyglossia\glo
+ss-latex.ldf))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/polyglossia\glo
+ss-vietnamese.ldf)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/polyglossia\glo
+ss-english.ldf)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/setspace\setspa
+ce.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/amsmath\amsmath
+.sty
+For additional information on amsmath, use the `?' option.
+
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/amsmath\amstext
+.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/amsmath\amsgen.
+sty))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/amsmath\amsbsy.
+sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/amsmath\amsopn.
+sty))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\amssym
+b.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\amsfon
+ts.sty))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/graphics\graphi
+cx.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/graphics\graphi
+cs.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/graphics\trig.s
+ty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/graphics-cfg\gr
+aphics.cfg)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/graphics-def\xe
+tex.def)))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/float\float.sty
+)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/tools\array.sty
+)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/booktabs\bookta
+bs.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/tools\longtable
+.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/tools\tabularx.
+sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/multirow\multir
+ow.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/makecell\makece
+ll.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/xcolor\xcolor.s
+ty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/graphics-cfg\co
+lor.cfg)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/graphics\mathco
+lor.ltx))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/colortbl\colort
+bl.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/enumitem\enumit
+em.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/caption\caption
+.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/caption\caption
+3.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/caption\ltcapti
+on.sty))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/caption\subcapt
+ion.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/titlesec\titles
+ec.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/tocloft\tocloft
+.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/fancyhdr\fancyh
+dr.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/tcolorbox\tcolo
+rbox.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/pgf/frontendlay
+er\tikz.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/pgf/basiclayer\
+pgf.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/pgf/utilities\p
+gfrcs.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/utilities
+\pgfutil-common.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/utilities
+\pgfutil-latex.def)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/utilities
+\pgfrcs.code.tex
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf\pgf.revis
+ion.tex)))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/pgf/basiclayer\
+pgfcore.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/pgf/systemlayer
+\pgfsys.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/systemlay
+er\pgfsys.code.tex
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/utilities
+\pgfkeys.code.tex
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/utilities
+\pgfkeyslibraryfiltered.code.tex))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/systemlay
+er\pgf.cfg)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/systemlay
+er\pgfsys-xetex.def
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/systemlay
+er\pgfsys-dvipdfmx.def
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/systemlay
+er\pgfsys-common-pdf.def))))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/systemlay
+er\pgfsyssoftpath.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/systemlay
+er\pgfsysprotocol.code.tex))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcore.code.tex
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+ath.code.tex
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athutil.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athparser.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.basic.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.trigonometric.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.random.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.comparison.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.base.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.round.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.misc.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfunctions.integerarithmetics.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athcalc.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+athfloat.code.tex))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfi
+nt.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorepoints.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorepathconstruct.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorepathusage.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorescopes.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcoregraphicstate.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcoretransformations.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorequick.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcoreobjects.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorepathprocessing.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorearrows.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcoreshade.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcoreimage.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcoreexternal.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorelayers.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcoretransparency.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorepatterns.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/basiclaye
+r\pgfcorerdf.code.tex)))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/modules\p
+gfmoduleshapes.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/modules\p
+gfmoduleplot.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/pgf/compatibili
+ty\pgfcomp-version-0-65.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/pgf/compatibili
+ty\pgfcomp-version-1-18.sty))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/pgf/utilities\p
+gffor.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/pgf/utilities\p
+gfkeys.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/utilities
+\pgfkeys.code.tex))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/pgf/math\pgfmat
+h.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/math\pgfm
+ath.code.tex))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/utilities
+\pgffor.code.tex))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz\tikz.code.tex
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/libraries
+\pgflibraryplothandlers.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/modules\p
+gfmodulematrix.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibrarytopaths.code.tex)))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/tools\verbatim.
+sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/environ\environ
+.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/trimspaces\trim
+spaces.sty)))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/tcolorbox\tcbsk
+ins.code.tex
+Library (tcolorbox): 'tcbskins.code.tex' version '6.9.0'
+
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/tikzfill\tikzfi
+ll.image.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/tikzfill\tikzli
+braryfill.image.code.tex))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/tcolorbox\tcbsk
+insjigsaw.code.tex
+Library (tcolorbox): 'tcbskinsjigsaw.code.tex' version '6.9.0'
+))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/tcolorbox\tcbbr
+eakable.code.tex
+Library (tcolorbox): 'tcbbreakable.code.tex' version '6.9.0'
+
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/pdfcol\pdfcol.s
+ty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/ltxcmds\ltxcm
+ds.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/infwarerr\inf
+warerr.sty)))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/listings\listin
+gs.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/listings\lstpat
+ch.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/listings\lstmis
+c.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/listings\listin
+gs.cfg))
+==> First Aid for listings.sty no longer applied!
+    Expected:
+        2024/09/23 1.10c (Carsten Heinz)
+    but found:
+        2025/11/14 1.11b (Carsten Heinz)
+    so I'm assuming it got fixed.
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/url\url.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/xurl\xurl.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/hyperref\hyperr
+ef.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/kvsetkeys\kvset
+keys.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/kvdefinekeys\
+kvdefinekeys.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pdfescape\pdf
+escape.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pdftexcmds\pd
+ftexcmds.sty))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/hycolor\hycolor
+.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/hyperref\namere
+f.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/refcount\refcou
+nt.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/gettitlestrin
+g\gettitlestring.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/kvoptions\kvopt
+ions.sty)))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/stringenc\str
+ingenc.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/hyperref\pd1enc
+.def)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/intcalc\intca
+lc.sty)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/hyperref\puenc.
+def)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/bitset\bitset
+.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/bigintcalc\bi
+gintcalc.sty)))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/hyperref\hxetex
+.def
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/rerunfilecheck\
+rerunfilecheck.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/uniquecounter
+\uniquecounter.sty)))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/bookmark\bookma
+rk.sty
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/bookmark\bkm-xe
+tex.def))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/libraries
+\pgflibraryarrows.meta.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibrarypositioning.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibraryshapes.geometric.code.tex
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/libraries
+/shapes\pgflibraryshapes.geometric.code.tex))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibraryshapes.misc.code.tex
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/libraries
+/shapes\pgflibraryshapes.misc.code.tex))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibraryfit.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibrarybackgrounds.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibrarycalc.code.tex)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibrarydecorations.pathreplacing.code.tex
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibrarydecorations.code.tex
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/modules\p
+gfmoduledecorations.code.tex))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/libraries
+/decorations\pgflibrarydecorations.pathreplacing.code.tex))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/frontendl
+ayer/tikz/libraries\tikzlibrarypatterns.code.tex
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/generic/pgf/libraries
+\pgflibrarypatterns.code.tex))
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/listings\lstlan
+g1.sty))
+No file main.aux.
+*geometry* driver: auto-detecting
+*geometry* detected driver: xetex
+
+Package hyperref Warning: Rerun to get /PageLabels entry.
+
+(chapters/00-cover.tex
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\umsa.f
+d)
+(C:\Users\Administrator\AppData\Local\Programs\MiKTeX\tex/latex/amsfonts\umsb.f
+d) [1]) (chapters/00-frontmatter.tex [1] [2]
+No file main.toc.
+[3]
+No file main.lof.
+[4]
+No file main.lot.
+[5] [6] [7]
+Overfull \vbox (104.10684pt too high) has occurred while \output is active
+[8]) (chapters/01-gioi-thieu.tex
+Ch╞░╞íng I.
+[1]
+
+LaTeX Warning: Reference `chap:trien-khai' on page 2 undefined on input line 38
+.
+
+
+LaTeX Warning: Reference `sec:co-so-du-lieu' on page 2 undefined on input line 
+39.
+
+
+LaTeX Warning: Reference `tab:cong-nghe' on page 2 undefined on input line 47.
+
+
+Overfull \hbox (8.30057pt too wide) in paragraph at lines 47--48
+\TU/TimesNewRoman(0)/m/n/12 Bß║úng [] t├│m tß║»t c├íc c├┤ng nghß╗ç ch├¡nh. Phi├¬n bß║ún cß╗Ñ t
+hß╗â ─æ╞░ß╗úc khai b├ío trong \TU/Consolas(0)/m/n/10.95 pom.xml\TU/TimesNewRoman(0)/m/
+n/12 /\TU/Consolas(0)/m/n/10.95 package.json
+[2] [3]
+
+LaTeX Warning: Citation `springboot' on page 4 undefined on input line 82.
+
+
+LaTeX Warning: Citation `springsecurity' on page 4 undefined on input line 88.
+
+
+LaTeX Warning: Citation `jwt' on page 4 undefined on input line 88.
+
+
+LaTeX Warning: Citation `elastic' on page 4 undefined on input line 97.
+
+
+LaTeX Warning: Citation `redis' on page 4 undefined on input line 97.
+
+
+LaTeX Warning: Citation `springai' on page 4 undefined on input line 100.
+
+
+LaTeX Warning: Citation `groq' on page 4 undefined on input line 100.
+
+[4]
+
+LaTeX Warning: Citation `cloudinary' on page 5 undefined on input line 103.
+
+
+LaTeX Warning: Citation `docker' on page 5 undefined on input line 106.
+
+[5]) (chapters/02-phan-tich.tex [6]
+Ch╞░╞íng II.
+
+Overfull \hbox (18.57724pt too wide) in alignment at lines 35--41
+ [] [] [] 
+
+Overfull \hbox (18.57724pt too wide) in alignment at lines 41--45
+ [] [] [] 
+
+Overfull \hbox (18.57724pt too wide) in alignment at lines 45--47
+ [] [] [] 
+
+Overfull \hbox (18.57724pt too wide) in alignment at lines 47--63
+ [] [] [] 
+[7]
+ignored error: Infinite glue shrinkage found in box being split [8]
+Overfull \hbox (18.57724pt too wide) in alignment at lines 65--71
+ [] [] [] 
+
+Overfull \hbox (18.57724pt too wide) in alignment at lines 71--75
+ [] [] [] 
+
+Overfull \hbox (18.57724pt too wide) in alignment at lines 75--77
+ [] [] [] 
+
+Overfull \hbox (18.57724pt too wide) in alignment at lines 77--92
+ [] [] [] 
+ignored error: Infinite glue shrinkage found in box being split [9]
+Overfull \hbox (18.57724pt too wide) in alignment at lines 94--100
+ [] [] [] 
+
+Overfull \hbox (18.57724pt too wide) in alignment at lines 100--104
+ [] [] [] 
+
+Overfull \hbox (18.57724pt too wide) in alignment at lines 104--106
+ [] [] [] 
+
+Overfull \hbox (18.57724pt too wide) in alignment at lines 106--116
+ [] [] [] 
+
+LaTeX Warning: Reference `tab:yc-phi-chuc-nang' on page 10 undefined on input l
+ine 121.
+
+
+Overfull \hbox (18.61859pt too wide) in alignment at lines 123--129
+ [] [] [] [] 
+
+Overfull \hbox (18.61859pt too wide) in alignment at lines 129--133
+ [] [] [] [] 
+
+Overfull \hbox (18.61859pt too wide) in alignment at lines 133--135
+ [] [] [] [] 
+
+Overfull \hbox (9.57777pt too wide) in paragraph at lines 141--142
+\TU/Consolas(0)/m/n/10.95 AuthUnavailableGatewayTest\TU/TimesNewRoman(0)/m/n/12
+ , 
+
+Overfull \hbox (18.61859pt too wide) in alignment at lines 135--150
+ [] [] [] [] 
+[10]
+ignored error: Infinite glue shrinkage found in box being split [11]
+ignored error: Infinite glue shrinkage found in box being split [12]
+
+LaTeX Warning: Reference `fig:usecase' on page 13 undefined on input line 155.
+
+(figures/usecase.tex)
+Overfull \hbox (14.30905pt too wide) in alignment at lines 169--175
+ [] [] [] 
+
+Overfull \hbox (14.30905pt too wide) in alignment at lines 175--179
+ [] [] [] 
+
+Overfull \hbox (14.30905pt too wide) in alignment at lines 179--181
+ [] [] [] 
+
+Overfull \hbox (14.30905pt too wide) in alignment at lines 181--198
+ [] [] [] 
+[13]
+ignored error: Infinite glue shrinkage found in box being split [14] [15])
+(chapters/03-thiet-ke.tex [16]
+Ch╞░╞íng III.
+(figures/kien-truc-tong-the.tex) [17]
+
+LaTeX Warning: Reference `tab:dich-vu' on page 18 undefined on input line 32.
+
+
+Overfull \hbox (8.28749pt too wide) in paragraph at lines 50--50
+[]|\TU/Consolas(0)/m/n/12 pricing_service|  
+
+Overfull \hbox (8.28749pt too wide) in paragraph at lines 51--51
+[]|\TU/Consolas(0)/m/n/12 booking_service|  
+
+Overfull \hbox (8.28749pt too wide) in paragraph at lines 52--52
+[]|\TU/Consolas(0)/m/n/12 payment_service|  
+
+Overfull \hbox (8.28749pt too wide) in paragraph at lines 53--53
+[]|\TU/Consolas(0)/m/n/12 invoice_service|  
+
+Overfull \hbox (36.65742pt too wide) in paragraph at lines 55--55
+[]|\TU/Consolas(0)/m/n/12 notification_service|  
+
+Overfull \hbox (1.86617pt too wide) in paragraph at lines 55--55
+ \TU/Consolas(0)/m/n/10.95 /notification| 
+
+Overfull \hbox (28.4687pt too wide) in paragraph at lines 55--56
+[]|\TU/Consolas(0)/m/n/10.95 /internal/notifications/mail\TU/TimesNewRoman(0)/m
+/n/12 .|  
+
+Overfull \hbox (19.63547pt too wide) in paragraph at lines 56--56
+[]|\TU/Consolas(0)/m/n/12 reporting_service|  
+
+Overfull \hbox (2.6135pt too wide) in paragraph at lines 57--57
+[]|\TU/Consolas(0)/m/n/12 search_service|  
+ignored error: Infinite glue shrinkage found in box being split [18]
+ignored error: Infinite glue shrinkage found in box being split [19]
+Overfull \hbox (11.76735pt too wide) in paragraph at lines 81--81
+[]|\TU/TimesNewRoman(0)/m/n/10.95 Elasticsearch/Redis|  
+[20] (figures/frontend-kien-truc.tex) [21]
+
+LaTeX Warning: Reference `tab:frontend-routes' on page 22 undefined on input li
+ne 98.
+
+
+Overfull \hbox (8.79285pt too wide) in paragraph at lines 98--99
+\TU/TimesNewRoman(0)/m/n/12 Bß║úng [] t├│m tß║»t c├íc nh├│m route ch├¡nh. Route c├┤ng kh
+ai nß║▒m trong \TU/Consolas(0)/m/n/10.95 MainLayout \TU/TimesNewRoman(0)/m/n/12 (
+c├│ header/footer);
+
+Overfull \hbox (2.7064pt too wide) in paragraph at lines 121--121
+[]|\TU/Consolas(0)/m/n/10.95 /admin/paymentReconciliation|  
+[22] [23]
+
+LaTeX Warning: Reference `tab:route' on page 24 undefined on input line 135.
+
+
+Underfull \hbox (badness 1210) in paragraph at lines 168--169
+[]\TU/TimesNewRoman(0)/m/n/12 Nß║┐u auth service kh├┤ng phß║ún hß╗ôi hoß║╖c circuit brea
+ker ─æang mß╗ƒ, trß║ú 503 k├¿m
+(figures/gateway-pipeline.tex) [24] [25] (figures/sequence-auth.tex) [26]
+[27]
+Overfull \hbox (30.17007pt too wide) in paragraph at lines 302--303
+[]\TU/Consolas(0)/m/n/10.95 PUT /auth/users/{id}/status\TU/TimesNewRoman(0)/m/n
+/12 , \TU/Consolas(0)/m/n/10.95 POST /auth/users/{id}/archive\TU/TimesNewRoman(
+0)/m/n/12 , \TU/Consolas(0)/m/n/10.95 GET /auth/users/{id}/events\TU/TimesNewRo
+man(0)/m/n/12 . 
+[28]
+Overfull \hbox (9.89574pt too wide) in paragraph at lines 333--334
+[]\TU/TimesNewRoman(0)/m/n/12 Lß║Ñy gi├í theo l├┤ (\TU/Consolas(0)/m/n/10.95 POST /
+prices/batch\TU/TimesNewRoman(0)/m/n/12 ) v├á qua internal API \TU/Consolas(0)/m
+/n/10.95 /internal/pricing/prices/batch
+[29]
+
+LaTeX Warning: Reference `fig:sequence-booking' on page 30 undefined on input l
+ine 342.
+
+(figures/sequence-booking.tex
+
+LaTeX Warning: Reference `tab:quy-tac' on page 30 undefined on input line 31.
+
+) [30]
+
+LaTeX Warning: Reference `fig:sequence-payment' on page 31 undefined on input l
+ine 368.
+
+(figures/sequence-payment.tex)
+Underfull \hbox (badness 1442) in paragraph at lines 384--385
+[]\TU/TimesNewRoman(0)/b/n/12 Sß╗▒ kiß╗çn thanh to├ín: \TU/TimesNewRoman(0)/m/n/12 s
+au khi x├íc nhß║¡n, payment ghi \TU/Consolas(0)/m/n/10.95 payment.settled.v1 \TU/T
+imesNewRoman(0)/m/n/12 hoß║╖c
+[31] [32]
+
+LaTeX Warning: Reference `fig:sequence-ai' on page 33 undefined on input line 4
+35.
+
+(figures/sequence-ai.tex) [33] [34]
+Overfull \hbox (6.29422pt too wide) in paragraph at lines 472--473
+\TU/TimesNewRoman(0)/m/n/12 Mß╗ìi sß╗▒ kiß╗çn d├╣ng envelope chung gß╗ôm \TU/Consolas(0)
+/m/n/10.95 eventId\TU/TimesNewRoman(0)/m/n/12 , \TU/Consolas(0)/m/n/10.95 event
+Type\TU/TimesNewRoman(0)/m/n/12 , \TU/Consolas(0)/m/n/10.95 occurredAt\TU/Times
+NewRoman(0)/m/n/12 , \TU/Consolas(0)/m/n/10.95 producer\TU/TimesNewRoman(0)/m/n
+/12 , \TU/Consolas(0)/m/n/10.95 aggregateType\TU/TimesNewRoman(0)/m/n/12 ,
+(figures/saga-outbox.tex)
+Overfull \hbox (5.95688pt too wide) in paragraph at lines 500--500
+[]|\TU/Consolas(0)/m/n/10.95 booking.change.requested.v1\TU/TimesNewRoman(0)/m/
+n/10.95 , 
+
+Overfull \hbox (29.1069pt too wide) in paragraph at lines 500--500
+[]|\TU/Consolas(0)/m/n/10.95 tour.gallery.detach.requested.v1|  
+[35] (figures/outbox.tex) [36] [37] [38] [39] (figures/db-per-service.tex)
+[40]
+
+LaTeX Warning: Reference `tab:db-groups' on page 41 undefined on input line 645
+.
+
+[41]
+Underfull \hbox (badness 1014) in paragraph at lines 672--673
+\TU/Consolas(0)/m/n/10.95 itinerary\TU/TimesNewRoman(0)/m/n/12 , \TU/Consolas(0
+)/m/n/10.95 tour_departure\TU/TimesNewRoman(0)/m/n/12 , \TU/Consolas(0)/m/n/10.
+95 tour_image_ids\TU/TimesNewRoman(0)/m/n/12 , \TU/Consolas(0)/m/n/10.95 bookin
+g_price_snapshot\TU/TimesNewRoman(0)/m/n/12 , \TU/Consolas(0)/m/n/10.95 booking
+_reservation\TU/TimesNewRoman(0)/m/n/12 ,
+[42] (figures/db-erd-auth.tex) (figures/db-erd-tour.tex) [43]
+(figures/db-erd-booking.tex) [44] (figures/db-erd-payment.tex)
+
+LaTeX Warning: Reference `tab:db-keys' on page 45 undefined on input line 704.
+
+[45] [46]
+
+LaTeX Warning: Reference `tab:db-seed' on page 47 undefined on input line 759.
+
+[47]
+Overfull \hbox (0.6392pt too wide) in paragraph at lines 816--816
+ \TU/TimesNewRoman(0)/m/n/10.95 (management)| 
+[48]
+
+LaTeX Warning: Reference `tab:test-summary' on page 49 undefined on input line 
+845.
+
+) (chapters/04-trien-khai.tex [49] [50]
+Ch╞░╞íng IV.
+
+LaTeX Warning: Reference `tab:moi-truong' on page 51 undefined on input line 9.
+
+
+[51] [52]
+
+LaTeX Warning: Reference `tab:diem-truy-cap' on page 53 undefined on input line
+ 95.
+
+
+Overfull \hbox (2.7064pt too wide) in paragraph at lines 114--114
+[]|\TU/Consolas(0)/m/n/10.95 http://localhost:8888/api/v1|  
+[53] [54] [55] [56] [57] [58] [59] [60] [61] [62]
+Overfull \hbox (22.27551pt too wide) in paragraph at lines 205--206
+\TU/TimesNewRoman(0)/m/n/12 Trß╗ú l├╜ AI nhß║¡n c├óu hß╗Åi, kiß╗âm tra nß╗Öi dung, lß║¡p kß║┐ h
+oß║ích c├│ cß║Ñu tr├║c rß╗ôi gß╗ìi API tour/pricing/booking.
+[63] [64] [65] [66] [67] [68] [69] [70]
+
+LaTeX Warning: Reference `tab:man-hinh' on page 71 undefined on input line 246.
+
+
+
+Overfull \hbox (8.41908pt too wide) in paragraph at lines 269--269
+\TU/Consolas(0)/m/n/10.95 /tour/locations/destinations/attractive\TU/TimesNewRo
+man(0)/m/n/10.95 , 
+[71] [72]
+ignored error: Infinite glue shrinkage found in box being split [73]
+
+LaTeX Warning: Reference `tab:test-scope' on page 74 undefined on input line 30
+9.
+
+[74] [75]
+
+LaTeX Warning: Citation `github' on page 76 undefined on input line 352.
+
+
+LaTeX Warning: Reference `sec:giao-dien-quan-tri' on page 76 undefined on input
+ line 378.
+
+
+LaTeX Warning: Reference `sec:giao-dien-khach-hang' on page 76 undefined on inp
+ut line 378.
+
+[76]) (chapters/05-ket-luan.tex [77]
+Ch╞░╞íng V.
+[78]
+Overfull \hbox (8.30035pt too wide) in paragraph at lines 28--29
+[]\TU/TimesNewRoman(0)/b/n/12 Kh├┤ng c├│ transaction ph├ón t├ín: \TU/TimesNewRoman(
+0)/m/n/12 c├íc luß╗ông li├¬n dß╗ïch vß╗Ñ d├╣ng idempotency, outbox/inbox
+
+LaTeX Warning: Citation `owasp' on page 79 undefined on input line 31.
+
+[79]
+
+LaTeX Warning: Reference `tab:phan-cong-nhom' on page 80 undefined on input lin
+e 55.
+
+
+LaTeX Warning: Reference `tab:ty-le-dong-gop' on page 80 undefined on input lin
+e 55.
+
+
+Overfull \hbox (1.13281pt too wide) in paragraph at lines 71--71
+[]|\TU/TimesNewRoman(0)/m/n/10.95 booking_service, 
+[80]) (chapters/06-phu-luc.tex [81]
+Phß╗Ñ lß╗Ñc A.
+
+Overfull \hbox (2.83687pt too wide) in paragraph at lines 30--30
+[]|\TU/TimesNewRoman(0)/m/n/12 pricing_service|  
+
+Overfull \hbox (8.18062pt too wide) in paragraph at lines 31--31
+[]|\TU/TimesNewRoman(0)/m/n/12 booking_service|  
+
+Overfull \hbox (8.18062pt too wide) in paragraph at lines 32--32
+[]|\TU/TimesNewRoman(0)/m/n/12 booking_service|  
+
+Overfull \hbox (8.18062pt too wide) in paragraph at lines 33--33
+[]|\TU/TimesNewRoman(0)/m/n/12 booking_service|  
+
+Overfull \hbox (8.18062pt too wide) in paragraph at lines 34--34
+[]|\TU/TimesNewRoman(0)/m/n/12 booking_service|  
+
+Overfull \hbox (52.94217pt too wide) in paragraph at lines 34--34
+\TU/Consolas(0)/m/n/10.95 /booking/internal/mail/reminders/dispatch|  
+
+Overfull \hbox (10.16695pt too wide) in paragraph at lines 35--35
+[]|\TU/TimesNewRoman(0)/m/n/12 payment_service|  
+
+Overfull \hbox (10.16695pt too wide) in paragraph at lines 36--36
+[]|\TU/TimesNewRoman(0)/m/n/12 payment_service|  
+
+Overfull \hbox (10.16695pt too wide) in paragraph at lines 37--37
+[]|\TU/TimesNewRoman(0)/m/n/12 payment_service|  
+
+Overfull \hbox (4.16695pt too wide) in paragraph at lines 38--38
+[]|\TU/TimesNewRoman(0)/m/n/12 invoice_service|  
+
+Overfull \hbox (24.165pt too wide) in paragraph at lines 41--41
+[]|\TU/TimesNewRoman(0)/m/n/12 notification_service|  
+
+Overfull \hbox (24.165pt too wide) in paragraph at lines 42--42
+[]|\TU/TimesNewRoman(0)/m/n/12 notification_service|  
+
+Overfull \hbox (58.11967pt too wide) in paragraph at lines 42--42
+\TU/Consolas(0)/m/n/10.95 /internal/notifications/mail/bookings/{id}|  
+
+Overfull \hbox (12.83296pt too wide) in paragraph at lines 43--43
+[]|\TU/TimesNewRoman(0)/m/n/12 reporting_service|  
+
+Overfull \hbox (12.83296pt too wide) in paragraph at lines 44--44
+[]|\TU/TimesNewRoman(0)/m/n/12 reporting_service|  
+ignored error: Infinite glue shrinkage found in box being split [82]
+ignored error: Infinite glue shrinkage found in box being split [83]
+
+LaTeX Warning: Reference `tab:error-code' on page 84 undefined on input line 53
+.
+
+
+LaTeX Warning: Reference `tab:env' on page 84 undefined on input line 59.
+
+
+Overfull \hbox (14.08734pt too wide) in paragraph at lines 84--84
+\TU/Consolas(0)/m/n/10.95 SEARCH_SYNC_INITIAL_DELAY_MS|  
+
+Overfull \hbox (19.26485pt too wide) in paragraph at lines 92--92
+[]|\TU/Consolas(0)/m/n/10.95 AUTH_INTROSPECT_CACHE_SECONDS|  
+ignored error: Infinite glue shrinkage found in box being split [84]
+ignored error: Infinite glue shrinkage found in box being split [85] [86]
+xelatex : miktex-dvipdfmx: major issue: So far, you have not checked for MiKTeX updates.
+At line:1 char:147
++ ... entlyContinue; xelatex -interaction=nonstopmode main.tex 2>&1 | Out-F ...
++                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (miktex-dvipdfmx...MiKTeX updates.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+[87]) (chapters/07-tai-lieu.tex [88] [89]) [90] (main.aux)
+
+LaTeX Warning: There were undefined references.
+
+
+LaTeX Warning: Label(s) may have changed. Rerun to get cross-references right.
+
+ )
+(see the transcript file for additional information)
+Output written on main.pdf (99 pages).
+Transcript written on main.log.
+xelatex: major issue: So far, you have not checked for MiKTeX updates.

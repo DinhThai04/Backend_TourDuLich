@@ -1,0 +1,290 @@
+% =====================================================================
+%  SGU Tour — Báo cáo đồ án Chuyên đề J2EE
+%  File: preamble.tex
+%  Biên dịch bằng XeLaTeX (khuyến nghị) hoặc LuaLaTeX.
+% =====================================================================
+
+% ------------------------- Trang và font -----------------------------
+\usepackage[a4paper, left=3.2cm, right=2.2cm, top=2.5cm, bottom=2.5cm,
+            headheight=15pt, footskip=1.2cm]{geometry}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}[Ligatures=TeX]
+\setsansfont{Arial}[Ligatures=TeX]
+\setmonofont{Consolas}[Scale=0.86]
+\usepackage{polyglossia}
+\setdefaultlanguage{vietnamese}
+\setotherlanguage{english}
+\setlength{\parindent}{1cm}
+\setlength{\parskip}{4pt}
+\usepackage{setspace}
+\setstretch{1.32}
+\emergencystretch=1.5em
+
+% ------------------------- Ngôn ngữ, bố cục --------------------------
+\renewcommand{\contentsname}{MỤC LỤC}
+\renewcommand{\listfigurename}{DANH MỤC HÌNH}
+\renewcommand{\listtablename}{DANH MỤC BẢNG}
+\renewcommand{\figurename}{Hình}
+\renewcommand{\tablename}{Bảng}
+\renewcommand{\chaptername}{PHẦN}
+\renewcommand{\appendixname}{PHỤ LỤC}
+\renewcommand{\abstractname}{TÓM TẮT}
+
+% ------------------------- Gói chức năng -----------------------------
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{array}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{multirow}
+\usepackage{makecell}
+\usepackage[table]{xcolor}
+\usepackage{enumitem}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{titlesec}
+\usepackage{tocloft}
+\usepackage{fancyhdr}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins,breakable}
+\usepackage{listings}
+\usepackage{url}
+\usepackage{xurl}
+\usepackage[hidelinks,unicode]{hyperref}
+\usepackage{bookmark}
+\usepackage{etoolbox}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,shapes.misc,fit,
+                backgrounds,calc,decorations.pathreplacing,patterns}
+
+% ------------------------- Màu sắc -----------------------------------
+\definecolor{sguBlue}{HTML}{0B4F9C}
+\definecolor{sguTeal}{HTML}{0E7C86}
+\definecolor{sguOrange}{HTML}{D97706}
+\definecolor{sguRed}{HTML}{B91C1C}
+\definecolor{sguGreen}{HTML}{15803D}
+\definecolor{linegray}{HTML}{CBD5E1}
+\definecolor{codebg}{HTML}{F8FAFC}
+\definecolor{softblue}{HTML}{EFF6FF}
+\definecolor{softgray}{HTML}{F1F5F9}
+
+% ------------------------- Đánh số chương/mục ------------------------
+\renewcommand{\thechapter}{\Roman{chapter}}
+\renewcommand{\thesection}{\Roman{chapter}.\arabic{section}}
+\renewcommand{\thesubsection}{\Roman{chapter}.\arabic{section}.\arabic{subsection}}
+\renewcommand{\thesubsubsection}{\Roman{chapter}.\arabic{section}.\arabic{subsection}.\arabic{subsubsection}}
+\counterwithin{figure}{chapter}
+\counterwithin{table}{chapter}
+\renewcommand{\thefigure}{\Roman{chapter}.\arabic{figure}}
+\renewcommand{\thetable}{\Roman{chapter}.\arabic{table}}
+\renewcommand{\theequation}{\Roman{chapter}.\arabic{equation}}
+
+% ------------------------- Tiêu đề chương/mục ------------------------
+\titleformat{\chapter}[display]
+  {\normalfont\bfseries\color{sguBlue}}
+  {}{0pt}
+  {\centering\LARGE}
+  [\vspace{6pt}{\color{sguBlue}\titlerule[1.2pt]}]
+\titlespacing*{\chapter}{0pt}{-10pt}{26pt}
+
+\titleformat{name=\chapter,numberless}[display]
+  {\normalfont\bfseries\color{sguBlue}}
+  {}{0pt}
+  {\centering\LARGE}
+  [\vspace{6pt}{\color{sguBlue}\titlerule[0.8pt]}]
+\titlespacing*{name=\chapter,numberless}{0pt}{-10pt}{24pt}
+
+\titleformat{\section}
+  {\normalfont\large\bfseries\color{sguBlue}}{\thesection}{0.8em}{}
+\titlespacing*{\section}{0pt}{14pt}{7pt}
+
+\titleformat{\subsection}
+  {\normalfont\normalsize\bfseries\color{sguTeal}}{\thesubsection}{0.8em}{}
+\titlespacing*{\subsection}{0pt}{10pt}{5pt}
+
+\titleformat{\subsubsection}
+  {\normalfont\normalsize\bfseries\color{black}}{\thesubsubsection}{0.8em}{}
+\titlespacing*{\subsubsection}{0pt}{8pt}{4pt}
+
+% ------------------------- Mục lục -----------------------------------
+\renewcommand{\cfttoctitlefont}{\hfill\Large\bfseries\color{sguBlue}}
+\renewcommand{\cftaftertoctitle}{\hfill}
+\renewcommand{\cftlottitlefont}{\hfill\Large\bfseries\color{sguBlue}}
+\renewcommand{\cftafterlottitle}{\hfill}
+\renewcommand{\cftloftitlefont}{\hfill\Large\bfseries\color{sguBlue}}
+\renewcommand{\cftafterloftitle}{\hfill}
+\setlength{\cftbeforetoctitleskip}{0pt}
+\setlength{\cftbeforelottitleskip}{0pt}
+\setlength{\cftbeforeloftitleskip}{0pt}
+\setlength{\cftaftertoctitleskip}{18pt}
+\setlength{\cftafterlottitleskip}{18pt}
+\setlength{\cftafterloftitleskip}{18pt}
+\renewcommand{\cftchapfont}{\bfseries\color{sguBlue}}
+\renewcommand{\cftchappagefont}{\bfseries\color{sguBlue}}
+\renewcommand{\cftsecfont}{}
+\renewcommand{\cftsecpagefont}{}
+\setlength{\cftbeforechapskip}{8pt}
+\setlength{\cftbeforesecskip}{2pt}
+\setlength{\cftfigindent}{0pt}
+\setlength{\cfttabindent}{0pt}
+\renewcommand{\cftfigleader}{\dotfill}
+\renewcommand{\cfttableader}{\dotfill}
+
+% ------------------------- Header/footer -----------------------------
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small\itshape Đồ án Chuyên đề J2EE}
+\fancyhead[R]{\small\itshape\nouppercase{\leftmark}}
+\fancyfoot[C]{\small\thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+\renewcommand{\footrulewidth}{0pt}
+\fancypagestyle{plain}{
+  \fancyhf{}
+  \fancyhead[L]{\small\itshape Đồ án Chuyên đề J2EE}
+  \fancyhead[R]{\small\itshape\nouppercase{\leftmark}}
+  \fancyfoot[C]{\small\thepage}
+  \renewcommand{\headrulewidth}{0.4pt}
+}
+\renewcommand{\chaptermark}[1]{\markboth{#1}{}}
+
+% ------------------------- Chú thích ---------------------------------
+\captionsetup{font=small,labelfont={bf,color=sguBlue},labelsep=period,
+              justification=centering,skip=6pt}
+\captionsetup[table]{position=top,skip=4pt}
+\captionsetup[figure]{position=bottom}
+
+% ------------------------- Danh sách ---------------------------------
+\setlist[itemize]{leftmargin=1.1cm,itemsep=2pt,topsep=4pt,parsep=0pt}
+\setlist[enumerate]{leftmargin=1.2cm,itemsep=2pt,topsep=4pt,parsep=0pt}
+\setlist[description]{leftmargin=1.2cm,itemsep=2pt,topsep=4pt,parsep=0pt}
+
+% ------------------------- Hộp ghi chú -------------------------------
+\newtcolorbox{notebox}[1][Ghi chú]{
+  enhanced,breakable,colback=softblue,colframe=sguBlue,
+  boxrule=0.5pt,arc=1.5mm,left=4mm,right=4mm,top=2.5mm,bottom=2.5mm,
+  fonttitle=\bfseries\small,coltitle=white,colbacktitle=sguBlue,
+  title={#1},attach boxed title to top left={xshift=2mm,yshift=-2mm},
+  boxed title style={arc=1mm,boxrule=0pt}
+}
+\newtcolorbox{warningbox}[1][Lưu ý]{
+  enhanced,breakable,colback=orange!5,colframe=sguOrange,
+  boxrule=0.5pt,arc=1.5mm,left=4mm,right=4mm,top=2.5mm,bottom=2.5mm,
+  fonttitle=\bfseries\small,coltitle=white,colbacktitle=sguOrange,
+  title={#1},attach boxed title to top left={xshift=2mm,yshift=-2mm},
+  boxed title style={arc=1mm,boxrule=0pt}
+}
+\newtcolorbox{placeholderbox}{
+  enhanced,colback=gray!4,colframe=gray!55,boxrule=0.8pt,
+  frame style={dash pattern=on 3pt off 2pt},
+  arc=1mm,left=3mm,right=3mm,top=3mm,bottom=3mm
+}
+
+% ------------------------- Code listing ------------------------------
+\lstdefinestyle{java}{
+  language=Java,
+  basicstyle=\ttfamily\footnotesize,
+  keywordstyle=\color{sguBlue}\bfseries,
+  commentstyle=\color{gray!80!black}\itshape,
+  stringstyle=\color{sguTeal},
+  numberstyle=\tiny\color{gray},
+  numbers=left,numbersep=7pt,
+  frame=single,rulecolor=\color{linegray},
+  backgroundcolor=\color{codebg},
+  breaklines=true,breakatwhitespace=false,
+  showstringspaces=false,tabsize=2,
+  captionpos=b,aboveskip=6pt,belowskip=6pt
+}
+\lstdefinestyle{json}{
+  language=,
+  basicstyle=\ttfamily\footnotesize,
+  commentstyle=\color{gray},
+  stringstyle=\color{sguTeal},
+  numbers=none,frame=single,rulecolor=\color{linegray},
+  backgroundcolor=\color{codebg},breaklines=true,showstringspaces=false
+}
+\lstset{style=java}
+
+% ------------------------- Lệnh dùng chung --------------------------
+\newcommand{\code}[1]{\texttt{\footnotesize #1}}
+\newcommand{\service}[1]{\texttt{#1}}
+\newcommand{\vnd}[1]{#1\,VNĐ}
+
+% Ảnh chụp màn hình: nếu chưa có ảnh thì hiển thị khung giữ chỗ.
+% Cách dùng: \screenshot{ten-anh.png}{Chú thích}{fig:nhan}
+\newcommand{\screenshot}[3]{%
+  \begin{figure}[H]\centering
+  \IfFileExists{images/#1}{%
+    \includegraphics[width=0.92\textwidth,height=0.72\textheight,keepaspectratio]{images/#1}%
+  }{%
+    \begin{minipage}{0.86\textwidth}
+    \begin{placeholderbox}
+      \centering
+      {\color{gray}\bfseries KHUNG HÌNH MINH HỌA}\\[2mm]
+      {\color{gray}\small Thêm tệp \texttt{images/#1} vào thư mục dự án để thay thế khung này.}
+    \end{placeholderbox}
+    \end{minipage}
+  }%
+  \caption{#2}\label{#3}
+  \end{figure}%
+}
+
+% ------------------------- Kiểu TikZ ---------------------------------
+\tikzset{
+  box/.style={draw=sguBlue,fill=blue!5,rounded corners=2pt,align=center,
+              font=\small,inner sep=3pt,minimum height=8mm},
+  svc/.style={draw=sguBlue!80,fill=white,rounded corners=2pt,align=center,
+              font=\scriptsize,inner sep=2pt,minimum height=8mm},
+  edge/.style={draw=sguTeal,fill=teal!6,rounded corners=2pt,align=center,
+               font=\small\bfseries,inner sep=3pt,minimum height=10mm},
+  ext/.style={draw=sguOrange,fill=orange!7,rounded corners=2pt,align=center,
+              font=\scriptsize,inner sep=2pt,minimum height=8mm},
+  data/.style={draw=gray!65,fill=gray!6,dashed,rounded corners=2pt,align=center,
+               font=\scriptsize,inner sep=2pt,minimum height=8mm},
+  act/.style={draw=sguBlue,fill=blue!8,rounded corners=8pt,align=center,
+              font=\small,inner sep=3pt,minimum height=8mm},
+  participant/.style={draw=sguBlue,fill=blue!8,rounded corners=2pt,align=center,
+                      font=\scriptsize\bfseries,inner sep=2pt,minimum width=2.5cm,
+                      minimum height=7mm},
+  lifeline/.style={dashed,draw=gray!55},
+  msg/.style={-{Latex[length=1.8mm]},thick,draw=sguBlue!85},
+  ret/.style={-{Latex[length=1.8mm]},thick,dashed,draw=gray!70},
+  arrow/.style={-{Latex[length=2mm]},thick,draw=sguBlue!80},
+  darrow/.style={-{Latex[length=2mm]},thick,dashed,draw=gray!70}
+}
+
+% ------------------------- Kiểu TikZ cho sơ đồ CSDL ------------------
+\tikzset{
+  dbentity/.style={draw=sguBlue!70,fill=blue!3,rounded corners=2pt,
+                   inner sep=3pt,align=center,font=\scriptsize},
+  dbstore/.style={draw=sguGreen,fill=green!6,rounded corners=2pt,align=center,
+                  font=\small\bfseries,inner sep=3pt,minimum width=3.1cm,
+                  minimum height=8mm},
+  dbrel/.style={draw=sguTeal!85,thick},
+  dbrellog/.style={draw=sguOrange!85,thick,dashed}
+}
+% Hộp thực thể: \entitybox{tên}{x}{y}{tiêu đề}{thuộc tính a\\b\\c}
+\newcommand{\entitybox}[5]{%
+  \node[dbentity,anchor=north] (#1) at (#2,#3)
+    {\begin{tabular}{@{}l@{}}\textbf{#4}\\[1pt]\hline #5\end{tabular}};%
+}
+
+% ------------------------- Khoảng cách bảng --------------------------
+\renewcommand{\arraystretch}{1.25}
+\setlength{\tabcolsep}{5pt}
+% Cho phép giãn khoảng trắng nhẹ để tránh tràn lề khi gặp chuỗi code dài.
+\setlength{\emergencystretch}{3em}
+\newcolumntype{L}[1]{>{\raggedright\arraybackslash}p{#1}}
+\newcolumntype{C}[1]{>{\centering\arraybackslash}p{#1}}
+\newcolumntype{Y}{>{\raggedright\arraybackslash}X}
+
+% ------------------------- Tên tài liệu -----------------------------
+\newcommand{\reporttitle}{XÂY DỰNG WEBSITE BÁN TOUR DU LỊCH}
+\newcommand{\reportsubtitle}{HỆ THỐNG BACKEND THEO KIẾN TRÚC MICROSERVICES}
+\newcommand{\reportcourse}{ĐỒ ÁN HỌC PHẦN CHUYÊN ĐỀ J2EE}
+\newcommand{\reportmajor}{Công nghệ thông tin}
+\newcommand{\reportspecialty}{Kỹ thuật phần mềm}
+\newcommand{\reportteacher}{ThS. Nguyễn Thanh Phước}
+\newcommand{\reportplace}{Thành phố Hồ Chí Minh}
+\newcommand{\reportyear}{2026}

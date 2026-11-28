@@ -1,0 +1,17 @@
+% Sơ đồ thực thể: nhóm danh mục tour.
+\begin{tikzpicture}[x=1cm,y=1cm]
+  \entitybox{pricez}{0}{3.6}{prices}{id (PK)\\ adult\_price\\ child\_price}
+  \entitybox{locz}{4.2}{3.6}{location}{id (PK)\\ city\\ type}
+  \entitybox{vehz}{8.4}{3.6}{vehicles}{id (PK)\\ vehicle\_type}
+  \entitybox{tourz}{4.2}{0.9}{tour}{id (PK)\\ tour\_title\\ base\_price\\ price\_id (FK)}
+  \entitybox{itinz}{0}{-2.6}{itinerary}{id (PK)\\ tour\_id (FK)\\ day\_number}
+  \entitybox{depz}{4.2}{-2.6}{tour\_departure}{id (PK)\\ tour\_id (FK)\\ departure\_date\\ available\_seats}
+  \entitybox{revz}{8.4}{-2.6}{reviews}{id (PK)\\ user\_id (FK)\\ tour\_id}
+
+  \draw[dbrellog] (pricez) -- (tourz);
+  \draw[dbrel]   (locz)   -- (tourz);
+  \draw[dbrel]   (vehz)   -- (tourz);
+  \draw[dbrel]   (tourz)  -- (itinz);
+  \draw[dbrel]   (tourz)  -- (depz);
+  \draw[dbrellog] (tourz) -- (revz);
+\end{tikzpicture}

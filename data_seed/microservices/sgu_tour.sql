@@ -16,6 +16,7 @@ DROP TABLE IF EXISTS tour_inbox;
 DROP TABLE IF EXISTS tour_outbox;
 DROP TABLE IF EXISTS departure_hold;
 DROP TABLE IF EXISTS tour_image_ids;
+DROP TABLE IF EXISTS departure_meeting_point;
 DROP TABLE IF EXISTS tour_departure;
 DROP TABLE IF EXISTS itinerary;
 DROP TABLE IF EXISTS tour;
@@ -87,6 +88,16 @@ CREATE TABLE `tour_departure` (
   KEY `ix_departure_open` (`tour_id`,`departure_date`,`operational_status`),
   KEY `ix_departure_date` (`departure_date`,`operational_status`),
   CONSTRAINT `FKny8sltvnfchcpyv5bjpfujtx2` FOREIGN KEY (`tour_id`) REFERENCES `tour` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `departure_meeting_point` (
+  `departure_id` int(11) NOT NULL,
+  `address` varchar(300) NOT NULL,
+  `landmark` varchar(300) DEFAULT NULL,
+  `arrival_time` time DEFAULT NULL,
+  `directions_url` varchar(1000) DEFAULT NULL,
+  PRIMARY KEY (`departure_id`),
+  CONSTRAINT `fk_meeting_departure` FOREIGN KEY (`departure_id`) REFERENCES `tour_departure` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `tour_image_ids` (

@@ -1,0 +1,33 @@
+\begin{tikzpicture}[x=1cm,y=1cm]
+  \node[participant] (c) at (0,0) {Client};
+  \node[participant] (g) at (3.0,0) {Gateway};
+  \node[participant] (b) at (6.0,0) {Booking};
+  \node[participant] (t) at (9.0,0) {Tour};
+  \node[participant] (p) at (12.0,0) {Pricing};
+  \node[participant] (m) at (15.0,0) {Mail outbox};
+
+  \foreach \q in {c,g,b,t,p,m} \draw[lifeline] (\q.south) -- ++(0,-8.8);
+
+  \draw[msg] (c |- 0,-0.8) -- node[above,font=\tiny]{1. tạo booking + clientKey} (g |- 0,-0.8);
+  \draw[msg] (g |- 0,-1.4) -- node[above,font=\tiny]{2. JWT, owner} (b |- 0,-1.4);
+
+  \draw[msg] (b |- 0,-2.0) -- ++(0,-0.55) node[midway,right,font=\tiny]{3. kiểm tra tài khoản, hạn giữ chỗ} ;
+
+  \draw[msg] (b |- 0,-2.9) -- node[above,font=\tiny]{4. khóa lịch, kiểm tra chỗ} (t |- 0,-2.9);
+  \draw[ret] (t |- 0,-3.4) -- node[above,font=\tiny]{5. số chỗ còn lại} (b |- 0,-3.4);
+
+  \draw[msg] (b |- 0,-4.0) -- node[above,font=\tiny]{6. giá theo nhóm tuổi} (p |- 0,-4.0);
+  \draw[ret] (p |- 0,-4.5) -- node[above,font=\tiny]{7. bảng giá} (b |- 0,-4.5);
+
+  \draw[msg] (b |- 0,-5.1) -- ++(0,-0.55) node[midway,right,font=\tiny]{8. booking + snapshot + reservation};
+
+  \draw[msg] (b |- 0,-6.0) -- node[above,font=\tiny]{9. ghi outbox trong cùng transaction} (m |- 0,-6.0);
+  \draw[ret] (b |- 0,-6.7) -- node[above,font=\tiny]{10. bookingId, hạn thanh toán} (g |- 0,-6.7);
+  \draw[ret] (g |- 0,-7.2) -- node[above,font=\tiny]{11. 201 Created} (c |- 0,-7.2);
+
+  \draw[msg] (m |- 0,-7.9) -- ++(0,-0.55) node[midway,right,font=\tiny]{12. worker gửi mail, cập nhật trạng thái};
+
+  \node[draw=gray!50,fill=gray!4,rounded corners=2pt,font=\tiny,align=left,anchor=west]
+    at (0.2,-9.5) {Nếu lịch còn \(\leq 7\) ngày: giữ chỗ tối đa 15 phút. Nếu còn hơn 7 ngày: hạn theo công thức ở Bảng~\ref{tab:quy-tac}.\\
+    Giá được chốt tại bước 8; callback thanh toán không tính lại giá.};
+\end{tikzpicture}

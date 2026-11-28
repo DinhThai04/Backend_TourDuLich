@@ -1,0 +1,30 @@
+\begin{tikzpicture}[x=1cm,y=1cm]
+  \tikzset{obox/.style={draw=sguBlue,fill=blue!5,rounded corners=2pt,align=center,
+            font=\scriptsize,inner sep=3pt,minimum width=2.9cm,minimum height=1.05cm}}
+
+  \node[obox] (tx)    at (0.0,4.1)  {Transaction\\nghiệp vụ};
+  \node[obox] (bout)  at (3.3,4.1)  {booking\_outbox\\{\tiny PENDING}};
+  \node[obox] (nsvc)  at (6.6,4.1)  {notification\\service};
+  \node[obox] (mout)  at (9.9,4.1)  {mail\_outbox\\{\tiny PENDING}};
+  \node[obox] (wkr)   at (13.2,4.1) {Mail worker\\{\tiny batch, lease}};
+  \node[box,minimum width=2.9cm,minimum height=1.0cm] (smtp) at (13.2,2.5) {SMTP\\{\tiny nhà cung cấp}};
+
+  \node[ext,minimum width=3.0cm,minimum height=0.9cm] (n8n) at (3.3,6.6) {n8n\\{\tiny lịch nhắc}};
+  \node[ext,minimum width=3.6cm,minimum height=0.9cm] (api) at (7.4,6.6) {Internal mail API\\{\tiny X-Internal-Mail-Key}};
+  \node[data,minimum width=3.4cm,minimum height=0.9cm] (st) at (10.4,2.5) {SENT / RETRY / FAILED};
+
+  \draw[arrow] (tx) -- node[above=0.72cm,font=\tiny]{cùng transaction} (bout);
+  \draw[arrow] (bout) -- node[above=0.72cm,font=\tiny]{publisher} (nsvc);
+  \draw[arrow] (nsvc) -- node[above=0.72cm,font=\tiny]{idempotent} (mout);
+  \draw[arrow] (mout) -- node[above=0.72cm,font=\tiny]{đọc} (wkr);
+  \draw[arrow] (wkr) -- (smtp);
+  \draw[darrow] (wkr) -- (st);
+  \draw[darrow] (st.north) -- node[right,font=\tiny]{retry} (mout.south);
+
+  \draw[arrow] (n8n.east) -- node[below=0.6cm,font=\tiny]{key nội bộ} (api.west);
+  \draw[arrow] (api.south) -- node[right,font=\tiny]{tạo lượt nhắc} (nsvc.north);
+
+  \node[font=\tiny,align=left,anchor=west,text width=15.4cm] at (0,7.8)
+    {\textbf{Mục tiêu:} không mất thông báo khi SMTP lỗi tạm thời; không gửi trùng khi worker khởi động lại; consumer ghi inbox trước khi xử lý.\\
+     n8n chỉ tạo lượt nhắc qua API nội bộ; nội dung, thời điểm và điều kiện gửi do backend kiểm tra.};
+\end{tikzpicture}

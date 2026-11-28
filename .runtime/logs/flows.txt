@@ -1,0 +1,142 @@
+﻿===== GROUP auth (37) =====
+ 1|Đăng nhập admin|PASS|POST /auth/users/login|200|187
+ 2|Đăng nhập user1 (account 3)|PASS|POST /auth/users/login|200|113
+ 3|Đăng nhập user5 (account 7)|PASS|POST /auth/users/login|200|108
+ 4|Kiểm tra token (introspect nội bộ)|PASS|POST http://localhost:8080/auth/users/introspect|200|18
+ 5|Làm mới token admin|PASS|POST /auth/users/refresh|200|43
+ 6|Đăng ký khách hàng công khai|PASS|POST /auth/users/register|200|119
+ 7|Đăng nhập tài khoản vừa đăng ký|PASS|POST /auth/users/login|200|118
+ 8|Đổi mật khẩu tài khoản vừa đăng ký|PASS|POST /auth/users/Change-password|200|235
+ 9|Đăng nhập bằng mật khẩu mới|PASS|POST /auth/users/login|200|126
+10|Xem hồ sơ của chính mình|PASS|GET /auth/users/15|200|39
+11|Danh sách tài khoản (admin)|PASS|GET /auth/users/list?page=0&size=5|200|51
+12|Lấy tên hiển thị theo id|PASS|GET /auth/users/display-names?ids=1,3,7|200|22
+13|Admin tạo tài khoản quản lý|PASS|POST /auth/users|200|146
+14|Cập nhật hồ sơ tài khoản quản lý|PASS|POST /auth/users/UpdateUser/16|200|50
+15|Xem chi tiết tài khoản quản lý|PASS|GET /auth/users/16|200|21
+16|Khóa tài khoản đăng ký mới|PASS|PUT /auth/users/15/status|200|37
+17|Xóa tài khoản đã khóa (không có lịch sử)|PASS|DELETE /auth/users/15?reason=Kiem-thu-xoa-tai-khoan|200|83
+18|Khóa tài khoản quản lý|PASS|PUT /auth/users/16/status|200|44
+19|Lưu trữ tài khoản đã khóa|PASS|POST /auth/users/16/archive|200|57
+20|Xem lịch sử trạng thái tài khoản|PASS|GET /auth/users/16/events|200|33
+21|Đăng xuất admin|PASS|POST /auth/users/logout|200|77
+22|Đăng nhập admin (sau đăng xuất)|PASS|POST /auth/users/login|200|135
+23|Tạo vai trò|PASS|POST /auth/roles|200|132
+24|Cập nhật vai trò|PASS|PUT /auth/roles|200|53
+25|Danh sách vai trò|PASS|GET /auth/roles|200|25
+26|Xem chi tiết vai trò|PASS|GET /auth/roles/3|200|20
+27|Tạo quyền|PASS|POST /auth/permissions|200|82
+28|Cập nhật quyền|PASS|PUT /auth/permissions|200|46
+29|Danh sách quyền|PASS|GET /auth/permissions/list|200|134
+30|Xem chi tiết quyền|PASS|GET /auth/permissions/124|200|21
+31|Xóa quyền|PASS|DELETE /auth/permissions/124|200|29
+32|Xóa vai trò|PASS|DELETE /auth/roles/3|200|34
+33|Kiểm tra điều kiện đánh giá tour 15 (user5)|PASS|GET /auth/reviews/eligibility?tourId=15|200|709
+34|Gửi đánh giá tour 15 (user5)|PASS|POST /auth/reviews|200|82
+35|Đánh giá theo tour (công khai)|PASS|GET /auth/reviews/tour/15?page=0&size=10|200|34
+36|Đánh giá điểm cao (công khai)|PASS|GET /auth/reviews/high-rating?size=4|200|22
+37|Danh sách đánh giá (admin)|PASS|GET /auth/reviews/list?page=0&size=5|200|69
+===== GROUP tour (39) =====
+ 1|Danh sách tour|PASS|GET /tour/tours/list|200|165
+ 2|Chi tiết tour 1|PASS|GET /tour/tours/1|200|59
+ 3|Ba tour ngẫu nhiên|PASS|GET /tour/tours/random-3|200|70
+ 4|Tìm tour theo từ khóa|PASS|GET /tour/tours/search?title=Hà&page=0&size=5|200|81
+ 5|Snapshot danh mục cho search|PASS|GET /tour/tours/search-snapshot|200|48
+ 6|Danh mục địa điểm tư vấn|PASS|GET /tour/advice/locations|200|28
+ 7|Tư vấn tìm tour (công khai)|PASS|POST /tour/advice/search|200|65
+ 8|Tạo phương tiện|PASS|POST /tour/vehicles|200|20
+ 9|Danh sách phương tiện|PASS|GET /tour/vehicles/list|200|10
+10|Tạo bảng giá tour|PASS|POST /pricing/prices|200|19
+11|Cập nhật bảng giá tour|PASS|PUT /pricing/prices/17|200|22
+12|Chi tiết bảng giá (công khai)|PASS|GET /pricing/prices/17|200|12
+13|Danh sách bảng giá|PASS|GET /pricing/prices|200|18
+14|Lấy giá theo lô (công khai)|PASS|POST /pricing/prices/batch|200|15
+15|Tạo địa điểm (multipart)|PASS|POST /tour/locations|200|21
+16|Cập nhật địa điểm|PASS|PUT /tour/locations/19|200|25
+17|Tất cả địa điểm|PASS|GET /tour/locations/all|200|10
+18|Địa điểm khởi hành|PASS|GET /tour/locations/departures|200|8
+19|Địa điểm đến|PASS|GET /tour/locations/destinations|200|10
+20|Tìm địa điểm khởi hành|PASS|GET /tour/locations/departures/search?keyword=H%C3%A0%20N%E1%BB%99i|200|10
+21|Tìm địa điểm đến|PASS|GET /tour/locations/destinations/search?keyword=Sa|200|10
+22|Địa điểm hấp dẫn|PASS|GET /tour/locations/destinations/attractive|200|9
+23|Tạo tour (multipart, không ảnh)|PASS|POST /tour/tours|200|65
+24|Cập nhật tour|PASS|PUT /tour/tours/17|200|94
+25|Chi tiết tour vừa tạo|PASS|GET /tour/tours/17|200|26
+26|Tạo lịch trình|PASS|POST /tour/itineraries|200|18
+27|Cập nhật lịch trình|PASS|PUT /tour/itineraries/42|200|23
+28|Chi tiết lịch trình|PASS|GET /tour/itineraries/42|200|14
+29|Lịch trình theo tour (công khai)|PASS|GET /tour/itineraries/tour/17|200|10
+30|Tất cả lịch trình|PASS|GET /tour/itineraries/all|200|19
+31|Xóa lịch trình|PASS|DELETE /tour/itineraries/42|200|22
+32|Xóa tour vừa tạo|PASS|DELETE /tour/tours/17|200|44
+33|Tạo lịch khởi hành mới|PASS|POST /tour/tour-departures|200|24
+34|Cập nhật sức chứa lịch khởi hành|PASS|PUT /tour/tour-departures/1093|200|27
+35|Chi tiết lịch khởi hành (công khai)|PASS|GET /tour/tour-departures/1093|200|23
+36|Tổng quan sức chứa lịch khởi hành|PASS|GET /tour/tour-departures/313/capacity|200|16
+37|Danh sách lịch khởi hành|PASS|GET /tour/tour-departures/list|200|101
+38|Lịch khởi hành theo tour (công khai)|PASS|GET /tour/tour-departures/tour/1|200|44
+39|Toàn bộ lịch sử lịch khởi hành tour 1|PASS|GET /tour/tour-departures/tour/1/all|200|46
+===== GROUP booking (54) =====
+ 1|Tạo booking (giữ chỗ) - lịch 611|PASS|POST /booking/book/create|200|345
+ 2|Tạo booking thứ hai - lịch 626|PASS|POST /booking/book/create|200|33
+ 3|Xem booking của chính mình|PASS|GET /booking/book/30|200|16
+ 4|Danh sách booking (admin)|PASS|GET /booking/book/all?page=0&size=5|200|43
+ 5|Danh sách booking của tôi|PASS|GET /booking/book/all?page=0&size=10&mine=true|200|14
+ 6|Hủy booking thứ hai|PASS|DELETE /booking/book/31|200|41
+ 7|Danh sách hành khách theo booking 22|PASS|GET /booking/customer/booking/22|200|248
+ 8|Chi tiết hành khách|PASS|GET /booking/customer/24|200|22
+ 9|Hành khách của tôi|PASS|GET /booking/customer/all?page=0&size=10&mine=true|200|61
+10|Tất cả hành khách (admin)|PASS|GET /booking/customer/all?page=0&size=5|200|33
+11|Tình trạng booking của tôi (advice)|PASS|GET /booking/advice/mine?bookingId=22|200|23
+12|Điều kiện đánh giá tour 1 (user1)|PASS|GET /booking/advice/review-eligibility?tourId=1|200|17
+13|Booking đủ điều kiện đổi lịch|PASS|GET /booking/changes/eligible?page=0&size=10|200|13
+14|Yêu cầu đổi lịch của tôi|PASS|GET /booking/changes/mine?page=0&size=10|200|10
+15|Các lịch thay thế cho booking 22|PASS|GET /booking/changes/options?bookingId=22|200|16
+16|Yêu cầu đổi lịch (khách, booking 22 → 566)|PASS|POST /booking/changes/customer|200|87
+17|Gửi lại cùng clientKey (idempotent)|PASS|POST /booking/changes/customer|200|15
+18|Danh sách yêu cầu đổi lịch (admin)|PASS|GET /booking/changes/admin?tourId=1&page=0&size=10|200|21
+19|Admin duyệt yêu cầu đổi lịch|PASS|POST /booking/changes/1/review|200|87
+20|Khách xem yêu cầu đã được duyệt|PASS|GET /booking/changes/mine?page=0&size=10|200|14
+21|Đọc lịch 615 trước khi xử lý sự cố|PASS|GET /tour/tour-departures/615|200|25
+22|Xem trước phương án thay thế sự cố|PASS|POST /booking/changes/shop/preview|200|61
+23|Tạo phương án thay thế do sự cố|PASS|POST /booking/changes/shop|200|46
+24|User5 xem đề xuất đổi lịch|PASS|GET /booking/changes/mine?page=0&size=20|200|29
+25|Admin ghi nhận yêu cầu hoàn tiền|PASS|POST /booking/changes/2/review|200|28
+26|Khách chọn phương án hoàn tiền|PASS|POST /booking/changes/2/respond|200|25
+27|Admin ghi nhận đã hoàn tiền|PASS|POST /booking/changes/2/refund|200|70
+28|Kích hoạt lịch thay thế sau khi xử lý xong|PASS|POST /booking/changes/shop/1/activate|200|27
+29|Báo giá thanh toán VNPay|PASS|GET /payment/vnpay/bookings/30/quote|200|479
+30|Tạo URL thanh toán VNPay|PASS|POST /payment/vnpay/bookings|200|117
+31|VNPay IPN xác nhận thanh toán|PASS|GET /payment/vnpay/ipn?vnp_Amount=849000000&vnp_BankCode=NCB&vnp_BankTranNo=BANK194548&vnp_CardType=ATM&vnp_OrderInfo=Thanh%2Btoan%2Bbooking%2B30&vnp_PayDate=20261116194548&vnp_ResponseCode=00&vnp_TmnCode=TESTTMN01&vnp_TransactionNo=TXN194548&vnp_TransactionStatus=00&vnp_TxnRef=8b4c880dac944a1ab1356f97b1581a9f&vnp_SecureHash=f48aabfd2f6dc8955bcf4b2a6b55db67a1f4d218452bad7240fdcab7c1ec3bc01bc0d4edf4ca379c559e7ed8b4bb13ceab63cb4efd0e4ad93c099a90d2570ad7|200|63
+32|VNPay return (trình duyệt khách)|PASS|GET /payment/vnpay/bookings/return?vnp_Amount=849000000&vnp_BankCode=NCB&vnp_BankTranNo=BANK194548&vnp_CardType=ATM&vnp_OrderInfo=Thanh%2Btoan%2Bbooking%2B30&vnp_PayDate=20261116194548&vnp_ResponseCode=00&vnp_TmnCode=TESTTMN01&vnp_TransactionNo=TXN194548&vnp_TransactionStatus=00&vnp_TxnRef=8b4c880dac944a1ab1356f97b1581a9f&vnp_SecureHash=f48aabfd2f6dc8955bcf4b2a6b55db67a1f4d218452bad7240fdcab7c1ec3bc01bc0d4edf4ca379c559e7ed8b4bb13ceab63cb4efd0e4ad93c099a90d2570ad7|200|24
+33|Booking sau thanh toán|PASS|GET /booking/book/30|200|18
+34|Danh sách đối soát thanh toán|PASS|GET /payment/reconciliation?page=0&view=ACTIONABLE|200|48
+35|Lịch sử giao dịch đối soát|PASS|GET /payment/reconciliation/8b4c880dac944a1ab1356f97b1581a9f/history|200|18
+36|Hóa đơn theo booking vừa thanh toán|PASS|GET /invoice/direct/booking/30|200|771
+37|Chi tiết hóa đơn|PASS|GET /invoice/direct/24|200|54
+38|Danh sách hóa đơn (admin)|PASS|GET /invoice/direct/all?page=0&size=5|200|74
+39|Tạo hóa đơn thu tiền mặt tại quầy (booking cũ 29)|PASS|POST /invoice/direct/create|200|458
+40|Đọc lại hóa đơn quầy vừa tạo|PASS|GET /invoice/direct/booking/29|200|23
+41|Đồng bộ danh mục tìm kiếm|PASS|POST /search/tours/sync|200|189
+42|Tìm kiếm: tất cả tour|PASS|GET /search/tours?page=0&size=5|200|36
+43|Tìm kiếm: lọc giá 5–10 triệu|PASS|GET /search/tours/search?basePrice=5to10&page=0&size=5|200|144
+44|Tải ảnh công khai|PASS|GET /file/media/download/7b623f38-2c91-4ef2-a45d-0d0100cec8f6|200|1040
+45|Ảnh theo danh sách tour|PASS|GET /file/media/tours?tourIds=1&tourIds=5|200|9
+46|Tệp theo chủ sở hữu|PASS|GET /file/owner/1|200|25
+47|Danh sách ảnh tour mồ côi|PASS|GET /file/media/tour-orphans?page=0|200|98
+48|Chính sách AI (công khai)|PASS|GET /ai/policies|200|9
+49|Tạo phiên tư vấn AI|PASS|POST /ai/conversations|201|66
+50|Đặt lại phiên tư vấn AI|PASS|POST /ai/conversations/reset|200|57
+51|Trợ giúp booking (ẩn danh, công khai)|PASS|POST /ai/booking-help|200|54
+52|Trợ giúp booking của tôi (đã đăng nhập)|PASS|POST /ai/booking-help|200|220
+53|Health AI service (gọi trực tiếp)|PASS|GET http://localhost:8091/ai/health|200|2046
+54|Bắt tay Socket.IO|PASS|GET http://localhost:8099/socket.io/?EIO=4&transport=polling|200|107
+===== GROUP extra (8) =====
+ 1|Báo giá thanh toán MoMo (booking chờ 27)|PASS|GET /payment/momo/bookings/27/quote|200|112
+ 2|Tạo booking phục vụ đối soát - lịch 611|PASS|POST /booking/book/create|200|45
+ 3|Báo giá VNPay cho booking đối soát|PASS|GET /payment/vnpay/bookings/32/quote|200|21
+ 4|Tạo giao dịch VNPay chờ (đối soát)|PASS|POST /payment/vnpay/bookings|200|40
+ 5|Đối soát: xác nhận giao dịch hết hạn chưa thu tiền|PASS|POST /payment/reconciliation/7ff7115b0d6242e788f0b507213d012f/resolve|200|73
+ 6|Lịch sử đối soát của giao dịch vừa xử lý|PASS|GET /payment/reconciliation/7ff7115b0d6242e788f0b507213d012f/history|200|18
+ 7|Hủy booking đối soát|PASS|DELETE /booking/book/32|200|26
+ 8|Hóa đơn của tôi|PASS|GET /invoice/direct/all?page=0&size=10&mine=true|200|25

@@ -1,0 +1,137 @@
+\chapter{PHẦN I: GIỚI THIỆU DỰ ÁN}
+\label{chap:gioi-thieu}
+
+\section{Lý do chọn đề tài}
+\label{sec:ly-do}
+
+Trong những năm gần đây, hành vi của khách du lịch đã thay đổi rõ rệt: phần lớn khách hàng tìm kiếm thông tin, so sánh giá và đặt dịch vụ trực tuyến thay vì đến văn phòng hoặc gọi điện trực tiếp. Một website bán tour không chỉ cần hiển thị danh mục tour mà còn phải xử lý đồng thời nhiều nghiệp vụ: quản lý lịch khởi hành và số chỗ, tính giá theo nhóm tuổi, giữ chỗ tạm thời, thanh toán trực tuyến, phát hành hóa đơn, gửi email xác nhận, xử lý dời lịch, báo cáo vận hành và hỗ trợ khách hàng sau chuyến đi.
+
+Nếu tất cả chức năng được triển khai trong một ứng dụng nguyên khối, việc thay đổi một nghiệp vụ nhỏ có thể ảnh hưởng đến toàn bộ hệ thống; việc mở rộng theo từng thành phần gặp khó khăn; và việc cô lập lỗi trở nên phức tạp khi lưu lượng tăng. Vì vậy, nhóm lựa chọn kiến trúc microservices: mỗi miền nghiệp vụ được tách thành một dịch vụ độc lập, sở hữu cơ sở dữ liệu riêng, giao tiếp qua API thống nhất và trao đổi sự kiện bất đồng bộ qua message broker.
+
+Đề tài \textbf{“Xây dựng website bán tour du lịch”} được thực hiện trong học phần Chuyên đề J2EE nhằm vận dụng các công nghệ Java hiện đại vào một bài toán có tính thực tế. Báo cáo trình bày cả \textbf{backend} (12 ứng dụng Spring Boot, 9 cơ sở dữ liệu vật lý) và \textbf{frontend} (React 19, TypeScript, Ant Design) ở mức đủ chi tiết để tái hiện hệ thống.
+
+\section{Mục tiêu của đề tài}
+\label{sec:muc-tieu}
+
+Mục tiêu tổng quát của đề tài là xây dựng một nền tảng đủ hoàn chỉnh để vận hành website bán tour du lịch, có khả năng mở rộng và bảo đảm các nguyên tắc cơ bản về bảo mật, toàn vẹn nghiệp vụ và khả năng kiểm thử. Các mục tiêu cụ thể gồm:
+
+\begin{itemize}
+  \item Thiết kế và triển khai \textbf{12 ứng dụng Spring Boot} độc lập: API Gateway và 11 dịch vụ nghiệp vụ/hạ tầng.
+  \item Áp dụng \textbf{database-per-service}: 9 cơ sở dữ liệu MySQL vật lý độc lập, mỗi dịch vụ chỉ có quyền trên database của mình, không có khóa ngoại hay câu lệnh JOIN xuyên database.
+  \item Xây dựng cơ chế xác thực JWT, phân quyền theo vai trò/quyền hạn, quản lý vòng đời tài khoản và thu hồi phiên.
+  \item Quản lý danh mục tour, lịch trình, địa điểm, phương tiện, lịch khởi hành, sức chứa và bảng giá theo nhóm tuổi.
+  \item Xây dựng luồng đặt tour có giữ chỗ, chốt giá tại thời điểm đặt, tự động hết hạn giữ chỗ và chống gửi trùng yêu cầu.
+  \item Tích hợp thanh toán VNPay và MoMo ở môi trường sandbox, kiểm tra chữ ký, số tiền, xử lý callback/IPN lặp và đối soát giao dịch.
+  \item Phát hành hóa đơn, gửi email qua outbox, tự động nhắc thanh toán/khởi hành với n8n.
+  \item Tách \textbf{notification service} và \textbf{reporting service}: xử lý email bất đồng bộ, tổng hợp chỉ số vận hành không chứa PII.
+  \item Cung cấp tìm kiếm tour bằng Elasticsearch, cache bằng Redis và trợ lý AI tư vấn tour, tra cứu booking của chính tài khoản.
+  \item Xây dựng giao diện React cho khách hàng và quản trị viên; đóng gói toàn hệ thống bằng Docker Compose và kiểm thử tự động theo từng module.
+\end{itemize}
+
+\section{Phạm vi đề tài}
+\label{sec:pham-vi}
+
+Phạm vi của đồ án được giới hạn như sau:
+
+\begin{itemize}
+  \item \textbf{Backend:} API Gateway và 11 dịch vụ, gồm các quy tắc nghiệp vụ, bảo mật, giao tiếp đồng bộ/bất đồng bộ, kiểm thử và đóng gói.
+  \item \textbf{Frontend:} React 19, TypeScript, Vite, Ant Design; các màn hình khách hàng và quản trị được trình bày ở Phần~\ref{chap:trien-khai}.
+  \item \textbf{Cơ sở dữ liệu:} 9 schema vật lý (\code{sgu\_auth} → \code{sgu\_reporting}) cùng các bảng outbox/inbox và read model báo cáo; chi tiết ở mục~\ref{sec:co-so-du-lieu}.
+  \item \textbf{Môi trường thanh toán:} chỉ sử dụng sandbox của VNPay và MoMo, không thực hiện giao dịch tiền thật.
+  \item \textbf{Phạm vi triển khai:} chạy cục bộ hoặc trên một máy chủ Docker Compose phục vụ đồ án; chưa cam kết vận hành production quy mô lớn.
+\end{itemize}
+
+\section{Công cụ và công nghệ sử dụng}
+\label{sec:cong-cu}
+
+Bảng~\ref{tab:cong-nghe} tóm tắt các công nghệ chính. Phiên bản cụ thể được khai báo trong \code{pom.xml}/\hspace{0pt}\code{package.json} của từng module và trong các file Compose.
+
+\begin{table}[H]
+\centering
+\caption{Các công nghệ chính của hệ thống}
+\label{tab:cong-nghe}
+\small
+\begin{tabularx}{\textwidth}{@{}L{3.0cm}L{4.6cm}Y@{}}
+\toprule
+\textbf{Thành phần} & \textbf{Công nghệ} & \textbf{Vai trò trong hệ thống}\\
+\midrule
+Frontend & React 19.2, TypeScript 5.8, Vite 7 & Xây dựng giao diện khách hàng và quản trị.\\
+UI \& trạng thái & Ant Design 5, ProComponents, Redux Toolkit, Tailwind 4 & Thành phần giao diện, bảng quản trị, quản lý phiên đăng nhập.\\
+Ngôn ngữ backend & Java 21 & Nền tảng thực thi cho toàn bộ backend.\\
+Framework & Spring Boot 3.2.5; AI service dùng 3.5.16 & Cấu hình, khởi động và vận hành ứng dụng.\\
+API \& Gateway & Spring MVC, Spring Cloud Gateway, OpenFeign & REST API, định tuyến tại biên và gọi dịch vụ nội bộ.\\
+Bảo mật & Spring Security, OAuth2 Resource Server, JWT HS256 & Xác thực token, phân quyền, bảo vệ endpoint.\\
+Dữ liệu & 9 × MySQL 8.4, Spring Data JPA, Spring JDBC & Cô lập dữ liệu theo từng bounded context.\\
+Messaging & RabbitMQ 3.13, transactional outbox/inbox, saga & Truyền sự kiện bất đồng bộ, bảo đảm idempotency.\\
+Tìm kiếm/cache & Elasticsearch 8.15, Redis 7.2 & Chỉ mục tìm kiếm và cache kết quả.\\
+AI & Spring AI 1.1.8, Groq API & Phân tích yêu cầu, tư vấn tour có kiểm soát.\\
+Hình ảnh & Cloudinary & Lưu trữ, tối ưu và phân phối ảnh.\\
+Thanh toán & VNPay sandbox, MoMo AIO v2 & Tạo giao dịch và xác minh callback/IPN.\\
+Email/workflow & Spring Mail, SMTP, n8n & Gửi email qua outbox, lập lịch nhắc.\\
+Thời gian thực & Socket.IO & Phát sự kiện đánh giá tour.\\
+Build/test & Maven, JUnit 5, Mockito, H2 & Build module, unit test và integration test.\\
+Đóng gói/CI & Docker, Docker Compose, GitHub Actions & Đóng gói image, điều phối và kiểm tra tự động.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{React, TypeScript và Ant Design}
+Frontend sử dụng React 19 với các component hàm, TypeScript để kiểm tra kiểu và Vite để build nhanh \cite{react,vite}. Ant Design cung cấp bộ thành phần bảng, biểu mẫu, modal, thông báo \cite{antd}; Redux Toolkit quản lý trạng thái phiên đăng nhập; \code{redux-persist} lưu phiên trong \code{sessionStorage}. Giao diện dùng tông màu chính \code{\#21776d}, font Inter và bố cục responsive.
+
+\subsection{Java 21 và Spring Boot}
+Java 21 cung cấp record, pattern matching và text block; Spring Boot giảm cấu hình và cung cấp hệ sinh thái cho web, bảo mật, dữ liệu và kiểm thử \cite{springboot}. Mỗi microservice là một Maven project riêng, có lớp \code{*Application}, file \code{application.yml} và Dockerfile độc lập.
+
+\subsection{Spring Cloud Gateway và OpenFeign}
+API Gateway hoạt động theo mô hình reactive, định tuyến theo predicate và \code{StripPrefix=2}. Gateway áp prefix \code{/api/v1}, cấu hình CORS và thực thi các filter xác thực, giới hạn tần suất, ngắt mạch. OpenFeign được dùng cho các lời gọi đồng bộ nội bộ như tour -- pricing, tour -- file, auth -- file, booking -- tour/pricing/notification và invoice -- booking.
+
+\subsection{Spring Security, OAuth2 Resource Server và JWT}
+Các dịch vụ nghiệp vụ là resource server: xác minh chữ ký JWT bằng khóa HS256 dùng chung, kiểm tra issuer, thời hạn, loại token và các claim bổ sung. Cách làm này tạo phòng thủ nhiều lớp: gateway kiểm tra token ở biên, từng dịch vụ vẫn kiểm tra lại \cite{springsecurity,jwt}. Phân quyền sử dụng \code{SGU\_SUPER\_ADMIN}, \code{ROLE\_<tên>} và \code{PERM:<mã quyền>}.
+
+\subsection{RabbitMQ, outbox/inbox và saga}
+Các luồng phân tán (đặt chỗ, thanh toán, hóa đơn, thông báo, báo cáo) không dùng transaction phân tán. Producer ghi sự kiện vào bảng outbox trong cùng transaction nghiệp vụ; một publisher đẩy sự kiện lên exchange \code{sgu.events} của RabbitMQ \cite{rabbitmq}; consumer ghi inbox trước khi xử lý để chống trùng. Saga điều phối các bước và bù trừ khi lỗi \cite{saga}.
+
+\subsection{MySQL và database-per-service}
+Chín database vật lý độc lập (\code{sgu\_auth}, \code{sgu\_tour}, \code{sgu\_pricing}, \code{sgu\_booking}, \code{sgu\_payment}, \code{sgu\_invoice}, \code{sgu\_file}, \code{sgu\_notification}, \code{sgu\_reporting}) chạy trong các container MySQL 8.4 riêng, có user/grant và volume riêng. Trong cấu hình Compose, mỗi dịch vụ chỉ kết nối database của mình; dữ liệu của service khác được lấy qua internal API hoặc sự kiện.
+
+\subsection{Elasticsearch và Redis}
+Elasticsearch lưu chỉ mục tour để tìm kiếm theo điểm đến, khoảng giá và ngày khởi hành; Redis lưu cache kết quả. Giới hạn tần suất được gateway xử lý trong bộ nhớ \cite{elastic,redis}. Search service đồng bộ snapshot danh mục từ tour service theo chu kỳ và có endpoint ép đồng bộ ngay.
+
+\subsection{Spring AI và Groq}
+Spring AI cung cấp abstraction cho việc gọi mô hình ngôn ngữ, quản lý prompt và cấu trúc kết quả \cite{springai}. AI service dùng Groq làm nhà cung cấp mô hình \cite{groq}, nhưng không cho phép mô hình truy cập trực tiếp cơ sở dữ liệu hay thực thi mã: mọi dữ liệu tour/booking đều đi qua API có kiểm soát và câu trả lời được ràng buộc theo chính sách đã duyệt.
+
+\subsection{Cloudinary, VNPay, MoMo và Socket.IO}
+Cloudinary lưu ảnh tour, ảnh địa điểm và avatar \cite{cloudinary}; file service kiểm tra định dạng, kích thước và số pixel trước khi tải lên. VNPay và MoMo sandbox xử lý thanh toán, kiểm tra chữ ký và số tiền. Auth service cung cấp Socket.IO để phát sự kiện đánh giá tour theo thời gian thực.
+
+\subsection{Docker, Maven, JUnit và CI}
+Mỗi module có Dockerfile nhiều tầng và chạy bằng JRE. Docker Compose mô tả mạng nội bộ, healthcheck, volume, profile và thứ tự phụ thuộc \cite{docker}. Maven quản lý dependency; JUnit 5, Mockito, Spring Test và H2 dùng cho kiểm thử; GitHub Actions chạy build/test và kiểm tra cú pháp Compose.
+
+\section{Phương pháp thực hiện}
+\label{sec:phuong-phap}
+
+Nhóm thực hiện theo hướng tăng dần, chia công việc theo miền nghiệp vụ và theo vertical slice:
+
+\begin{enumerate}
+  \item \textbf{Khảo sát và mô hình hóa nghiệp vụ:} xác định tác nhân, use case, quy tắc đặt tour, thanh toán, dời lịch, tài khoản và thông báo.
+  \item \textbf{Thiết kế hợp đồng API và sự kiện:} thống nhất đường dẫn, cấu trúc response \code{\{code, message, result\}}, mã lỗi, envelope sự kiện và quy ước idempotency.
+  \item \textbf{Thiết kế kiến trúc:} tách dịch vụ theo miền, xác định database ownership, giao tiếp đồng bộ/bất đồng bộ và cơ chế xác thực.
+  \item \textbf{Phát triển theo module:} mỗi thành viên phụ trách một nhóm dịch vụ, viết test song song với mã nguồn.
+  \item \textbf{Chuyển đổi dữ liệu:} tách dần khỏi database chung sang 9 database vật lý, kiểm tra không còn cross-database SQL.
+  \item \textbf{Kiểm thử và tích hợp:} chạy unit test, integration test với H2/mock, test cross-service; kiểm tra cấu hình Compose.
+  \item \textbf{Đóng gói và vận hành:} docker hóa từng module, chạy toàn hệ thống bằng Compose, kiểm tra healthcheck và luồng demo end-to-end.
+  \item \textbf{Viết báo cáo:} tổng hợp kiến trúc, thiết kế, kết quả, giao diện và phân công.
+\end{enumerate}
+
+\section{Bố cục báo cáo}
+\label{sec:bo-cuc}
+
+Báo cáo gồm năm phần chính:
+
+\begin{itemize}
+  \item \textbf{Phần I -- Giới thiệu dự án:} lý do, mục tiêu, phạm vi, công nghệ và phương pháp.
+  \item \textbf{Phần II -- Phân tích hệ thống:} tác nhân, yêu cầu chức năng, yêu cầu phi chức năng, use case và quy tắc nghiệp vụ.
+  \item \textbf{Phần III -- Thiết kế hệ thống:} kiến trúc tổng thể, gateway, xác thực, thiết kế từng dịch vụ, giao tiếp/saga, bảo mật, 9 database, triển khai và kiểm thử.
+  \item \textbf{Phần IV -- Triển khai và giao diện người dùng:} môi trường, cấu trúc mã nguồn, kết quả chạy, các màn hình khách hàng/quản trị, kịch bản demo và kết quả kiểm thử.
+  \item \textbf{Phần V -- Kết luận:} kết quả đạt được, hạn chế, hướng phát triển, phân công và bài học.
+\end{itemize}
+
+Ngoài ra, báo cáo có phần phụ lục tóm tắt API, biến môi trường, tài khoản demo và lệnh kiểm thử; cuối cùng là tài liệu tham khảo.

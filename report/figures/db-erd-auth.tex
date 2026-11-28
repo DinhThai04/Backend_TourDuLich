@@ -1,0 +1,11 @@
+% Sơ đồ thực thể: nhóm tài khoản và phân quyền.
+\begin{tikzpicture}[x=1cm,y=1cm]
+  \entitybox{rolez}{0}{2.4}{roles}{id (PK)\\ name (UK)\\ active}
+  \entitybox{permz}{6.2}{2.4}{permissions}{id (PK)\\ code (UK)\\ module}
+  \entitybox{prolez}{3.1}{0.4}{permission\_role}{role\_id (FK)\\ permission\_id (FK)}
+  \entitybox{userz}{3.1}{-1.8}{users}{id (PK)\\ email (UK)\\ role\_id (FK)\\ status}
+
+  \draw[dbrel] (rolez) -- (prolez);
+  \draw[dbrel] (permz) -- (prolez);
+  \draw[dbrel] (rolez) -- (userz);
+\end{tikzpicture}

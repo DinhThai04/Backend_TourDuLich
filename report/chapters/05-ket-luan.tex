@@ -1,0 +1,111 @@
+\chapter{PHẦN V: KẾT LUẬN}
+\label{chap:ket-luan}
+
+\section{Kết quả đạt được}
+\label{sec:ket-qua-dat-duoc}
+
+Sau quá trình phân tích, thiết kế, phát triển và kiểm thử, nhóm đã hoàn thành phần backend của website bán tour du lịch theo kiến trúc microservices. Các kết quả chính gồm:
+
+\begin{itemize}
+  \item \textbf{Kiến trúc dịch vụ hóa:} mười hai ứng dụng Spring Boot độc lập gồm API Gateway và mười một dịch vụ, mỗi dịch vụ có cấu hình, Dockerfile và bộ kiểm thử riêng.
+  \item \textbf{Cô lập dữ liệu:} chín database MySQL vật lý độc lập theo mô hình database-per-service, không có khóa ngoại hay truy vấn xuyên database; mỗi dịch vụ chỉ có quyền trên database của mình.
+  \item \textbf{Cửa ngõ thống nhất:} gateway chịu trách nhiệm định tuyến \code{/api/v1}, CORS, xác thực tại biên bằng introspection có cache, giới hạn tần suất theo IP/endpoint và ngắt mạch khi dịch vụ xác thực gặp sự cố.
+  \item \textbf{Bảo mật nhiều lớp:} JWT ký HS256, phân quyền theo vai trò và quyền, kiểm tra quyền sở hữu ở tầng nghiệp vụ, cơ chế thu hồi phiên bằng \code{sessionEpoch} và vòng đời tài khoản rõ ràng.
+  \item \textbf{Nghiệp vụ đặt tour trọn vẹn:} quản lý danh mục và lịch khởi hành, giữ chỗ có hạn, chốt giá tại thời điểm đặt, tự động giải phóng chỗ và chống gửi trùng.
+  \item \textbf{Thanh toán và hóa đơn:} tích hợp VNPay và MoMo sandbox với kiểm tra chữ ký, số tiền và xử lý callback lặp; phát hành hóa đơn idempotent và hỗ trợ đối soát.
+  \item \textbf{Thông báo tin cậy:} email giao dịch đi qua outbox trong cùng transaction nghiệp vụ, worker gửi có trạng thái và giới hạn thử lại; n8n tạo lượt nhắc thanh toán và khởi hành.
+  \item \textbf{Tìm kiếm và trợ lý AI:} chỉ mục Elasticsearch với cache Redis theo thế hệ; trợ lý tư vấn tour và tra cứu booking có kiểm soát quyền truy cập dữ liệu.
+  \item \textbf{Đóng gói và tự động hóa:} Docker Compose có healthcheck và profile, cùng pipeline CI kiểm tra build, test, cấu hình Compose và import SQL trên môi trường cô lập.
+\end{itemize}
+
+\section{Hạn chế}
+\label{sec:han-che}
+
+Bên cạnh kết quả đạt được, hệ thống còn một số hạn chế cần nhìn nhận thẳng thắn:
+
+\begin{itemize}
+  \item \textbf{Chi phí vận hành dữ liệu:} chín database vật lý cô lập dữ liệu tốt nhưng làm tăng số container, bộ nhớ và thao tác sao lưu; với máy cấu hình thấp cần tắt bớt profile Elasticsearch/AI.
+  \item \textbf{Không có transaction phân tán:} các luồng liên dịch vụ dùng idempotency, outbox/\hspace{0pt}inbox và saga thay vì transaction toàn cục; một số tình huống lỗi hiếm vẫn cần con người đối soát thủ công.
+  \item \textbf{Hạ tầng chưa phân tán:} bộ đếm giới hạn tần suất và cache introspection lưu trong bộ nhớ của một gateway instance; khi chạy nhiều instance cần chuyển sang Redis hoặc giải pháp chia sẻ trạng thái.
+  \item \textbf{Kiểm thử còn phụ thuộc mock:} nhiều hành vi chỉ được xác minh với H2, mock hoặc fixture; giao dịch ngân hàng, Cloudinary, Google, Groq và SMTP thật chưa được kiểm chứng đầy đủ trong môi trường sandbox riêng.
+  \item \textbf{Bảo mật môi trường triển khai:} hệ thống mới ở mức chạy cục bộ/đồ án; TLS, quản lý secret tập trung, phân quyền hạ tầng và các biện pháp bảo vệ ở tầng vận hành chưa được thiết lập đầy đủ~\cite{owasp}.
+  \item \textbf{Giới hạn về AI:} phiên hội thoại lưu trong RAM và mất khi khởi động lại; chất lượng câu trả lời phụ thuộc nhà cung cấp model và chưa có đánh giá định lượng.
+  \item \textbf{Phần giao diện:} thuộc repository frontend riêng, báo cáo chỉ minh họa và chưa phân tích chi tiết trải nghiệm người dùng.
+\end{itemize}
+
+\section{Hướng phát triển}
+\label{sec:huong-phat-trien}
+
+Trong thời gian tới, nhóm định hướng hoàn thiện theo các hướng sau:
+
+\begin{enumerate}
+  \item \textbf{Tối ưu dữ liệu:} bổ sung migration có kiểm soát, sao lưu/khôi phục theo từng database, chỉ mục cho các truy vấn báo cáo và chính sách lưu trữ dài hạn.
+  \item \textbf{Tăng cường nhất quán:} bổ sung cơ chế hàng đợi sự kiện hoặc saga cho các luồng liên dịch vụ, giảm phụ thuộc vào đối soát thủ công.
+  \item \textbf{Phân tán hạ tầng:} chuyển rate limiter, cache và phiên sang Redis; chạy nhiều instance gateway và dịch vụ sau bộ cân bằng tải.
+  \item \textbf{Bảo mật triển khai:} thêm TLS, quản lý secret tập trung, xoay khóa JWT định kỳ, quét lỗ hổng dependency và bổ sung log kiểm toán.
+  \item \textbf{Mở rộng quan sát:} chuẩn hóa metric, tracing và correlation ID để theo dõi luồng request xuyên dịch vụ, kết hợp cảnh báo tự động.
+  \item \textbf{Nâng cấp kiểm thử:} bổ sung kiểm thử tải, kiểm thử hợp đồng API giữa các dịch vụ và kiểm thử tích hợp với sandbox của nhà cung cấp.
+  \item \textbf{Cải thiện AI:} lưu phiên bền vững, đánh giá chất lượng câu trả lời, kiểm soát chi phí token và tăng cường kiểm duyệt nội dung.
+  \item \textbf{Hoàn thiện giao diện:} đánh giá trải nghiệm người dùng, tối ưu hiệu năng tải trang và bổ sung các màn hình quản trị còn thiếu.
+\end{enumerate}
+
+\section{Phân công công việc}
+\label{sec:phan-cong}
+
+Công việc được chia theo miền nghiệp vụ, mỗi thành viên phụ trách một nhóm dịch vụ và chịu trách nhiệm từ phân tích, phát triển, kiểm thử đến viết báo cáo cho phần của mình. Bảng~\ref{tab:phan-cong-nhom} trình bày phân công tổng quan, Bảng~\ref{tab:ty-le-dong-gop} trình bày tỷ lệ đóng góp.
+
+\begin{table}[H]
+\centering
+\caption{Phân công theo thành viên và microservice}
+\label{tab:phan-cong-nhom}
+\small
+\begin{tabularx}{\textwidth}{@{}L{2.0cm}L{2.6cm}L{3.1cm}Y@{}}
+\toprule
+\textbf{Thành viên} & \textbf{Dịch vụ phụ trách} & \textbf{Nhóm việc chính} & \textbf{Sản phẩm bàn giao}\\
+\midrule
+Nguyễn Trần Công Danh (TV1) & api\_gateway, pricing\_service, search\_service & Hạ tầng chung, cửa ngõ, dịch vụ nhẹ & Gateway định tuyến/bảo mật, pricing, search, CI/CD, Docker Compose, tài liệu hạ tầng.\\
+Nguyễn Thanh Hiệu (TV2) & booking\_service, invoice\_service, ai\_service & Booking, hóa đơn, AI & Luồng đặt tour/giữ chỗ/dời lịch, outbox mail, hóa đơn, trợ lý AI, kiểm thử tích hợp.\\
+Hùynh Quốc Hưng (TV3) & auth\_service, file\_service & Tài khoản, phân quyền, media & Đăng nhập/JWT, vai trò/quyền, vòng đời tài khoản, upload ảnh Cloudinary, rà soát bảo mật.\\
+Đỗ Đình Thái (TV4) & tour\_service, payment\_service & Tour, thanh toán & Danh mục/lịch khởi hành/sức chứa, VNPay/MoMo, xác nhận thanh toán, đối soát.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{table}[H]
+\centering
+\caption{Tỷ lệ đóng góp}
+\label{tab:ty-le-dong-gop}
+\small
+\begin{tabularx}{\textwidth}{@{}L{5.4cm}C{2.6cm}Y@{}}
+\toprule
+\textbf{Thành viên} & \textbf{Tỷ lệ} & \textbf{Ghi chú}\\
+\midrule
+Nguyễn Trần Công Danh (TV1) & 25\% & Chủ trì hạ tầng và hợp đồng API chung.\\
+Nguyễn Thanh Hiệu (TV2) & 25\% & Chủ trì test tích hợp toàn hệ thống.\\
+Hùynh Quốc Hưng (TV3) & 25\% & Chủ trì demo và tổng hợp báo cáo nhóm.\\
+Đỗ Đình Thái (TV4) & 25\% & Chủ trì luồng thanh toán và tour.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Ngoài phần việc riêng, nhóm cùng phối hợp các việc chung: thống nhất hợp đồng API và mã lỗi (TV1 chủ trì), chuẩn hóa response và idempotency (TV1 phối hợp TV2, TV4), kiểm thử tích hợp toàn hệ thống (TV2 chủ trì) và tổng hợp báo cáo, chuẩn bị demo (TV3 chủ trì).
+
+\section{Bài học kinh nghiệm}
+\label{sec:bai-hoc}
+
+Quá trình thực hiện đồ án mang lại nhiều bài học có giá trị:
+
+\begin{itemize}
+  \item \textbf{Thiết kế trước khi viết mã:} việc thống nhất hợp đồng API, cấu trúc response và mã lỗi từ sớm giúp các module ghép nối thuận lợi và giảm sửa đổi về sau.
+  \item \textbf{Ranh giới dịch vụ quan trọng:} phân chia theo miền nghiệp vụ giúp làm việc song song hiệu quả, nhưng nếu ranh giới mờ thì phát sinh phụ thuộc chéo và gọi mạng phức tạp.
+  \item \textbf{Thiết kế hướng lỗi:} đặt giả định mọi lời gọi mạng đều có thể thất bại buộc phải bổ sung idempotency, bù trừ và đối soát — những phần này chiếm nhiều công sức nhưng quyết định độ tin cậy.
+  \item \textbf{Kiểm thử viết sớm:} viết test song song với mã nguồn giúp phát hiện lỗi sớm, đặc biệt ở các quy tắc phức tạp như hạn giữ chỗ, tính giá và chữ ký thanh toán.
+  \item \textbf{Bảo mật là yêu cầu xuyên suốt:} các quyết định như không công khai introspection, không phân biệt lỗi đăng nhập và kiểm tra quyền sở hữu cần được đặt ra ngay từ khâu thiết kế.
+  \item \textbf{Quản lý cấu hình:} tách cấu hình và secret khỏi mã nguồn, dùng biến môi trường và file local, giúp việc triển khai linh hoạt và an toàn hơn.
+  \item \textbf{Làm việc nhóm:} phân công theo dịch vụ cùng quy ước chung giúp phối hợp trơn tru; trao đổi thường xuyên và review chéo là yếu tố then chốt để bảo đảm chất lượng.
+\end{itemize}
+
+\section{Kết luận chung}
+\label{sec:ket-luan-chung}
+
+Đồ án đã xây dựng được website bán tour du lịch theo kiến trúc microservices với đầy đủ các luồng nghiệp vụ cốt lõi: xác thực và phân quyền, quản lý tour và lịch khởi hành, đặt tour có giữ chỗ, thanh toán trực tuyến, hóa đơn, thông báo, tìm kiếm và tư vấn bằng AI. Hệ thống thể hiện sự vận dụng các công nghệ Java hiện đại của học phần Chuyên đề J2EE vào một bài toán thực tế, đồng thời tuân thủ các nguyên tắc cơ bản về thiết kế hướng dịch vụ, cô lập dữ liệu, bảo mật nhiều lớp và kiểm thử tự động. Việc tách 9 database vật lý cùng cơ chế outbox/inbox, saga và internal API cho thấy nhóm đã tiếp cận được các bài toán nhất quán dữ liệu của hệ phân tán. Những hạn chế đã nêu là cơ sở cho các hướng phát triển tiếp theo, hướng tới một hệ thống có thể mở rộng và vận hành ổn định hơn.

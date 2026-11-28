@@ -1,0 +1,14 @@
+# Sản phẩm biên dịch LaTeX
+*.aux
+*.log
+*.out
+*.toc
+*.lof
+*.lot
+*.fls
+*.fdb_latexmk
+*.xdv
+*.synctex.gz
+
+# Không bỏ qua PDF vì báo cáo thường được nộp kèm main.pdf
+!main.pdf

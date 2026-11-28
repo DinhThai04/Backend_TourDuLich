@@ -1,0 +1,28 @@
+\begin{tikzpicture}[x=1cm,y=1cm]
+  \node[participant] (c) at (0,0) {Client};
+  \node[participant] (g) at (4.2,0) {API Gateway};
+  \node[participant] (a) at (8.4,0) {Auth service};
+  \node[participant] (s) at (12.6,0) {Dịch vụ nghiệp vụ};
+
+  \foreach \p in {c,g,a,s} \draw[lifeline] (\p.south) -- ++(0,-8.2);
+
+  \draw[msg] (c |- 0,-0.9) -- node[above,font=\tiny]{1. POST /auth/users/login} (g |- 0,-0.9);
+  \draw[msg] (g |- 0,-1.5) -- node[above,font=\tiny]{2. chuyển tiếp (endpoint công khai)} (a |- 0,-1.5);
+  \draw[ret] (a |- 0,-2.1) -- node[above,font=\tiny]{3. access + refresh token} (g |- 0,-2.1);
+  \draw[ret] (g |- 0,-2.6) -- node[above,font=\tiny]{4. 200 OK} (c |- 0,-2.6);
+
+  \draw[msg] (c |- 0,-3.4) -- node[above,font=\tiny]{5. GET /tour/... + Bearer token} (g |- 0,-3.4);
+  \draw[msg] (g |- 0,-4.0) -- node[above,font=\tiny]{6. introspect (cache miss)} (a |- 0,-4.0);
+  \draw[ret] (a |- 0,-4.6) -- node[above,font=\tiny]{7. valid + scope + sessionEpoch} (g |- 0,-4.6);
+  \draw[msg] (g |- 0,-5.2) -- node[above,font=\tiny]{8. định tuyến request} (s |- 0,-5.2);
+  \draw[ret] (s |- 0,-5.8) -- node[above,font=\tiny]{9. dữ liệu} (g |- 0,-5.8);
+  \draw[ret] (g |- 0,-6.3) -- node[above,font=\tiny]{10. response} (c |- 0,-6.3);
+
+  \draw[msg] (c |- 0,-7.1) -- node[above,font=\tiny]{11. POST /auth/users/refresh} (g |- 0,-7.1);
+  \draw[msg] (g |- 0,-7.7) -- node[above,font=\tiny]{12. refresh token} (a |- 0,-7.7);
+  \draw[ret] (a |- 0,-8.2) -- node[above,font=\tiny]{13. cặp token mới} (g |- 0,-8.2);
+
+  \node[draw=gray!50,fill=gray!4,rounded corners=2pt,font=\tiny,align=left,anchor=west]
+    at (0.2,-9.0) {Gateway cache kết quả introspect trong 10 giây; token hợp lệ gần đây không gọi lại auth.\\
+    Nếu auth không phản hồi: trả 503 kèm \texttt{Retry-After}, không coi là token sai.};
+\end{tikzpicture}

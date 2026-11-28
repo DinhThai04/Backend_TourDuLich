@@ -1,0 +1,29 @@
+\documentclass{article}
+\usepackage[paperwidth=32cm,paperheight=32cm,margin=1cm]{geometry}
+\usepackage{fontspec}
+\setmainfont{Times New Roman}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,shapes.misc,fit,calc,backgrounds}
+\definecolor{sguBlue}{HTML}{0B4F9C}
+\definecolor{sguTeal}{HTML}{0E7C86}
+\definecolor{sguOrange}{HTML}{D97706}
+\definecolor{sguGreen}{HTML}{15803D}
+\tikzset{
+  dbentity/.style={draw=sguBlue!70,fill=blue!3,rounded corners=2pt,
+                   inner sep=3pt,align=center,font=\scriptsize},
+  dbrel/.style={draw=sguTeal!85,thick},
+  dbrellog/.style={draw=sguOrange!85,thick,dashed}
+}
+\newcommand{\entitybox}[5]{%
+  \node[dbentity,anchor=north] (#1) at (#2,#3)
+    {\begin{tabular}{@{}l@{}}\textbf{#4}\\[1pt]\hline #5\end{tabular}};%
+}
+\pagestyle{empty}
+\begin{document}
+\centering
+\input{db-per-service}\newpage
+\input{db-erd-auth}\newpage
+\input{db-erd-tour}\newpage
+\input{db-erd-booking}\newpage
+\input{db-erd-payment}\newpage
+\end{document}

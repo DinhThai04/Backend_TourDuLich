@@ -1,0 +1,61 @@
+% Luồng sự kiện bất đồng bộ: outbox -> RabbitMQ -> inbox, kèm DLQ.
+\begin{tikzpicture}[x=1cm,y=1cm]
+  % Producers
+  \node[box,minimum width=4.2cm,minimum height=1.3cm] (book) at (0.0,8.2)
+    {booking\_service\\{\tiny \code{booking\_outbox}}};
+  \node[box,minimum width=4.2cm,minimum height=1.3cm] (pay) at (0.0,5.6)
+    {payment\_service\\{\tiny \code{payment\_outbox}}};
+
+  \node[font=\tiny,align=left,anchor=west,text width=3.9cm] at (0.0,9.6)
+    {\textbf{Ghi outbox} trong cùng transaction nghiệp vụ};
+
+  % Exchange
+  \node[edge,minimum width=3.4cm,minimum height=2.2cm] (mq) at (6.4,6.9)
+    {RabbitMQ\\exchange\\\code{sgu.events}\\[0.5mm]{\tiny routing key = eventType}};
+
+  % Consumers
+  \node[box,minimum width=4.6cm,minimum height=1.3cm] (noti) at (12.3,9.1)
+    {notification\_service\\{\tiny \code{notification.mail.events}}};
+  \node[box,minimum width=4.6cm,minimum height=1.3cm] (inv) at (12.3,6.9)
+    {invoice\_service\\{\tiny \code{invoice.payment.events}}};
+  \node[box,minimum width=4.6cm,minimum height=1.3cm] (rep) at (12.3,4.7)
+    {reporting\_service\\{\tiny \code{reporting.events}}};
+
+  \node[data,minimum width=4.6cm,minimum height=1.0cm] (inbox) at (12.3,3.2)
+    {inbox riêng của từng service\\{\tiny chống xử lý trùng theo eventId}};
+
+  % DLQ
+  \node[ext,minimum width=3.4cm,minimum height=0.9cm] (dlq) at (6.4,3.2)
+    {DLQ + retry có kiểm soát\\{\tiny backoff, số lần thử}};
+
+  % Arrows producer -> exchange
+  \draw[arrow] (book.east) -- node[above,font=\tiny]{publish} (mq.west |- book.east);
+  \draw[arrow] (pay.east)  -- node[above,font=\tiny]{publish} (mq.west |- pay.east);
+
+  % Exchange -> consumers
+  \draw[arrow] (mq.east) -- node[above left,font=\tiny,pos=0.72]{\texttt{payment.settled.v1}} (noti.west);
+  \draw[arrow] (mq.east) -- (inv.west);
+  \draw[arrow] (mq.east) -- node[below left,font=\tiny,pos=0.72]{\texttt{booking.*, tour.*}} (rep.west);
+  \draw[darrow] (noti.south) -- (inbox.north -| noti.south);
+  \draw[darrow] (inv.south)  -- (inbox.north -| inv.south);
+  \draw[darrow] (rep.south)  -- (inbox.north -| rep.south);
+
+  % Effect
+  \node[data,minimum width=4.6cm,minimum height=1.0cm] (effect) at (12.3,1.7)
+    {mail\_outbox · invoice · ops\_*};
+
+  % Failure
+  \draw[darrow] (mq.south) -- (dlq.north);
+  \draw[darrow] (dlq.south) -- node[right,font=\tiny]{replay có kiểm soát} ++(0,-0.7);
+
+  % HTTP outbox
+  \node[box,minimum width=4.2cm,minimum height=1.1cm] (httpout) at (0.0,1.9)
+    {Outbox gọi HTTP (Feign)\\{\tiny auth · tour · booking}};
+  \node[ext,minimum width=4.2cm,minimum height=1.1cm] (httpext) at (6.4,0.8)
+    {file\_service · notification\_service\\{\tiny nhận kèm \code{X-Internal-*-Key} + \code{X-Event-Id}}};
+  \draw[arrow] (httpout.east) |- (httpext.west);
+
+  % Note
+  \node[font=\tiny,align=left,anchor=west] at (0.0,3.2)
+    {\textbf{Nguyên tắc:}\\ producer không ghi\\ trực tiếp dữ liệu\\ của consumer.};
+\end{tikzpicture}

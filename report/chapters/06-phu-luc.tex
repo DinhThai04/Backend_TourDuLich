@@ -1,0 +1,183 @@
+\chapter{PHỤ LỤC A: TÓM TẮT API, CẤU HÌNH VÀ LỆNH KIỂM THỬ}
+\label{chap:phu-luc}
+
+Phụ lục này tổng hợp thông tin tra cứu nhanh cho quá trình vận hành và trình diễn hệ thống: tóm tắt API theo dịch vụ, biến môi trường chính, tài khoản demo và các lệnh build/kiểm thử. Mọi đường dẫn API đều được gọi qua gateway với tiền tố \code{/api/v1}; gateway loại bỏ tiền tố này trước khi chuyển tiếp tới dịch vụ.
+
+\section{Tóm tắt API theo dịch vụ}
+\label{sec:tom-tat-api}
+
+\begingroup
+\renewcommand{\code}[1]{\texttt{\footnotesize #1}}
+\begin{longtable}{@{}L{3.4cm}L{7.0cm}L{4.45cm}@{}}
+\caption{Tóm tắt các nhóm API chính}
+\label{tab:api-summary}\\
+\toprule
+\textbf{Dịch vụ} & \textbf{Nhóm endpoint} & \textbf{Chức năng}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Dịch vụ} & \textbf{Nhóm endpoint} & \textbf{Chức năng}\\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+auth\_service & \code{POST /auth/users/login}, \code{/register}, \code{/google}, \code{/refresh}, \code{/logout} & Đăng ký, đăng nhập, Google Sign-In, làm mới phiên và đăng xuất.\\
+auth\_service & \code{POST /auth/users/introspect} & Kiểm tra token nội bộ cho gateway và các dịch vụ (không công khai ra ngoài).\\
+auth\_service & \code{GET/PUT /auth/users/**} & Hồ sơ, avatar, danh sách, cập nhật trạng thái, lưu trữ tài khoản và lịch sử sự kiện.\\
+auth\_service & \code{/auth/roles}, \code{/auth/permissions} & Quản trị vai trò và quyền theo API.\\
+auth\_service & \code{/auth/reviews} & Tạo, duyệt và xem đánh giá tour; kiểm tra điều kiện đánh giá.\\
+tour\_service & \code{GET/POST/PUT/DELETE /tour/tours/**} & Danh mục và chi tiết tour, ảnh tour, trạng thái.\\
+tour\_service & \code{/tour/itineraries}, \code{/tour/locations}, \code{/tour/vehicles} & Lịch trình, địa điểm và phương tiện.\\
+tour\_service & \code{/tour/tour-departures} & Lịch khởi hành, sức chứa, số chỗ còn lại và điểm tập trung.\\
+pricing\_service & \code{POST/GET /pricing/prices}, \code{/prices/batch} & Tạo và đọc bảng giá theo nhóm tuổi; lấy giá theo lô.\\
+booking\_service & \code{POST /booking/book/create} & Tạo booking, kiểm tra chỗ, chốt giá và giữ chỗ.\\
+booking\_service & \code{/booking/customer}, \code{/booking/advice} & Danh sách booking của khách và thông tin tư vấn.\\
+booking\_service & \code{/booking/changes} & Yêu cầu dời lịch, phản hồi, duyệt và hoàn tiền nội bộ.\\
+booking\_service & \code{POST /booking/internal/mail/reminders/dispatch} & API nội bộ cho n8n tạo lượt nhắc, yêu cầu khóa nội bộ.\\
+payment\_service & \code{/payment/vnpay} & Tạo URL thanh toán và xử lý return/IPN của VNPay.\\
+payment\_service & \code{/payment/momo} & Tạo giao dịch và xử lý IPN của MoMo AIO v2.\\
+payment\_service & \code{/payment/reconciliation} & Danh sách giao dịch cần đối soát và lịch sử xử lý.\\
+invoice\_service & \code{POST/GET /invoice/direct} & Tạo và đọc hóa đơn theo booking, chống tạo trùng.\\
+file\_service & \code{POST /file/media/uploadTour/**}, \code{/media/uploadAvt/**} & Upload ảnh tour/địa điểm/avatar lên Cloudinary.\\
+file\_service & \code{GET /file/media/download/**} & Tải ảnh có giới hạn theo IP.\\
+notification\_service & \code{POST /internal/notifications/mail} & Xếp email vào outbox idempotent theo \code{eventKey}.\\
+notification\_service & \code{GET /internal/notifications/mail/bookings/\{id\}} & Xem lịch sử gửi mail của booking.\\
+reporting\_service & \code{POST /internal/reports/audit} & Ghi audit record vào timeline read model.\\
+reporting\_service & \code{GET /internal/reports/operations} & Chỉ số vận hành theo khoảng ngày (tối đa 31 ngày).\\
+reporting\_service & \code{GET /internal/reports/audit} & Audit timeline có phân trang.\\
+reporting\_service & \code{POST /internal/reports/projections/\{type\}} & Upsert read model \code{ops\_*}; \code{type} là bookings, payments, invoices, tours, users hoặc refunds.\\
+search\_service & \code{GET /search/tours/search} & Tìm kiếm tour theo điểm đến, khoảng giá và ngày.\\
+search\_service & \code{POST /search/tours/sync} & Ép đồng bộ chỉ mục từ snapshot tour service.\\
+ai\_service & \code{/ai/conversations}, \code{/ai/chat} & Tạo phiên và hội thoại tư vấn tour.\\
+ai\_service & \code{/ai/policies} & Trả lời câu hỏi về chính sách đã duyệt.\\
+ai\_service & \code{/ai/booking-help} & Tra cứu trạng thái booking của chính tài khoản đang đăng nhập.\\
+\end{longtable}
+\endgroup
+
+\begin{notebox}[Quy ước response]
+Các API trả về cấu trúc thống nhất \code{\{code, message, result\}}: \code{code} là mã nội bộ (1000 khi thành công), \code{message} mô tả bằng tiếng Việt và \code{result} chứa dữ liệu. Mã lỗi thường gặp gồm 1401, 1403, 1429 và 1503 như trình bày ở Bảng~\ref{tab:error-code}.
+\end{notebox}
+
+\section{Biến môi trường và cấu hình chính}
+\label{sec:bien-moi-truong}
+
+File cấu hình runtime và secret được giữ cục bộ (thư mục \code{.local/} và file \code{.env}); chỉ file mẫu không chứa secret được đưa lên repository. Bảng~\ref{tab:env} liệt kê các biến quan trọng nhất.
+
+\begingroup
+\renewcommand{\code}[1]{\texttt{\footnotesize #1}}
+\begin{longtable}{@{}L{5.4cm}L{3.2cm}L{6.25cm}@{}}
+\caption{Biến môi trường và cấu hình chính}
+\label{tab:env}\\
+\toprule
+\textbf{Biến / property} & \textbf{Module cần} & \textbf{Ý nghĩa}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Biến / property} & \textbf{Module cần} & \textbf{Ý nghĩa}\\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\code{JWT\_SIGNER\_KEY} & Auth và các dịch vụ xác minh & Khóa HS256 dùng chung, tối thiểu 64 byte UTF-8; phải giống nhau trong cùng hệ thống.\\
+\code{DB\_URL}, \code{DB\_USERNAME}, \code{DB\_PASSWORD} & Các dịch vụ có datasource & URL JDBC, user và mật khẩu; Compose trỏ tới đúng database của từng service.\\
+\code{DB\_POOL\_MAX}, \code{DB\_POOL\_MIN} & Các dịch vụ có datasource & Kích thước Hikari pool; tổng các dịch vụ phải thấp hơn giới hạn kết nối của từng MySQL.\\
+\code{VNPAY\_HASH\_SECRET}, \code{VNPAY\_TMN\_CODE} & Payment & Bắt buộc; thiếu một trong hai thì dịch vụ từ chối khởi động.\\
+\code{VNPAY\_RETURN\_URL}, \code{VNPAY\_PAY\_URL} & Payment & Địa chỉ trả về và endpoint thanh toán sandbox.\\
+\code{MOMO\_PARTNER\_CODE}, \code{MOMO\_ACCESS\_KEY}, \code{MOMO\_SECRET\_KEY} & Payment & Credential MoMo AIO v2; thiếu thì MoMo báo chưa cấu hình nhưng dịch vụ vẫn chạy.\\
+\code{GOOGLE\_CLIENT\_ID} & Auth & Audience của Google ID token; cần khi dùng Google Sign-In.\\
+\code{CLOUDINARY\_API\_KEY}, \code{CLOUDINARY\_API\_SECRET} & File & Credential Cloudinary để upload và quản lý ảnh.\\
+\code{FILE\_DOWNLOADS\_PER\_MINUTE} & File & Giới hạn số lượt tải ảnh theo IP mỗi phút (mặc định 60).\\
+\code{ES\_URIS}, \code{REDIS\_HOST}, \code{REDIS\_PORT} & Search & Địa chỉ Elasticsearch và Redis.\\
+\code{SEARCH\_SYNC\_DELAY\_MS}, \code{SEARCH\_SYNC\_INITIAL\_DELAY\_MS} & Search & Chu kỳ đồng bộ danh mục và độ trễ lần đầu.\\
+\code{GROQ\_API\_KEY}, \code{AI\_ENABLED} & AI & Bật trợ lý AI và cấu hình nhà cung cấp model Groq.\\
+\code{MAIL\_*}, \code{MAIL\_INTERNAL\_API\_KEY} & Notification, Booking, Gateway & Cấu hình SMTP, chế độ test và khóa nội bộ cho n8n.\\
+\code{SPRING\_RABBITMQ\_HOST}, \code{SPRING\_RABBITMQ\_PASSWORD} & Các service dùng sự kiện & Kết nối RabbitMQ, vhost \code{sgu\_vhost}.\\
+\code{AUTH\_INTERNAL\_KEY}, \code{TOUR\_INTERNAL\_KEY}, ... & Từng cặp service & Khóa nội bộ cho header \code{X-Internal-*-Key}; tối thiểu 32 ký tự.\\
+\code{CORS\_ALLOWED\_ORIGINS} & Gateway & Danh sách origin được phép gọi API, phân tách bằng dấu phẩy.\\
+\code{AUTH\_LOGIN\_LIMIT}, \code{AUTH\_REGISTER\_LIMIT}, \code{AUTH\_GOOGLE\_LIMIT} & Gateway & Số lượt mỗi IP mỗi phút cho các endpoint xác thực.\\
+\code{AUTH\_BREAKER\_FAILURES}, \code{AUTH\_BREAKER\_OPEN\_MS} & Gateway & Ngưỡng lỗi và thời gian mở mạch circuit breaker cho auth.\\
+\code{AUTH\_INTROSPECT\_CACHE\_SECONDS} & Gateway & Thời gian cache kết quả introspection token.\\
+\end{longtable}
+\endgroup
+
+\section{Tài khoản và cổng truy cập}
+\label{sec:tai-khoan-demo}
+
+\begin{table}[H]
+\centering
+\caption{Tài khoản trình diễn được tạo bởi SQL mẫu}
+\label{tab:tai-khoan}
+\small
+\begin{tabularx}{\textwidth}{@{}L{3.2cm}L{5.0cm}L{3.0cm}Y@{}}
+\toprule
+\textbf{Vai trò} & \textbf{Email} & \textbf{Mật khẩu} & \textbf{Ghi chú}\\
+\midrule
+Quản trị viên & \code{admin@example.com} & \code{admin123} & Quản trị tour, tài khoản, giá và đối soát; có trong \code{database\_all.sql}.\\
+Khách hàng & \code{user1@gmail.com} & \code{user12345} & Đặt tour, thanh toán và tra cứu booking; có trong \code{database\_all.sql}.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\begin{sloppypar}
+\noindent Tài khoản demo và dữ liệu tour mẫu nằm trong \code{data\_seed/database\_all.sql} (dùng cho Compose gốc và môi trường local). Các file \code{data\_seed/microservices/*.sql} mà \code{docker-compose.microservice.yml} mount chỉ tạo cấu trúc và dữ liệu tham chiếu, nên cần đăng ký tài khoản hoặc nạp thêm dữ liệu mẫu trước khi demo trên stack microservice.
+\end{sloppypar}
+
+\begin{table}[H]
+\centering
+\caption{Cổng dịch vụ khi chạy cục bộ}
+\label{tab:cong}
+\small
+\begin{tabularx}{\textwidth}{@{}L{3.4cm}C{2.2cm}L{3.0cm}Y@{}}
+\toprule
+\textbf{Module} & \textbf{Cổng} & \textbf{Context-path} & \textbf{Ghi chú}\\
+\midrule
+api\_gateway & 8888 & --- & Điểm vào API.\\
+auth\_service & 8080; 8099 & \code{/auth} & 8099 là Socket.IO.\\
+tour\_service & 8086 & \code{/tour} & Kèm snapshot ảnh và giữ chỗ.\\
+pricing\_service & 8084 & \code{/pricing} & Không phụ thuộc dịch vụ ngoài.\\
+booking\_service & 8081 & \code{/booking} & Kèm worker hết hạn, saga và outbox mail.\\
+payment\_service & 8083 & \code{/payment} & VNPay bắt buộc cấu hình.\\
+invoice\_service & 8090 & \code{/invoice} & Tiêu thụ sự kiện thanh toán.\\
+file\_service & 8087 & \code{/file} & Cloudinary.\\
+notification\_service & 8093 & \code{/notification} & Mail outbox, worker SMTP.\\
+reporting\_service & 8092 & \code{/reporting} & Read model \code{ops\_*}.\\
+search\_service & 8089 & \code{/search} & Cần Elasticsearch/Redis.\\
+ai\_service & 8091 & \code{/ai} & Cần Groq key để gọi model.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Lệnh build và kiểm thử}
+\label{sec:lenh-build-test}
+
+Mỗi module là một Maven project riêng; lệnh được chạy tại thư mục module hoặc dùng tùy chọn \code{-f} trỏ tới \code{pom.xml}.
+
+\begin{lstlisting}[style=json,caption={Lệnh build và kiểm thử thường dùng},label={lst:cmd}]
+# Dong goi mot module (bo qua test)
+mvn -DskipTests package
+
+# Chay test mot module
+mvn -f booking_service/pom.xml test
+
+# Chay mot suite cu the
+mvn -f payment_service/pom.xml -Dtest=ReservedVnPayTest test
+
+# Kiem tra cau hinh Docker Compose (khong khoi dong container)
+docker compose -f docker-compose.microservice.yml config -q
+
+# Chay toan bo he thong 9 database
+docker compose -f docker-compose.microservice.yml --env-file .env.microservice up -d
+
+# Frontend
+npm --prefix ../Frontend_TourDuLich ci
+npm --prefix ../Frontend_TourDuLich run build
+\end{lstlisting}
+
+\begin{warningbox}[Lưu ý an toàn]
+Không chạy kiểm thử tích hợp vào database đang sử dụng; fixture phải cô lập và có thể xóa. Không commit secret vào repository; chỉ đưa lên file mẫu không chứa giá trị thật. Trước khi commit nên chạy script preflight kiểm tra cấu hình cục bộ.
+\end{warningbox}
+
+\section{Tài liệu nội bộ trong repository}
+\label{sec:tai-lieu-noi-bo}
+
+Các tài liệu sau nằm trong repository backend và là nguồn tham chiếu chính khi vận hành: \code{README.md} (giới thiệu, cấu hình, khởi chạy, kiểm thử), \code{docs/MICROSERVICES.md} (kiến trúc microservice, lộ trình và checklist), \code{docs/INTERNAL\_API\_CONTRACTS.md} (hợp đồng API nội bộ và sự kiện), \code{docs/DOCKER.md} (Docker và dữ liệu), \code{docs/mail/README.md} (email và n8n), \code{ai\_service/README.md} (AI service) và \code{data\_seed/README.md} (schema và dữ liệu mẫu).

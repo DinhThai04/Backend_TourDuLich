@@ -1,0 +1,67 @@
+﻿##### booking[0] :: Tạo booking (giữ chỗ) - lịch 611
+REQ: {"tourDepartureId":"611","userId":"3","listOfCustomers":[{"birthdate":"1990-05-20","gender":"Male","fullName":"Nguyễn Văn Kiểm Thử","status":"BOOKED","address":"1 Nguyễn Huệ, TP.HCM"}],"clientKey":"5a1e8494-ec93-44dd-9fce-ab69b3148da5"}
+RES: {"code":1000,"message":"Created successfully","result":{"id":"30","accountId":"3","createdAt":"2026-11-16T19:45:45","status":"PENDING_PAYMENT","tourDepartureId":"611","message":"Đã giữ chỗ đến hạn thanh toán","reservationStatus":"HELD","paymentDeadline":"2026-11-22T08:00","paymentRequiredNow":false,"totalAmount":"8490000","currency":"VND","priceSnapshotAt":"2026-11-16T19:45:45","unitPrices":{"ADULT":"8490000.00","CHILD":"6390000.00","TODDLER":"0.00","INFANT":"500000.00"}}}
+
+##### booking[28] :: Báo giá thanh toán VNPay
+REQ: 
+RES: {"code":1000,"message":"Got successfully","result":{"amount":"8490000","unitPrices":{"ADULT":"8490000.00","CHILD":"6390000.00","TODDLER":"0.00","INFANT":"500000.00"}}}
+
+##### booking[29] :: Tạo URL thanh toán VNPay
+REQ: {"expectedAmount":"8490000","bookingId":30}
+RES: https://sandbox.vnpayment.vn/paymentv2/vpcpay.html?vnp_Amount=849000000&vnp_Command=pay&vnp_CreateDate=20261116194548&vnp_CurrCode=VND&vnp_ExpireDate=20261116200048&vnp_IpAddr=127.0.0.1&vnp_Locale=vn&vnp_OrderInfo=Thanh+toan+booking+30&vnp_OrderType=other&vnp_ReturnUrl=http%3A%2F%2Flocalhost%3A5173%2Fpayment%2Fvnpay%2Fcallback&vnp_SecureHashType=SHA512&vnp_TmnCode=TESTTMN01&vnp_TxnRef=8b4c880dac944a1ab1356f97b1581a9f&vnp_Version=2.1.0&vnp_SecureHash=43026202b651e532d554f8a7c1bfb437c7a85d594aec3db8d2ae677f17cecb268f8dc54c69ae579a0d9ec15a015a16d5e0e6e585de0dba1fc6f2ccf1e70fb127
+
+##### booking[30] :: VNPay IPN xác nhận thanh toán
+REQ: 
+RES: {"Message":"Confirm Success","RspCode":"00"}
+
+##### booking[31] :: VNPay return (trình duyệt khách)
+REQ: 
+RES: {"code":1000,"message":"Got successfully","result":{"status":"success","alreadyProcessed":true,"orderId":"8b4c880dac944a1ab1356f97b1581a9f","amount":"8490000.00","bankCode":"NCB","transactionNo":"TXN194548","bankTranNo":"BANK194548","cardType":"ATM","orderInfo":"Thanh+toan+booking+30","payDate":"20261116194548","responseCode":"00","transactionStatus":"00","txnRef":"8b4c880dac944a1ab1356f97b1581a9f","secureHash":null}}
+
+##### booking[32] :: Booking sau thanh toán
+REQ: 
+RES: {"code":1000,"message":"Got successfully","result":{"id":"30","accountId":"3","createdAt":"2026-11-16T19:45:45","status":"CONFIRMED","tourDepartureId":"611","message":null,"reservationStatus":"PAID","paymentDeadline":"2026-11-22T08:00","paymentRequiredNow":false,"totalAmount":"8490000","currency":"VND","priceSnapshotAt":"2026-11-16T19:45:45","unitPrices":{"ADULT":"8490000.00","CHILD":"6390000.00","TODDLER":"0.00","INFANT":"500000.00"}}}
+
+##### booking[35] :: Hóa đơn theo booking vừa thanh toán
+REQ: 
+RES: {"code":1000,"message":"Got successfully","result":{"id":"24","accountId":"3","bookingId":"30","dayOfPay":"2026-11-16T19:45:48","paymentMethodId":"1","status":"PAID","message":null,"totalExtraFee":null,"totalBookingTourExpense":"8490000"}}
+
+##### booking[38] :: Tạo hóa đơn thu tiền mặt tại quầy (booking cũ 29)
+REQ: {"bookingRequest":{"bookingId":"29","tourDepartureId":"641","userId":"3","listOfCustomers":[{"fullName":"Khach le quay thu 1","birthdate":"1995-04-12","gender":"true","address":"12 Le Loi, Da Nang","status":"BOOKED","bookingType":"ADULT"}]}}
+RES: {"code":1000,"message":"Created successfully","result":{"id":"25","accountId":"3","bookingId":"29","dayOfPay":"2026-11-16T19:45:49.627411400","paymentMethodId":"3","status":"PAID","message":"Hoá đơn được tạo thành công","totalExtraFee":null,"totalBookingTourExpense":"8490000"}}
+
+##### booking[21] :: Xem trước phương án thay thế sự cố
+REQ: {"returnAt":"2026-12-17T19:30:00","capacity":40,"clientKey":"cf4a198e-3efd-4979-a94a-88daf6e562ef","evidence":"Công văn số 123/UBND về việc cấm ra khơi","departureAt":"2026-12-15T06:00:00","originalCannotDepart":true,"responseDeadline":"2026-11-20T17:00:00","expectedVersion":1,"reasonCode":"NATURAL_DISASTER","reason":"Bão lớn làm tuyến đường và bến tàu không thể vận hành an toàn","sourceId":615}
+RES: {"code":1000,"message":null,"result":{"bookingCount":1,"occupiedSeats":1,"version":1,"capacity":40}}
+
+##### booking[15] :: Yêu cầu đổi lịch (khách, booking 22 → 566)
+REQ: {"bookingId":22,"clientKey":"d703d852-3178-4411-9983-9722c221553f","targetId":566,"reason":"Gia đình có việc riêng, xin đổi sang lịch khác cùng thời lượng"}
+RES: {"code":1000,"message":null,"result":{"id":1,"client_key":"d703d852-3178-4411-9983-9722c221553f","booking_id":22,"account_id":3,"kind":"CUSTOMER","shop_change_id":null,"source_departure_id":313,"target_departure_id":566,"source_departure_at":"2026-11-30T06:00","source_return_at":"2026-12-03T19:30","target_departure_at":"2026-12-02T06:00","target_return_at":"2026-12-05T19:30","status":"PENDING","active_key":1,"version":0,"reason":"Gia đình có việc riêng, xin đổi sang lịch khác cùng thời lượng","requested_by":3,"created_at":"2026-11-16T19:45:46","updated_at":"2026-11-16T19:45:46","consent_source":null,"consent_note":null,"refund_requested":false,"applied_at":null,"refund_amount":null,"refund_reference":null,"refund_recorded_by":null,"refund_recorded_at":null}}
+
+##### booking[18] :: Admin duyệt yêu cầu đổi lịch
+REQ: {"expectedVersion":0,"note":"Đã kiểm tra và chấp thuận đổi lịch","action":"APPROVE"}
+RES: {"code":1000,"message":null,"result":{"id":1,"client_key":"d703d852-3178-4411-9983-9722c221553f","booking_id":22,"account_id":3,"kind":"CUSTOMER","shop_change_id":null,"source_departure_id":313,"target_departure_id":566,"source_departure_at":"2026-11-30T06:00","source_return_at":"2026-12-03T19:30","target_departure_at":"2026-12-02T06:00","target_return_at":"2026-12-05T19:30","status":"APPROVED","active_key":null,"version":1,"reason":"Gia đình có việc riêng, xin đổi sang lịch khác cùng thời lượng","requested_by":3,"created_at":"2026-11-16T19:45:46","updated_at":"2026-11-16T19:45:47","consent_source":null,"consent_note":null,"refund_requested":false,"applied_at":"2026-11-16T19:45:47","refund_amount":null,"refund_reference":null,"refund_recorded_by":null,"refund_recorded_at":null}}
+
+##### booking[51] :: Trợ giúp booking của tôi (đã đăng nhập)
+REQ: {"message":"booking 22 con bao lau","selectedBookingId":22}
+RES: {"code":1000,"message":"Tra cứu booking","result":{"handled":true,"reply":"Booking #22 — Đông Bắc: Hà Nội - Hà Giang - Lũng Cú - Đồng Văn - Mã Pì Lèng - Lô Lô Chải. Bạn đặt lúc 18:49 15/11/2026. Khởi hành lúc 06:00 02/12/2026. Hệ thống đã ghi nhận thanh toán khớp payment/hóa đơn. Bạn không cần thanh toán lại để giữ chỗ. Hạn cũ không còn là thời gian chờ trả tiền. Xem lịch sử đơn để kiểm tra chi tiết.","selectedBookingId":22,"choices":[],"checkedAt":"2026-11-16T12:45:51.6213258Z","policy":{"policyKey":"P06","policyVersion":"2026-10-26-v4","sourceLabel":"SGU Tour — chính sách theo chức năng hiện có"}}}
+
+##### booking[42] :: Tìm kiếm: lọc giá 5–10 triệu
+REQ: 
+RES: {"code":1000,"message":"Filter successfully","result":{"content":[{"id":1,"tourProgram":"TOUR_01","tourTitle":"Đông Bắc: Hà Nội - Hà Giang - Lũng Cú - Đồng Văn - Mã Pì Lèng - Lô Lô Chải","basePrice":8490000.0,"departureLocation":"Đà Nẵng","destinationLocation":"Hà Giang","vehicle":"Máy bay và xe du lịch","departureDates":["2026-11-18","2026-11-20","2026-11-22","2026-11-25","2026-11-27","2026-11-29","2026-11-30","2026-12-02","2026-12-04","2026-12-06","2026-12-09","2026-12-11","2026-12-13","2026-12-16","2026-12-18","2026-12-20","2026-12-23","2026-12-25","2026-12-27","2026-12-30","2027-01-01","2027-01-03","2027-01-06","2027-01-08","2027-01-10","2027-01-13","2027-01-15","2027-01-17","2027-01-20","2027-01-22","2027-01-24","2027-01-27","2027-01-29","2027-01-31","2027-03-01","2028-03-30"],"sortKey":"0000000001"},{"id":8,"tourProgram":"TOUR_08","tourTitle":"Thiên đường biển ngọc: Phú Quốc - Cáp treo Hòn Thơm - Sunset Town - Grand World","basePrice":5490000.0,"departureLocation":"TP. Hồ Chí Minh","destinationLocation":"Kiên Giang","vehicle":"Máy bay và xe du lịch","departureDates":["2026-11-1...
+
+##### extra[4] :: Đối soát: xác nhận giao dịch hết hạn chưa thu tiền
+REQ: {"amountVnd":8490000,"reference":"SGU-RECON-195037","note":"Đã kiểm tra sao kê, khách chưa chuyển khoản","action":"UNPAID_CONFIRMED","confirmed":true}
+RES: {"code":1000,"result":{"txn_ref":"7ff7115b0d6242e788f0b507213d012f","account_id":3,"amount_vnd":8490000,"booking_id":32,"created_at":"2026-11-16T19:50:36","expires_at":"2026-11-16T19:49:37","status":"CLOSED_UNPAID","transaction_no":null,"provider":"VNPAY"}}
+
+##### auth[33] :: Gửi đánh giá tour 15 (user5)
+REQ: {"rating":5,"content":"Chuyến đi kiểm thử: hướng dẫn viên chu đáo, lịch trình rõ ràng và đúng giờ.","tourId":15}
+RES: {"code":1000,"result":{"id":16,"tourId":15,"user":{"id":"7","username":"user5","email":null,"avatar":null,"phone":null,"address":null,"role":null,"managementAllowed":false,"status":null},"content":"Chuyến đi kiểm thử: hướng dẫn viên chu đáo, lịch trình rõ ràng và đúng giờ.","rating":5,"createdAt":"2026-11-16T19:43:08.5279982","username":null,"avatar":null}}
+
+##### auth[5] :: Đăng ký khách hàng công khai
+REQ: {"username":"sgureg194305552","password=***","email":"sgu.reg.194305552@sgu-test.local","phone":"0901234567","address":"1 Nguyễn Huệ, TP.HCM"}
+RES: {"code":1000,"result":{"id":"15","username":"sgureg194305552","email":"sgu.reg.194305552@sgu-test.local","avatar":null,"phone":"0901234567","address":"1 Nguyễn Huệ, TP.HCM","role":{"id":2,"name":"Khách Hàng","description":"Khách hàng đăng ký và đặt tour","active":true,"permissions":[]},"managementAllowed":false,"status":"ACTIVE"}}
+
+##### tour[22] :: Tạo tour (multipart, không ảnh)
+REQ: basePrice=1290000& departureLocationId=1& description=Tour tạo tự động bởi bộ kiểm thử API& destinationLocationId=19& duration=4& tourPriceId=17& tourProgram=SGU-TEST& tourTitle=Tour kiểm thử API 194532& vehicleId=SGU-BUS-194532
+RES: {"code":1000,"message":"Created successfully","result":{"id":17,"tourProgram":"SGU-TEST","tourTitle":"Tour kiểm thử API 194532","description":"Tour tạo tự động bởi bộ kiểm thử API","duration":4,"departureCity":{"id":1,"city":"Hà Nội","img":null,"type":"DEPARTURE"},"destinationCity":{"id":19,"city":"SGU Test City 194532 (updated)","img":null,"type":"DESTINATION"},"basePrice":1290000.00,"vehicle":{"id":"SGU-BUS-194532","name":"Xe kiểm thử 45 chỗ"},"tourPrice":{"id":17,"adultPrice":1290000.00,"childPrice":950000.00,"toddlerPrice":0.00,"infantPrice":160000.00,"singleSupplementPrice":420000.00},"departures":[],"imageIds":[],"imageUploadStatus":"COMPLETE","imageUploadMessage":null,"priceStale":false}}

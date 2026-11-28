@@ -1,0 +1,83 @@
+% =====================================================================
+%  Phần đầu báo cáo: lời cảm ơn, tóm tắt, mục lục, danh mục
+% =====================================================================
+
+\chapter*{LỜI CẢM ƠN}
+\addcontentsline{toc}{chapter}{LỜI CẢM ƠN}
+\markboth{LỜI CẢM ƠN}{}
+
+Trước hết, nhóm chúng em xin gửi lời cảm ơn chân thành đến quý thầy cô Trường Đại học Sài Gòn, đặc biệt là thầy Nguyễn Thanh Phước, giảng viên học phần Chuyên đề J2EE. Thầy đã tận tâm hướng dẫn, định hướng kiến trúc và góp ý cho nhóm trong suốt quá trình phân tích, thiết kế và triển khai hệ thống.
+
+Trong từng buổi học và các lần trao đổi, thầy luôn truyền đạt kiến thức một cách rõ ràng, gắn lý thuyết với thực tế và khuyến khích nhóm chủ động tìm hiểu các công nghệ mới. Những góp ý của thầy về bảo mật, kiểm thử, quản lý cấu hình và vận hành đã giúp nhóm hoàn thiện sản phẩm theo hướng chuyên nghiệp hơn.
+
+Nhóm cũng xin cảm ơn gia đình, bạn bè và các anh chị đã chia sẻ tài liệu, hỗ trợ trong quá trình thực hiện đồ án. Mặc dù đã cố gắng, báo cáo khó tránh khỏi thiếu sót; nhóm rất mong nhận được nhận xét và góp ý của quý thầy cô để tiếp tục hoàn thiện.
+
+\vspace{8mm}
+\begin{flushright}
+  \textit{Nhóm sinh viên thực hiện}\\[2mm]
+  \textit{Nguyễn Trần Công Danh -- Nguyễn Thanh Hiệu}\\
+  \textit{Hùynh Quốc Hưng -- Đỗ Đình Thái}
+\end{flushright}
+
+\clearpage
+\chapter*{TÓM TẮT ĐỀ TÀI}
+\addcontentsline{toc}{chapter}{TÓM TẮT ĐỀ TÀI}
+\markboth{TÓM TẮT ĐỀ TÀI}{}
+
+Đồ án xây dựng website bán tour du lịch \textbf{SGU Tour} theo kiến trúc microservices. Hệ thống gồm \textbf{12 ứng dụng Spring Boot} độc lập (API Gateway, Auth, Tour, Pricing, Booking, Payment, Invoice, File, Notification, Reporting, Search và AI) và \textbf{9 cơ sở dữ liệu MySQL 8.4 vật lý} theo mô hình database-per-service. Các dịch vụ giao tiếp đồng bộ qua REST/OpenFeign và bất đồng bộ qua RabbitMQ với transactional outbox/inbox và saga; Redis đảm nhận cache, Elasticsearch đảm nhận chỉ mục tìm kiếm.
+
+Hệ thống hỗ trợ các nghiệp vụ chính: quản lý tour, lịch trình, địa điểm, phương tiện, lịch khởi hành và sức chứa; tính giá theo nhóm tuổi; đặt tour, giữ chỗ có thời hạn và tự động giải phóng chỗ; thanh toán VNPay/MoMo sandbox; phát hành hóa đơn; dời lịch và hoàn tiền nội bộ; gửi email qua outbox kết hợp n8n; quản lý ảnh qua Cloudinary; tìm kiếm bằng Elasticsearch/Redis; tư vấn tour và tra cứu booking bằng Spring AI/Groq; tổng hợp báo cáo vận hành không chứa PII. Giao diện được xây dựng bằng React 19, TypeScript, Vite và Ant Design, gọi API qua gateway \code{/api/v1}.
+
+Báo cáo trình bày quá trình phân tích yêu cầu, thiết kế kiến trúc, thiết kế bảo mật, thiết kế 9 database, thiết kế triển khai, giao diện người dùng và kiểm thử. Kết quả cho thấy hệ thống có thể chạy cục bộ bằng Docker Compose, có kiểm thử tự động theo từng module và có pipeline CI kiểm tra build, test và cấu hình Compose.
+
+\clearpage
+\tableofcontents
+\clearpage
+\listoffigures
+\clearpage
+\listoftables
+\clearpage
+
+\markboth{DANH MỤC TỪ VIẾT TẮT}{}
+\chapter*{DANH MỤC TỪ VIẾT TẮT}
+\addcontentsline{toc}{chapter}{DANH MỤC TỪ VIẾT TẮT}
+
+\begin{spacing}{1.05}
+\small
+\begin{longtable}{@{}L{2.8cm}L{4.6cm}>{\raggedright\arraybackslash}p{7.0cm}@{}}
+\toprule
+\textbf{Từ viết tắt} & \textbf{Thuật ngữ đầy đủ} & \textbf{Ý nghĩa trong đồ án}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Từ viết tắt} & \textbf{Thuật ngữ đầy đủ} & \textbf{Ý nghĩa trong đồ án}\\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+API & Application Programming Interface & Giao diện lập trình ứng dụng giữa các thành phần.\\
+JWT & JSON Web Token & Token xác thực không trạng thái dùng cho phiên đăng nhập.\\
+RBAC & Role-Based Access Control & Phân quyền theo vai trò và quyền hạn.\\
+REST & Representational State Transfer & Phong cách thiết kế API dựa trên HTTP.\\
+JSON & JavaScript Object Notation & Định dạng trao đổi dữ liệu giữa các dịch vụ.\\
+CORS & Cross-Origin Resource Sharing & Cơ chế cho phép trình duyệt gọi API khác origin.\\
+CI/CD & Continuous Integration / Delivery & Tích hợp và chuyển giao liên tục.\\
+DTO & Data Transfer Object & Đối tượng truyền dữ liệu giữa các tầng.\\
+JPA & Java Persistence API & Chuẩn ánh xạ đối tượng -- quan hệ của Java.\\
+SMTP & Simple Mail Transfer Protocol & Giao thức gửi email.\\
+IPN & Instant Payment Notification & Thông báo thanh toán tức thời từ cổng thanh toán.\\
+TTL & Time To Live & Thời gian sống của phiên, cache hoặc token.\\
+VND & Vietnam Dong & Đơn vị tiền tệ Việt Nam.\\
+AI & Artificial Intelligence & Trí tuệ nhân tạo.\\
+LLM & Large Language Model & Mô hình ngôn ngữ lớn.\\
+CSDL & Cơ sở dữ liệu & Nơi lưu trữ dữ liệu nghiệp vụ của dịch vụ.\\
+Saga & Saga Pattern & Mẫu điều phối giao dịch phân tán bằng bù trừ.\\
+Outbox & Transactional Outbox & Bảng ghi sự kiện trong cùng transaction nghiệp vụ.\\
+Inbox & Idempotent Inbox & Bảng chống xử lý trùng sự kiện ở consumer.\\
+DLQ & Dead Letter Queue & Hàng đợi chứa sự kiện xử lý thất bại sau số lần thử.\\
+PII & Personally Identifiable Information & Thông tin định danh cá nhân.\\
+ES & Elasticsearch & Công cụ tìm kiếm và chỉ mục phân tán.\\
+\end{longtable}
+\end{spacing}
+
+\clearpage

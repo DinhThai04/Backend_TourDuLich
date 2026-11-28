@@ -1,0 +1,66 @@
+\begin{tikzpicture}[x=1cm,y=1cm]
+  % Khung hệ thống
+  \node[draw=sguBlue!60,fill=softgray,rounded corners=4pt,minimum width=9.6cm,minimum height=11.4cm]
+    (sys) at (9.2,5.0) {};
+  \node[font=\small\bfseries\color{sguBlue}] at (9.2,10.75) {Hệ thống SGU Tour};
+
+  % Tác nhân
+  \newcommand{\actor}[3]{%
+    \begin{scope}[shift={(#2,#3)}]
+      \draw[thick,draw=sguBlue] (0,0.50) circle (0.17);
+      \draw[thick,draw=sguBlue] (0,0.33) -- (0,-0.10);
+      \draw[thick,draw=sguBlue] (-0.30,0.15) -- (0.30,0.15);
+      \draw[thick,draw=sguBlue] (0,-0.10) -- (-0.20,-0.48);
+      \draw[thick,draw=sguBlue] (0,-0.10) -- (0.20,-0.48);
+      \node[font=\scriptsize\bfseries,align=center] at (0,-0.80) {#1};
+    \end{scope}}
+
+  \actor{Khách}{0.6}{9.8}
+  \actor{Khách hàng}{0.6}{5.9}
+  \actor{Quản trị viên}{0.6}{2.0}
+  \actor{Hệ thống\\nội bộ}{16.0}{5.9}
+
+  % Use case
+  \newcommand{\uc}[4]{%
+    \node[draw=sguTeal,fill=white,ellipse,align=center,font=\scriptsize,
+          inner sep=2pt,minimum width=3.2cm,minimum height=1.0cm] (#1) at (#2,#3) {#4};}
+
+  \uc{ucBrowse}{5.4}{10.0}{Duyệt và tìm tour}
+  \uc{ucLogin}{9.6}{10.0}{Đăng ký / đăng nhập}
+  \uc{ucBook}{5.4}{8.3}{Đặt tour, giữ chỗ}
+  \uc{ucPay}{9.6}{8.3}{Thanh toán VNPay/MoMo}
+  \uc{ucHistory}{5.4}{6.6}{Lịch sử, hóa đơn}
+  \uc{ucChange}{9.6}{6.6}{Dời lịch, đánh giá}
+  \uc{ucAI}{5.4}{4.9}{Tư vấn tour bằng AI}
+  \uc{ucHelp}{9.6}{4.9}{Tra cứu booking AI}
+  \uc{ucTour}{5.4}{3.2}{Quản lý tour, giá, lịch}
+  \uc{ucBooking}{9.6}{3.2}{Quản lý booking, hóa đơn}
+  \uc{ucAccount}{5.4}{1.5}{Quản lý tài khoản, quyền}
+  \uc{ucRecon}{9.6}{1.5}{Đối soát thanh toán}
+  \uc{ucSync}{12.9}{7.3}{Đồng bộ danh mục}
+  \uc{ucMail}{12.9}{4.5}{Gửi email, nhắc hạn}
+
+  % Liên kết tác nhân - use case
+  \draw[draw=sguBlue!55] (1.1,9.8) -- (ucBrowse.west);
+  \draw[draw=sguBlue!55] (1.1,9.8) -- (ucLogin.west);
+  \draw[draw=sguBlue!55] (1.1,9.3) -- (ucAI.west);
+
+  \draw[draw=sguBlue!55] (1.1,5.9) -- (ucBook.west);
+  \draw[draw=sguBlue!55] (1.1,5.9) -- (ucPay.west);
+  \draw[draw=sguBlue!55] (1.1,5.9) -- (ucHistory.west);
+  \draw[draw=sguBlue!55] (1.1,5.9) -- (ucChange.west);
+  \draw[draw=sguBlue!55] (1.1,5.9) -- (ucHelp.west);
+
+  \draw[draw=sguBlue!55] (1.1,2.0) -- (ucTour.west);
+  \draw[draw=sguBlue!55] (1.1,2.0) -- (ucBooking.west);
+  \draw[draw=sguBlue!55] (1.1,2.0) -- (ucAccount.west);
+  \draw[draw=sguBlue!55] (1.1,2.0) -- (ucRecon.west);
+
+  \draw[draw=sguBlue!55] (15.3,5.9) -- (ucSync.east);
+  \draw[draw=sguBlue!55] (15.3,5.9) -- (ucMail.east);
+  \draw[draw=sguBlue!55] (15.3,5.9) -- (ucLogin.east);
+
+  % Ghi chú phụ thuộc
+  \draw[darrow] (ucBook.south) -- node[right,font=\tiny,align=left]{kiểm tra chỗ\\và giá} (ucTour.north);
+  \draw[darrow] (ucPay.south) -- node[right,font=\tiny,align=left]{xác nhận\\giao dịch} (ucBooking.north);
+\end{tikzpicture}

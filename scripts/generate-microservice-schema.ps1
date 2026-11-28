@@ -27,7 +27,7 @@ $Content = Get-Content $InputFile -Raw
 
 # Extract all CREATE TABLE statements with their full definition
 $bt = [char]0x60
-$CreateTableRegex = '(?s)CREATE TABLE\s+(?:IF NOT EXISTS\s+)?' + $bt + '(\w+)' + $bt + '\s*\((.*?)\)\s*ENGINE=\w+.*?;'
+$CreateTableRegex = '(?s)CREATE TABLE\s+(?:IF NOT EXISTS\s+)?' + $bt + '?(\w+)' + $bt + '?\s*\((.*?)\)\s*ENGINE=\w+.*?;'
 $Matches = [regex]::Matches($Content, $CreateTableRegex)
 
 $AllTables = @{}

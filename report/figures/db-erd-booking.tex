@@ -1,0 +1,13 @@
+% Sơ đồ thực thể: nhóm đặt chỗ.
+\begin{tikzpicture}[x=1cm,y=1cm]
+  \entitybox{bookz}{4.2}{1.9}{booking}{id (PK)\\ account\_id\\ tour\_departure\_id\\ status}
+  \entitybox{custz}{0}{-1.6}{customer}{id (PK)\\ booking\_id (FK)\\ full\_name}
+  \entitybox{resvz}{4.2}{-1.6}{booking\_reservation}{booking\_id (PK, FK)\\ departure\_id\\ seats\\ status}
+  \entitybox{snapz}{8.4}{-1.6}{booking\_price\_snapshot}{booking\_id (PK, FK)\\ total\_amount\\ currency}
+  \entitybox{chgz}{8.4}{2.6}{booking\_change}{id (PK)\\ booking\_id\\ target\_departure\_id\\ status}
+
+  \draw[dbrel]    (bookz) -- (custz);
+  \draw[dbrel]    (bookz) -- (resvz);
+  \draw[dbrel]    (bookz) -- (snapz);
+  \draw[dbrellog] (bookz) -- (chgz);
+\end{tikzpicture}

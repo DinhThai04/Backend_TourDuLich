@@ -7,7 +7,7 @@
 
 Hệ thống đặt tour du lịch SGU Tour chia thành các ứng dụng Spring Boot độc lập, giao tiếp qua REST (Spring Cloud Gateway + OpenFeign) và sự kiện (outbox/inbox, saga). 
 
-Hiện tại các service nghiệp vụ dùng chung database `dbtour_v2` (shared-database). Tài liệu định nghĩa đích vận hành: 9 database vật lý độc lập (database-per-service), không cross-database SQL, không transaction phân tán, sự nhất quán giữa các service do internal API + event + saga đảm bảo.
+Runtime microservice hiện dùng 9 database vật lý độc lập (database-per-service): mỗi service nghiệp vụ sở hữu một MySQL container/schema riêng, không cross-database SQL, không transaction phân tán; sự nhất quán giữa các service do internal API + event + saga đảm bảo. Biến thể `docker-compose.yml` một database `dbtour_v2` chỉ còn dùng cho phát triển nhanh/đối chiếu seed, không phải kiến trúc đích.
 
 ## 2. Danh mục service
 
@@ -23,10 +23,12 @@ Hiện tại các service nghiệp vụ dùng chung database `dbtour_v2` (shared
 | `invoice_service` | 8090 | `/invoice` | `InvoiceServiceApplication` | Hóa đơn theo booking |
 | `search_service` | 8089 | `/search` | `SearchServiceApplication` | Tìm kiếm Elasticsearch, cache Redis |
 | `ai_service` | 8091 | `/ai` | `AiServiceApplication` | Tư vấn tour qua Spring AI/Groq |
+| `notification_service` | 8093 | `/notification` | `NotificationServiceApplication` | Mail outbox, template, worker SMTP, DLQ |
+| `reporting_service` | 8092 | `/reporting` | `ReportingServiceApplication` | Read model `ops_*`, audit timeline |
 
 Mỗi module là project Maven riêng (`pom.xml` + `Dockerfile`), chạy tại thư mục module, không phải thư mục gốc.
 
-## 3. Kiến trúc đích (database-per-service)
+## 3. Kiến trúc database-per-service
 
 | Database | Service sở hữu | Bảng chính |
 |---|---|---|

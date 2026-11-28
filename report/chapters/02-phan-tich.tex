@@ -1,0 +1,213 @@
+\chapter{PHẦN II: PHÂN TÍCH HỆ THỐNG}
+\label{chap:phan-tich}
+
+Phân tích hệ thống nhằm xác định rõ ai sử dụng hệ thống, họ cần làm gì, hệ thống phải đáp ứng những yêu cầu nào và những quy tắc nghiệp vụ nào không được vi phạm. Kết quả của phần này là cơ sở để thiết kế kiến trúc và hợp đồng API ở Phần III.
+
+\section{Tác nhân và vai trò}
+\label{sec:tac-nhan}
+
+Hệ thống có bốn nhóm tác nhân chính. Mỗi tác nhân có phạm vi quyền khác nhau, được kiểm tra tại gateway và tại từng dịch vụ.
+
+\begin{table}[H]
+\centering
+\caption{Tác nhân và quyền hạn chính}
+\label{tab:tac-nhan}
+\small
+\begin{tabularx}{\textwidth}{@{}L{3.0cm}L{3.0cm}Y@{}}
+\toprule
+\textbf{Tác nhân} & \textbf{Danh tính} & \textbf{Quyền hạn chính}\\
+\midrule
+Khách (Guest) & Không cần đăng nhập & Xem tour, tìm kiếm, xem chi tiết, xem đánh giá, hỏi trợ lý AI công khai, đăng ký, đăng nhập.\\
+Khách hàng & Tài khoản \code{ACTIVE}, vai trò khách hàng & Đặt tour, thanh toán, xem lịch sử, gửi yêu cầu dời lịch, đánh giá sau chuyến đi, tra cứu booking của chính mình qua AI.\\
+Quản trị viên / nhân viên & Tài khoản có vai trò và quyền tương ứng & Quản lý tour, lịch trình, địa điểm, phương tiện, lịch khởi hành, giá, ảnh, booking, hóa đơn, đối soát, tài khoản, vai trò, quyền và đánh giá.\\
+Hệ thống nội bộ & Gateway, các dịch vụ, n8n & Định tuyến, xác thực, đồng bộ danh mục, gửi email, lập lịch nhắc và đối soát.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Ngoài ra, hệ thống tích hợp với các nhà cung cấp bên ngoài: VNPay, MoMo (thanh toán), Google (đăng nhập), Groq (mô hình AI), Cloudinary (lưu trữ ảnh) và SMTP (gửi email). Các nhà cung cấp này không phải tác nhân trực tiếp của người dùng nhưng tham gia vào luồng nghiệp vụ và cần được kiểm soát bằng chữ ký, khóa nội bộ hoặc cấu hình an toàn.
+
+\section{Yêu cầu chức năng}
+\label{sec:yeu-cau-chuc-nang}
+
+Các yêu cầu chức năng được nhóm theo ba nhóm: khách hàng, quản trị và hệ thống. Mã yêu cầu được dùng để tham chiếu trong phần thiết kế và kiểm thử.
+
+\begin{longtable}{@{}C{1.35cm}L{4.0cm}L{9.5cm}@{}}
+\caption{Yêu cầu chức năng dành cho khách và khách hàng}
+\label{tab:yc-khach}\\
+\toprule
+\textbf{Mã} & \textbf{Tên yêu cầu} & \textbf{Mô tả}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Mã} & \textbf{Tên yêu cầu} & \textbf{Mô tả}\\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+YC-01 & Đăng ký & Người dùng đăng ký bằng email, họ tên, số điện thoại và mật khẩu; tài khoản mới nhận vai trò khách hàng, không truy cập được trang quản trị.\\
+YC-02 & Đăng nhập & Người dùng đăng nhập bằng email/mật khẩu hoặc Google; hệ thống trả access token và refresh token.\\
+YC-03 & Làm mới phiên & Hệ thống cấp lại access token từ refresh token hợp lệ; phát hiện refresh token bị dùng lại và thu hồi toàn bộ phiên của tài khoản.\\
+YC-04 & Đăng xuất & Người dùng đăng xuất; token hiện tại bị vô hiệu hóa.\\
+YC-05 & Quản lý hồ sơ & Người dùng xem, cập nhật thông tin cá nhân và ảnh đại diện.\\
+YC-06 & Xem danh mục tour & Khách xem danh sách tour, tour ngẫu nhiên, tour theo địa điểm và thông tin chi tiết.\\
+YC-07 & Tìm kiếm tour & Khách tìm theo điểm đến, khoảng giá, ngày khởi hành; kết quả có phân trang và cache.\\
+YC-08 & Xem lịch trình, địa điểm, phương tiện & Khách xem lịch trình từng ngày, điểm khởi hành, điểm đến và phương tiện của tour.\\
+YC-09 & Xem giá và chỗ còn lại & Khách xem giá theo nhóm tuổi và số chỗ còn lại của từng lịch khởi hành.\\
+YC-10 & Đặt tour & Khách chọn lịch khởi hành, nhập danh sách hành khách và tạo booking; hệ thống giữ chỗ và chốt giá tại thời điểm đặt.\\
+YC-11 & Thanh toán & Khách thanh toán booking qua VNPay hoặc MoMo; hệ thống kiểm tra chữ ký, số tiền và trạng thái giao dịch.\\
+YC-12 & Xem lịch sử và hóa đơn & Khách xem danh sách booking, trạng thái thanh toán và hóa đơn của booking thuộc tài khoản mình.\\
+YC-13 & Dời lịch & Khách đã thanh toán gửi yêu cầu dời lịch trước giờ đi tối thiểu 72 giờ; khách phản hồi đề xuất từ đơn vị tổ chức.\\
+YC-14 & Đánh giá tour & Khách đã hoàn thành tour gửi đánh giá; đánh giá được duyệt và hiển thị công khai.\\
+YC-15 & Trợ lý AI & Khách hỏi tư vấn tour, chính sách; khách đã đăng nhập tra cứu trạng thái và hạn thanh toán booking của chính mình.\\
+\end{longtable}
+
+\begin{longtable}{@{}C{1.35cm}L{4.0cm}L{9.5cm}@{}}
+\caption{Yêu cầu chức năng dành cho quản trị}
+\label{tab:yc-admin}\\
+\toprule
+\textbf{Mã} & \textbf{Tên yêu cầu} & \textbf{Mô tả}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Mã} & \textbf{Tên yêu cầu} & \textbf{Mô tả}\\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+YC-16 & Quản lý tour & Thêm, sửa, xóa tour; quản lý tiêu đề, mô tả, chương trình, thông tin nổi bật và trạng thái mở bán.\\
+YC-17 & Quản lý lịch trình & Thêm, sửa, xóa lịch trình theo ngày của từng tour.\\
+YC-18 & Quản lý địa điểm & Thêm, sửa địa điểm khởi hành/điểm đến, ảnh địa điểm và loại địa điểm.\\
+YC-19 & Quản lý phương tiện & Thêm và xem danh sách phương tiện dùng cho tour.\\
+YC-20 & Quản lý lịch khởi hành & Thêm, sửa lịch khởi hành; theo dõi sức chứa, số chỗ còn lại và trạng thái vận hành.\\
+YC-21 & Quản lý giá & Thêm, sửa bảng giá theo nhóm tuổi; xem giá theo lô; bảo đảm giá là số nguyên VND.\\
+YC-22 & Quản lý ảnh & Tải ảnh tour/địa điểm/avatar; xem ảnh theo tour; dọn ảnh không còn sử dụng.\\
+YC-23 & Quản lý booking & Xem danh sách, chi tiết booking; xử lý hủy, xác nhận và các trạng thái nghiệp vụ.\\
+YC-24 & Quản lý hóa đơn & Xem hóa đơn theo booking, theo khách hàng; bảo đảm không tạo trùng hóa đơn.\\
+YC-25 & Đối soát thanh toán & Xem giao dịch cần đối soát, lịch sử xử lý; ghi nhận xác nhận chưa thanh toán, tìm thấy thanh toán hoặc hoàn tiền nội bộ.\\
+YC-26 & Quản lý tài khoản & Xem, cập nhật, khóa, mở khóa, lưu trữ hoặc xóa tài khoản đủ điều kiện; xem lịch sử sự kiện tài khoản.\\
+YC-27 & Quản lý vai trò/quyền & Tạo, sửa, xóa vai trò và quyền; gán quyền cho vai trò; thay đổi quyền làm vô hiệu phiên cũ.\\
+YC-28 & Quản lý đánh giá & Xem, duyệt hoặc ẩn đánh giá của khách hàng.\\
+YC-29 & Quản lý dời lịch & Xem yêu cầu, đề xuất phương án, phản hồi khách và ghi nhận hoàn tiền khi cần.\\
+\end{longtable}
+
+\begin{longtable}{@{}C{1.35cm}L{4.0cm}L{9.5cm}@{}}
+\caption{Yêu cầu chức năng hệ thống và tích hợp}
+\label{tab:yc-he-thong}\\
+\toprule
+\textbf{Mã} & \textbf{Tên yêu cầu} & \textbf{Mô tả}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Mã} & \textbf{Tên yêu cầu} & \textbf{Mô tả}\\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+YC-30 & Định tuyến và bảo vệ API & Gateway định tuyến \code{/api/v1}, kiểm tra JWT, chặn endpoint nội bộ, giới hạn tần suất và ngắt mạch khi auth gặp sự cố.\\
+YC-31 & Đồng bộ danh mục tìm kiếm & Search service đồng bộ snapshot tour từ tour service theo chu kỳ hoặc theo yêu cầu; cập nhật chỉ mục và vô hiệu hóa cache.\\
+YC-32 & Gửi email nghiệp vụ & Booking ghi sự kiện vào outbox trong transaction; notification service tiếp nhận idempotent, ghi \code{mail\_outbox} và worker gửi email có số lần thử và trạng thái giao nhận.\\
+YC-33 & Nhắc thanh toán/khởi hành & n8n gọi API nội bộ có khóa để lập lượt nhắc; nội dung và thời điểm do backend quyết định.\\
+YC-34 & Đối soát giao dịch & Phát hiện giao dịch treo, giao dịch đã thanh toán nhưng chưa ghi nhận, ghi nhận hoàn tiền nội bộ và lưu lịch sử.\\
+YC-35 & Tư vấn AI có kiểm soát & AI trả lời theo dữ liệu backend, chính sách đã duyệt; chặn yêu cầu chạy mã, SQL, lộ secret hoặc ngoài phạm vi.\\
+YC-36 & Thông báo thời gian thực & Phát sự kiện đánh giá tour qua Socket.IO để cập nhật giao diện.\\
+YC-37 & Báo cáo vận hành & Reporting service tổng hợp chỉ số booking, thanh toán, hoàn tiền, tour và người dùng từ sự kiện; chỉ đọc read model \code{ops\_*} của chính mình, không chứa PII.\\
+YC-38 & Đồng bộ chỉ mục & Search service đồng bộ snapshot danh mục từ tour service, cập nhật Elasticsearch và vô hiệu hóa cache Redis khi có thay đổi.\\
+\end{longtable}
+
+\section{Yêu cầu phi chức năng}
+\label{sec:yeu-cau-phi-chuc-nang}
+
+Các yêu cầu phi chức năng được xác định theo mục tiêu của đồ án, không phải cam kết SLA production. Bảng~\ref{tab:yc-phi-chuc-nang} tóm tắt các yêu cầu và cách kiểm chứng tương ứng.
+
+\begin{longtable}{@{}L{2.5cm}L{4.2cm}L{4.0cm}L{3.83cm}@{}}
+\caption{Yêu cầu phi chức năng}
+\label{tab:yc-phi-chuc-nang}\\
+\toprule
+\textbf{Loại} & \textbf{Yêu cầu} & \textbf{Mục tiêu} & \textbf{Cách kiểm chứng}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Loại} & \textbf{Yêu cầu} & \textbf{Mục tiêu} & \textbf{Cách kiểm chứng}\\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Hiệu năng & Thời gian phản hồi & Trang danh mục và tìm kiếm phản hồi trong vài giây với dữ liệu demo; cache Redis cho truy vấn lặp. & Đo thời gian gọi API; kiểm thử thủ công với dữ liệu mẫu.\\
+Hiệu năng & Giới hạn tài nguyên & Giới hạn kích thước ảnh, số ảnh, số ghế giữ chỗ và kích thước pool kết nối để tránh quá tải. & Kiểm thử biên; kiểm tra cấu hình Hikari và upload policy.\\
+Bảo mật & Xác thực và phân quyền & Mọi endpoint không công khai phải có JWT hợp lệ; kiểm tra quyền theo vai trò/quyền hạn và quyền sở hữu dữ liệu. & Unit/integration test cho 401/403; test owner của booking, invoice, review.\\
+Bảo mật & Bảo vệ thông tin nhạy cảm & Không hard-code secret; không trả thông tin phân biệt tài khoản tồn tại/khóa; không đưa secret vào log. & Kiểm tra cấu hình mẫu, script preflight, test login.\\
+Bảo mật & Chống lạm dụng & Giới hạn tần suất theo IP cho đăng nhập, đăng ký, làm mới token, đổi mật khẩu và các endpoint AI. & Test rate limit; kiểm tra 429 và \code{Retry-After}.\\
+Sẵn sàng & Chịu lỗi cục bộ & Auth service gặp sự cố phải trả 503 thay vì coi token sai; gateway có circuit breaker; worker mail có số lần thử. & Test \code{AuthUnavailable\hspace{0pt}GatewayTest}, cấu hình breaker, test worker.\\
+Toàn vẹn & Chống bán quá chỗ & Khóa dòng lịch khởi hành, kiểm tra sức chứa trong transaction, giới hạn số ghế giữ chỗ. & Test giữ chỗ đồng thời; test sức chứa.\\
+Toàn vẹn & Chống xử lý trùng & Idempotency cho tạo booking, callback thanh toán, tạo hóa đơn và gửi mail. & Test replay với cùng khóa/requestId; test callback lặp.\\
+Khả dụng & Thông báo lỗi rõ ràng & Response thống nhất \code{\{code, message, result\}}; mã lỗi phân biệt 401, 403, 429, 503. & Kiểm tra shape lỗi ở các module.\\
+Bảo trì & Tách miền nghiệp vụ & Mỗi dịch vụ có mã nguồn, cấu hình, Dockerfile và test riêng; thay đổi một dịch vụ không bắt buộc build lại toàn bộ. & Kiểm tra cấu trúc module; build/test từng module.\\
+Khả chuyển & Cấu hình ngoài mã nguồn & Đọc biến môi trường/file cấu hình cục bộ; không commit secret. & Kiểm tra \code{application.yml}, \code{.local/*.example}.\\
+Kiểm thử & Tự động hóa & Có unit test, integration test H2/mock và test cross-service cho luồng quan trọng. & Chạy Maven test; xem báo cáo Surefire.\\
+Vận hành & Đóng gói nhất quán & Docker image nhiều tầng, healthcheck, profile, volume và thứ tự khởi động. & \code{docker compose config}; chạy Compose.\\
+Tương thích & Giao diện -- API & Frontend gọi qua gateway, dùng JSON và các mã lỗi thống nhất; CORS cấu hình theo origin phát triển. & Kiểm tra bằng frontend; test gateway CORS.\\
+\end{longtable}
+
+\section{Use case tổng quát}
+\label{sec:usecase}
+
+Hình~\ref{fig:usecase} mô tả các use case chính theo tác nhân. Các use case quản trị yêu cầu quyền tương ứng; các use case thanh toán và dời lịch có điều kiện trạng thái booking. Trợ lý AI công khai không yêu cầu đăng nhập, nhưng tra cứu booking qua AI yêu cầu JWT của chính tài khoản.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/usecase}}
+\caption{Use case tổng quát của hệ thống}
+\label{fig:usecase}
+\end{figure}
+
+\section{Quy tắc nghiệp vụ chính}
+\label{sec:quy-tac-nghiep-vu}
+
+Các quy tắc dưới đây là nguồn gốc của nhiều quyết định thiết kế ở Phần III. Chúng được kiểm thử trực tiếp hoặc gián tiếp trong mã nguồn.
+
+\begin{longtable}{@{}L{3.2cm}L{5.4cm}L{6.3cm}@{}}
+\caption{Quy tắc nghiệp vụ quan trọng}
+\label{tab:quy-tac}\\
+\toprule
+\textbf{Nhóm} & \textbf{Quy tắc} & \textbf{Diễn giải}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Nhóm} & \textbf{Quy tắc} & \textbf{Diễn giải}\\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+Giữ chỗ & Hạn thanh toán khi còn hơn 7 ngày & Hạn = \(\min(\text{ngày đặt}+6\text{ ngày},\ \text{ngày đi}-6\text{ ngày})\), lấy 08:00 giờ Việt Nam. Nhắc lần một vào ngày đặt + 3 nếu chưa quá hạn − 1; nhắc lần hai vào hạn − 1; gộp nếu trùng.\\
+Giữ chỗ & Hạn thanh toán khi còn tối đa 7 ngày & Checkout tối đa 15 phút và không vượt quá giờ khởi hành.\\
+Giữ chỗ & Giới hạn giữ chỗ & Mỗi tài khoản tối đa 5 lượt giữ chỗ đang hoạt động và tối đa 40 ghế đang giữ; mỗi booking tối đa 40 hành khách.\\
+Giữ chỗ & Chốt giá & Giá được chụp tại thời điểm tạo booking; không tính lại theo giá lúc thanh toán.\\
+Giữ chỗ & Chống trùng & Khóa \code{clientKey} bảo vệ yêu cầu gửi lại; booking trùng khóa trả lại kết quả cũ nếu cùng nội dung.\\
+Thanh toán & Số tiền do server quyết định & Client gửi số tiền mong đợi để đối chiếu; server tính lại từ booking và từ chối nếu lệch.\\
+Thanh toán & Xác minh callback & Kiểm tra chữ ký, mã đơn, số tiền, trạng thái và thời hạn trước khi ghi nhận; callback lặp trả kết quả đã xử lý.\\
+Thanh toán & Đối soát & Chỉ ghi nhận bằng chứng của người vận hành; không tự chuyển tiền hoặc tự hoàn tiền qua ngân hàng.\\
+Dời lịch & Điều kiện khách & Chỉ booking đã thanh toán, gửi trước giờ đi ít nhất 72 giờ; kiểm tra giá và chỗ của lịch đích.\\
+Dời lịch & Dời do đơn vị tổ chức & Phải có lý do bắt buộc; xử lý từng booking; khách phản hồi; ghi nhận hoàn tiền nội bộ khi cần.\\
+Tài khoản & Trạng thái & \code{ACTIVE}, \code{LOCKED}, \code{ARCHIVED}; chỉ xóa thật tài khoản đã khóa và không có lịch sử nghiệp vụ; tài khoản có lịch sử được lưu trữ.\\
+Tài khoản & Vô hiệu phiên & Thay đổi vai trò hoặc quyền làm tăng \code{sessionEpoch} trong cùng transaction; JWT cũ hết hiệu lực. Chỉ cấp thêm quyền thì nhận ở lần refresh tiếp theo.\\
+Đăng nhập & Chống dò tài khoản & Tài khoản không tồn tại vẫn thực hiện bcrypt với hash giả; tài khoản khóa hoặc thiếu vai trò trả cùng lỗi sai thông tin.\\
+Ảnh & Giới hạn upload & Tối đa 10 ảnh/lượt, 5 MiB/ảnh, tổng 25 MiB; avatar tối đa 2 MiB; tối đa 20 triệu pixel; chỉ nhận JPEG/PNG/WebP và kiểm tra chữ ký tệp.\\
+AI & Giới hạn và an toàn & Không chạy mã, không truy vấn SQL tùy ý, không đặt tour/thu tiền/gửi mail; chặn prompt injection và secret; dữ liệu booking chỉ đọc theo quyền sở hữu.\\
+Gateway & Công khai có chọn lọc & Chỉ các endpoint đọc công khai và một số endpoint xác thực/thanh toán được khai báo chính xác; không dùng wildcard mở rộng.\\
+\end{longtable}
+
+\section{Đánh giá và lựa chọn kiến trúc}
+\label{sec:lua-chon-kien-truc}
+
+Với quy mô đồ án, một ứng dụng nguyên khối có thể đáp ứng chức năng, nhưng khó thể hiện rõ ranh giới nghiệp vụ và khó mô phỏng cách các hệ thống thực tế tách dịch vụ. Nhóm chọn microservices vì các lý do sau:
+
+\begin{itemize}
+  \item \textbf{Tách miền nghiệp vụ:} tour, giá, booking, thanh toán, hóa đơn, tài khoản, tệp, tìm kiếm và AI có vòng đời và quy tắc riêng; tách dịch vụ giúp mã nguồn dễ hiểu và dễ phân công.
+  \item \textbf{Cô lập lỗi:} sự cố ở search hoặc AI không nhất thiết làm dừng luồng đặt tour; gateway có thể trả lỗi có kiểm soát cho từng nhóm endpoint.
+  \item \textbf{Mở rộng độc lập:} search và AI có thể được cấp thêm tài nguyên mà không ảnh hưởng các dịch vụ giao dịch.
+  \item \textbf{Công nghệ phù hợp từng bài toán:} Elasticsearch cho tìm kiếm, Redis cho cache, Spring AI cho tư vấn, Cloudinary cho media.
+  \item \textbf{Cô lập dữ liệu:} mỗi microservice sở hữu database riêng, không có khóa ngoại xuyên database; nhất quán giữa các service được bảo đảm bằng internal API, outbox/inbox và saga.
+\end{itemize}
+
+Đổi lại, kiến trúc microservices đặt ra các thách thức: giao tiếp mạng có thể thất bại, dữ liệu có thể tạm thời không nhất quán, cấu hình và triển khai phức tạp hơn, và việc kiểm thử cần nhiều lớp hơn. Các thách thức này được xử lý một phần bằng idempotency, outbox, circuit breaker, kiểm tra quyền sở hữu, healthcheck và bộ kiểm thử theo module.

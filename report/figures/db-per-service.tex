@@ -1,0 +1,38 @@
+% Sơ đồ database-per-service: mỗi dịch vụ sở hữu một database riêng.
+\begin{tikzpicture}[x=1cm,y=1cm]
+  \tikzset{
+    dbsvc/.style={draw=sguBlue,fill=blue!5,rounded corners=2pt,align=center,
+                  font=\small\bfseries,inner sep=3pt,minimum width=3.1cm,
+                  minimum height=8mm},
+    dbstore/.style={draw=sguGreen,fill=green!6,rounded corners=2pt,align=center,
+                  font=\small\bfseries,inner sep=3pt,minimum width=3.1cm,
+                  minimum height=8mm},
+    dbpair/.style={-{Latex[length=1.8mm]},draw=gray!70,thick}
+  }
+
+  % Hàng 1
+  \node[dbsvc]  (s1) at (0,0)     {auth\_service};
+  \node[dbstore](d1) at (0,-1.1)  {sgu\_auth};
+  \node[dbsvc]  (s2) at (4,0)     {tour\_service};
+  \node[dbstore](d2) at (4,-1.1)  {sgu\_tour};
+  \node[dbsvc]  (s3) at (8,0)     {pricing\_service};
+  \node[dbstore](d3) at (8,-1.1)  {sgu\_pricing};
+
+  % Hàng 2
+  \node[dbsvc]  (s4) at (0,-2.6)  {booking\_service};
+  \node[dbstore](d4) at (0,-3.7)  {sgu\_booking};
+  \node[dbsvc]  (s5) at (4,-2.6)  {payment\_service};
+  \node[dbstore](d5) at (4,-3.7)  {sgu\_payment};
+  \node[dbsvc]  (s6) at (8,-2.6)  {invoice\_service};
+  \node[dbstore](d6) at (8,-3.7)  {sgu\_invoice};
+
+  % Hàng 3
+  \node[dbsvc]  (s7) at (0,-5.2)  {file\_service};
+  \node[dbstore](d7) at (0,-6.3)  {sgu\_file};
+  \node[dbsvc]  (s8) at (4,-5.2)  {notification\_service};
+  \node[dbstore](d8) at (4,-6.3)  {sgu\_notification};
+  \node[dbsvc]  (s9) at (8,-5.2)  {reporting\_service};
+  \node[dbstore](d9) at (8,-6.3)  {sgu\_reporting};
+
+  \foreach \i in {1,...,9}{\draw[dbpair] (s\i) -- (d\i);}
+\end{tikzpicture}

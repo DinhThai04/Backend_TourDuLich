@@ -1,0 +1,2 @@
+search_service=17052=8089
+api_gateway=13220=8888

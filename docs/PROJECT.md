@@ -15,7 +15,7 @@
 
 ## Kiến trúc và công nghệ
 
-Backend gồm các ứng dụng Spring Boot độc lập, giao tiếp REST qua gateway/HTTP. **Các service nghiệp vụ hiện dùng chung database `dbtour_v2`** và có một số transaction/JDBC đọc nhiều bảng để bảo đảm số chỗ, tiền và lịch sử. Đây là kiến trúc chia service với shared database, chưa phải database-per-service; không có cam kết đã triển khai hệ phân tán production.
+Backend gồm các ứng dụng Spring Boot độc lập, giao tiếp REST qua gateway/HTTP và sự kiện. **Runtime microservice dùng 9 database vật lý độc lập (`sgu_auth` → `sgu_reporting`) theo mô hình database-per-service**: mỗi service chỉ kết nối database của mình, không có cross-database JOIN/FK hay transaction phân tán; nhất quán giữa các service do internal API, outbox/inbox và saga đảm bảo. Biến thể `docker-compose.yml` một database `dbtour_v2` chỉ dùng cho phát triển nhanh/đối chiếu seed.
 
 | Thành phần | Công nghệ trong source |
 |---|---|
@@ -67,9 +67,11 @@ Sơ đồ thể hiện các thành phần chính, không liệt kê mọi lời 
 | search_service | 8089 | `/search` | SearchServiceApplication |
 | invoice_service | 8090 | `/invoice` | InvoiceServiceApplication |
 | ai_service | 8091 | `/ai` | AiServiceApplication |
+| notification_service | 8093 | `/notification` | NotificationServiceApplication |
+| reporting_service | 8092 | `/reporting` | ReportingServiceApplication |
 | api_gateway | 8888 | Không có | ApiGatewayApplication |
 
-Frontend gọi `http://localhost:8888/api/v1/<context>/...`; gateway bỏ hai đoạn `/api/v1`. Hai route notification:8082 và schedule:8085 đã được xóa khỏi cấu hình gateway vì không có module triển khai; không cần khởi động hai service này. n8n:5678 là container khai báo sẵn trong `docker-compose.yml` của repo backend, bật bằng `--profile mail`, không phải chatbot backend.
+Frontend gọi `http://localhost:8888/api/v1/<context>/...`; gateway bỏ hai đoạn `/api/v1`. Gateway chỉ route các module nghiệp vụ công khai (auth, tour, pricing, booking, payment, invoice, file, search, ai); `notification_service` (8093) và `reporting_service` (8092) là internal-only, không expose qua gateway. Không còn route/service `schedule`; tác vụ định kỳ do worker trong từng service và n8n đảm nhận. n8n:5678 là container khai báo sẵn trong `docker-compose.yml` của repo backend, bật bằng `--profile mail`, không phải chatbot backend.
 
 ## Cấu hình và khởi chạy
 

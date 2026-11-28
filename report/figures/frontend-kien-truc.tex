@@ -1,0 +1,55 @@
+% Kiến trúc frontend React và cách gọi backend.
+\begin{tikzpicture}[x=1cm,y=1cm]
+  % Khung trình duyệt
+  \node[draw=sguBlue!45,fill=softgray,rounded corners=5pt,minimum width=9.7cm,minimum height=13.0cm,
+        label={[font=\scriptsize\bfseries,color=sguBlue,anchor=north]north:Trình duyệt — React 19 + TypeScript + Vite}]
+        (fe) at (4.55,6.1) {};
+
+  % Các tầng
+  \node[box,minimum width=8.6cm,minimum height=1.0cm] (pages) at (4.55,11.2)
+    {Pages \& Layouts\\{\tiny Home · Tours · TourDetail · Booking · Invoice · Profile · Admin}};
+  \node[box,minimum width=8.6cm,minimum height=1.0cm] (comps) at (4.55,9.8)
+    {Components\\{\tiny Ant Design 5 · ProComponents · biểu mẫu · bảng · chatbot · gallery}};
+  \node[box,minimum width=8.6cm,minimum height=1.0cm] (router) at (4.55,8.4)
+    {Định tuyến \& bảo vệ\\{\tiny React Router 7 · RouteGuard · PermissionGate · phân quyền theo PERM}};
+  \node[box,minimum width=8.6cm,minimum height=1.0cm] (state) at (4.55,7.0)
+    {Trạng thái\\{\tiny Redux Toolkit (auth slice) · redux-persist sessionStorage · sessionService}};
+  \node[box,minimum width=8.6cm,minimum height=1.0cm] (api) at (4.55,5.6)
+    {Tầng dịch vụ\\{\tiny authServices · tourServices · bookingServices · paymentServices · aiServices ...}};
+  \node[edge,minimum width=8.6cm,minimum height=1.1cm] (http) at (4.55,4.0)
+    {HTTP client\\{\tiny Axios interceptor: Bearer token, tự refresh 401, chuẩn hóa \{code,message,result\}}};
+
+  \draw[arrow] (pages) -- (comps);
+  \draw[arrow] (comps) -- (router);
+  \draw[arrow] (router) -- (state);
+  \draw[arrow] (state) -- (api);
+  \draw[arrow] (api) -- (http);
+
+  % Socket.IO
+  \node[ext,minimum width=3.4cm,minimum height=1.0cm] (socket) at (4.55,2.2)
+    {Socket.IO client\\{\tiny sự kiện đánh giá realtime}};
+  \draw[darrow] (comps.east) -- ++(0.45,0) |- node[pos=0.25,right,font=\tiny]{join\_room} (socket.east);
+
+  % Nginx
+  \node[edge,minimum width=9.7cm,minimum height=1.0cm] (nginx) at (4.55,0.6)
+    {Nginx\\{\tiny \code{/api} $\rightarrow$ gateway \quad \code{/socket.io} $\rightarrow$ auth:8099 \quad SPA fallback}};
+  \draw[arrow] (http.south) -- (nginx.north -| http.south);
+  \draw[darrow] (socket.south) -- (nginx.north -| socket.south);
+
+  % Backend
+  \node[svc,minimum width=3.6cm,minimum height=1.0cm] (gw) at (12.8,4.0)
+    {API Gateway :8888\\{\tiny \code{/api/v1/**}}};
+  \node[svc,minimum width=3.6cm,minimum height=1.0cm] (svcs) at (12.8,2.4)
+    {12 microservices\\{\tiny auth · tour · booking · payment ...}};
+  \node[ext,minimum width=3.6cm,minimum height=1.0cm] (auth) at (12.8,0.7)
+    {auth\_service :8099\\{\tiny Socket.IO}};
+
+  \draw[arrow] (nginx.east) -- ++(1.0,0) |- node[pos=0.55,left,font=\tiny]{HTTP/JSON} (gw.west);
+  \draw[arrow] (gw.south) -- node[right,font=\tiny]{định tuyến} (svcs.north);
+  \draw[darrow] (nginx.east -| auth.west) -- node[above,font=\tiny]{WebSocket} (auth.west);
+
+  % Ghi chú
+  \node[font=\tiny,align=left,anchor=west] at (0.0,-0.7)
+    {Token lưu trong sessionStorage (không phải localStorage); khi gặp 401, client thử refresh một lần rồi mới kết thúc phiên.\\
+     Chatbot AI dùng \code{fetch} riêng, giới hạn kích thước phản hồi và kiểm tra chặt cấu trúc kết quả.};
+\end{tikzpicture}

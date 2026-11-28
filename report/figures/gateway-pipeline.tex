@@ -1,0 +1,36 @@
+\begin{tikzpicture}[x=1cm,y=1cm,node distance=4mm]
+  \node[box,minimum width=2.2cm] (req) at (0,5.2) {Request\\\tiny từ client};
+  \node[box,minimum width=2.2cm] (cors) at (2.8,5.2) {CORS\\\tiny kiểm tra origin};
+  \node[box,minimum width=2.4cm] (pub) at (5.8,5.2) {Kiểm tra\\\tiny whitelist công khai};
+  \node[box,minimum width=2.4cm] (rate) at (8.9,5.2) {Rate limit\\\tiny endpoint xác thực};
+  \node[box,minimum width=2.4cm] (cache) at (11.9,5.2) {Introspection\\\tiny cache 10 giây};
+  \node[box,minimum width=2.2cm] (auth) at (14.8,5.2) {Auth\\\tiny introspect};
+  \node[edge,minimum width=2.2cm] (route) at (14.8,2.9) {Định tuyến\\\tiny StripPrefix};
+
+  \draw[arrow] (req) -- (cors);
+  \draw[arrow] (cors) -- (pub);
+  \draw[arrow] (pub) -- node[above=0.5cm,font=\tiny]{không công khai} (rate);
+  \draw[arrow] (rate) -- (cache);
+  \draw[arrow] (cache) -- node[above=0.5cm,font=\tiny]{cache miss} (auth);
+  \draw[arrow] (auth) -- node[right,font=\tiny]{hợp lệ} (route);
+
+  % Nhánh công khai
+  \draw[arrow] (pub.south) -- ++(0,-1.1) -| (route.west);
+  \node[font=\tiny,anchor=west] at (5.95,3.9) {công khai};
+
+  % Nhánh lỗi
+  \node[ext,minimum width=2.4cm] (e429) at (8.9,2.9) {429\\\tiny quá nhiều yêu cầu};
+  \node[ext,minimum width=2.4cm] (e401) at (11.9,2.9) {401\\\tiny token không hợp lệ};
+  \node[ext,minimum width=2.6cm] (e503) at (14.8,0.9) {503 + Retry-After\\\tiny auth tạm thời không sẵn sàng};
+
+  \draw[darrow] (rate.south) -- (e429.north);
+  \draw[darrow] (cache.south) -- (e401.north);
+  \draw[darrow] (auth.south) -- (route.north);
+  \draw[darrow] (route.south) -- (e503.north);
+
+  % Ghi chú
+  \node[font=\tiny,align=left,anchor=west] at (0,1.2)
+    {\textbf{Nguyên tắc:} lỗi xác thực (401) khác lỗi hạ tầng (503).\\
+     Gateway không coi auth sập là token sai và không tự đăng xuất người dùng.\\
+     Circuit breaker mặc định mở sau 5 lỗi liên tiếp trong 10 giây.};
+\end{tikzpicture}

@@ -70,13 +70,13 @@ Các năng lực cốt lõi:
 | `api_gateway` | `8888` | *(Redis)* | Định tuyến `/api/v1`, rate limiting, xác thực tập trung |
 | `auth_service` | `8080` `/auth` (Socket.IO `8099`) | `sgu_auth` | Tài khoản, JWT, Google OAuth, RBAC, session validation |
 | `tour_service` | `8086` `/tour` | `sgu_tour` | Tour, lịch trình, địa điểm, phương tiện, `departure_hold` |
-| `pricing_service` | `8085` `/pricing` | `sgu_pricing` | Bảng giá theo nhóm tuổi và phụ thu |
-| `booking_service` | `8082` `/booking` | `sgu_booking` | Đặt tour, chốt giá snapshot, giữ/trả chỗ, dời lịch, hoàn tiền |
+| `pricing_service` | `8084` `/pricing` | `sgu_pricing` | Bảng giá theo nhóm tuổi và phụ thu |
+| `booking_service` | `8081` `/booking` | `sgu_booking` | Đặt tour, chốt giá snapshot, giữ/trả chỗ, dời lịch, hoàn tiền |
 | `payment_service` | `8083` `/payment` | `sgu_payment` | VNPay/MoMo sandbox, đối soát, `payment_outbox` |
-| `invoice_service` | `8084` `/invoice` | `sgu_invoice` | Hóa đơn theo booking, `invoice_inbox` (`payment.settled.v1`) |
+| `invoice_service` | `8090` `/invoice` | `sgu_invoice` | Hóa đơn theo booking, `invoice_inbox` (`payment.settled.v1`) |
 | `file_service` | `8087` `/file` | `sgu_file` | Upload/quản lý ảnh Cloudinary, `file_reference` & tombstone |
-| `notification_service` | `8090` | `sgu_notification` | Gửi email outbox, template và durable DLQ |
-| `reporting_service` | `8091` | `sgu_reporting` | Tổng hợp báo cáo vận hành (không PII) qua RabbitMQ |
+| `notification_service` | `8093` `/notification` | `sgu_notification` | Gửi email outbox, template và durable DLQ |
+| `reporting_service` | `8092` `/reporting` | `sgu_reporting` | Tổng hợp báo cáo vận hành (không PII) qua RabbitMQ |
 | `search_service` | `8089` `/search` | *(Elasticsearch/Redis)* | Tìm kiếm danh mục tour tốc độ cao |
 | `ai_service` | `8091` `/ai` | *(Stateless)* | Trợ lý AI tư vấn tour và tra cứu booking |
 

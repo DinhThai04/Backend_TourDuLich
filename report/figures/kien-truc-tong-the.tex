@@ -1,0 +1,72 @@
+\begin{tikzpicture}[x=1cm,y=1cm]
+  % ------------------------- Tác nhân -------------------------
+  \node[box,minimum width=3.0cm] (user)  at (1.4,12.8) {Người dùng\\trình duyệt};
+  \node[box,minimum width=3.0cm] (admin) at (5.1,12.8) {Quản trị viên};
+  \node[ext,minimum width=3.5cm] (n8n)   at (9.3,12.8) {n8n\\lập lịch nhắc};
+  \node[ext,minimum width=4.0cm] (ext)   at (13.6,12.8) {VNPay · MoMo\\Cloudinary · Groq · SMTP};
+
+  % ------------------------- Biên -----------------------------
+  \node[box,minimum width=15.2cm,minimum height=0.9cm] (fe) at (6.7,11.35)
+    {Frontend React 19 + TypeScript + Vite + Ant Design (Nginx)};
+  \node[edge,minimum width=16.0cm,minimum height=1.15cm] (gw) at (6.7,10.0)
+    {API Gateway :8888\\[0.6mm]
+     {\scriptsize CORS • Rate limit • JWT introspection • Circuit breaker • Định tuyến \code{/api/v1}}};
+
+  \draw[arrow] (user.south)  -- (fe.north -| user.south);
+  \draw[arrow] (admin.south) -- (fe.north -| admin.south);
+  \draw[arrow] (fe.south)    -- node[right,font=\scriptsize]{\code{/api/v1/**}} (gw.north);
+  % n8n gọi API nội bộ qua gateway; đi vòng qua phải để không cắt hộp Frontend.
+  \draw[darrow] (n8n.south) -- (9.3,12.1) -- (15.15,12.1) -- (15.15,10.0) -- (gw.east);
+  \node[font=\scriptsize,anchor=east] at (9.25,12.2) {internal key};
+
+  % ------------------------- 12 dịch vụ ------------------------
+  \begin{scope}[shift={(1.0,-0.5)}]
+    \node[svc,minimum width=3.2cm] (auth)  at (0.0,8.35) {auth\_service\\{\tiny :8080\quad /auth}};
+    \node[svc,minimum width=3.2cm] (tour)  at (3.7,8.35) {tour\_service\\{\tiny :8086\quad /tour}};
+    \node[svc,minimum width=3.2cm] (price) at (7.4,8.35) {pricing\_service\\{\tiny :8084\quad /pricing}};
+    \node[svc,minimum width=3.2cm] (book)  at (11.1,8.35) {booking\_service\\{\tiny :8081\quad /booking}};
+
+    \node[svc,minimum width=3.2cm] (pay)   at (0.0,7.15) {payment\_service\\{\tiny :8083\quad /payment}};
+    \node[svc,minimum width=3.2cm] (inv)   at (3.7,7.15) {invoice\_service\\{\tiny :8090\quad /invoice}};
+    \node[svc,minimum width=3.2cm] (file)  at (7.4,7.15) {file\_service\\{\tiny :8087\quad /file}};
+    \node[svc,minimum width=3.2cm] (noti)  at (11.1,7.15) {notification\_service\\{\tiny :8093\quad /notification}};
+
+    \node[svc,minimum width=3.2cm] (rep)   at (0.0,5.95) {reporting\_service\\{\tiny :8092\quad /reporting}};
+    \node[svc,minimum width=3.2cm] (search)at (3.7,5.95) {search\_service\\{\tiny :8089\quad /search}};
+    \node[svc,minimum width=3.2cm] (ai)    at (7.4,5.95) {ai\_service\\{\tiny :8091\quad /ai}};
+    \node[data,minimum width=3.2cm] (mq)   at (11.1,5.95) {RabbitMQ 3.13\\{\tiny exchange \code{sgu.events}}};
+
+    \begin{scope}[on background layer]
+      \node[draw=sguBlue!35,fill=blue!2,rounded corners=5pt,inner sep=8pt,
+            fit=(auth)(book)(pay)(noti)(rep)(search)(ai)(mq),
+            label={[font=\scriptsize\bfseries,color=sguBlue,anchor=south west,yshift=1pt]north west:Lớp dịch vụ nghiệp vụ — 12 ứng dụng Spring Boot}]
+            (svcgroup) {};
+    \end{scope}
+  \end{scope}
+
+  \draw[arrow] (gw.south) -- node[right,font=\scriptsize]{REST/JSON + OpenFeign} (svcgroup.north);
+
+  % Gọi nội bộ tiêu biểu được mô tả ở phần ghi chú phía dưới.
+
+  % ------------------------- Dữ liệu ---------------------------
+  \node[dbstore,minimum width=9.0cm,minimum height=1.15cm] (db) at (3.6,3.6)
+    {9 × MySQL 8.4 độc lập (database-per-service)\\[1pt]
+     {\tiny sgu\_auth · sgu\_tour · sgu\_pricing · sgu\_booking · sgu\_payment}\\[1pt]
+     {\tiny sgu\_invoice · sgu\_file · sgu\_notification · sgu\_reporting}};
+  \node[data,minimum width=3.4cm,minimum height=1.0cm] (redis) at (9.6,3.6)
+    {Redis 7.2\\{\tiny cache / rate limit}};
+  \node[data,minimum width=3.2cm,minimum height=1.0cm] (es) at (13.4,3.6)
+    {Elasticsearch\\{\tiny chỉ mục tour}};
+
+  \draw[arrow] (svcgroup.south -| db.north)   -- (db.north);
+  \draw[arrow] (svcgroup.south -| redis.north)-- (redis.north);
+  \draw[arrow] (svcgroup.south -| es.north)   -- (es.north);
+
+  % ------------------------- Ghi chú ---------------------------
+  \node[font=\tiny,align=left,anchor=west,text width=15.6cm] at (0.0,2.35)
+    {\textcolor{sguBlue}{$\longrightarrow$} gọi qua gateway \quad
+     \textcolor{gray}{$\dashrightarrow$} gọi nội bộ REST/OpenFeign \quad
+     \textcolor{sguTeal}{$\blacksquare$} sự kiện bất đồng bộ qua outbox/inbox\\
+     Gọi nội bộ tiêu biểu: booking $\rightarrow$ tour (giữ/trả chỗ) và pricing (quote); payment $\rightarrow$ invoice (sự kiện);
+     tour $\rightarrow$ file (ảnh); ai $\rightarrow$ tour/booking (chỉ đọc).};
+\end{tikzpicture}

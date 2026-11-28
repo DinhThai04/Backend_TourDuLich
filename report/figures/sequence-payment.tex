@@ -1,0 +1,36 @@
+\begin{tikzpicture}[x=1cm,y=1cm]
+  \node[participant] (c) at (0,0) {Client};
+  \node[participant] (g) at (2.8,0) {Gateway};
+  \node[participant] (p) at (5.6,0) {Payment};
+  \node[participant] (b) at (8.4,0) {Booking};
+  \node[participant] (v) at (11.2,0) {VNPay/MoMo};
+  \node[participant] (i) at (14.0,0) {Invoice};
+
+  \foreach \q in {c,g,p,b,v,i} \draw[lifeline] (\q.south) -- ++(0,-9.2);
+
+  \draw[msg] (c |- 0,-0.8) -- node[above,font=\tiny]{1. tạo thanh toán + số tiền mong đợi} (g |- 0,-0.8);
+  \draw[msg] (g |- 0,-1.4) -- node[above,font=\tiny]{2. JWT, owner} (p |- 0,-1.4);
+
+  \draw[msg] (p |- 0,-2.0) -- node[above,font=\tiny]{3. lấy quote của booking} (b |- 0,-2.0);
+  \draw[ret] (b |- 0,-2.5) -- node[above,font=\tiny]{4. số tiền server tính} (p |- 0,-2.5);
+
+  \draw[msg] (p |- 0,-3.1) -- node[above,font=\tiny]{5. tạo giao dịch + chữ ký} (v |- 0,-3.1);
+  \draw[ret] (v |- 0,-3.6) -- node[above,font=\tiny]{6. payUrl} (p |- 0,-3.6);
+
+  \draw[msg] (p |- 0,-4.2) -- node[above,font=\tiny]{7. trả URL thanh toán} (c |- 0,-4.2);
+  \draw[msg] (c |- 0,-4.8) -- node[above,font=\tiny]{8. khách thanh toán trên cổng} (v |- 0,-4.8);
+
+  \draw[msg] (v |- 0,-5.5) -- node[above,font=\tiny]{9. callback/IPN} (g |- 0,-5.5);
+  \draw[msg] (g |- 0,-6.0) -- node[above,font=\tiny]{10. chuyển tiếp} (p |- 0,-6.0);
+
+  \draw[msg] (p |- 0,-6.6) -- ++(0,-0.55) node[midway,right,font=\tiny]{11. kiểm tra chữ ký, số tiền, xử lý lặp};
+
+  \draw[msg] (p |- 0,-7.4) -- node[above,font=\tiny]{12. xác nhận đã thanh toán} (b |- 0,-7.4);
+  \draw[msg] (p |- 0,-8.0) -- node[above,font=\tiny]{13. tạo hóa đơn (idempotent)} (i |- 0,-8.0);
+  \draw[ret] (p |- 0,-8.6) -- node[above,font=\tiny]{14. kết quả giao dịch} (g |- 0,-8.6);
+  \draw[ret] (g |- 0,-9.1) -- node[above,font=\tiny]{15. response} (c |- 0,-9.1);
+
+  \node[draw=gray!50,fill=gray!4,rounded corners=2pt,font=\tiny,align=left,anchor=west]
+    at (0.2,-9.9) {Callback lặp được nhận diện theo mã giao dịch; số tiền và trạng thái phải khớp trước khi ghi nhận.\\
+    Giao dịch lệch trạng thái được đưa vào danh sách đối soát, không tự động hoàn tiền.};
+\end{tikzpicture}

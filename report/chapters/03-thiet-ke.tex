@@ -1,0 +1,878 @@
+\chapter{PHẦN III: THIẾT KẾ HỆ THỐNG}
+\label{chap:thiet-ke}
+
+Phần này trình bày thiết kế hệ thống từ tổng thể đến chi tiết: kiến trúc microservices, kiến trúc frontend, vai trò của API Gateway, cơ chế xác thực/phân quyền, thiết kế từng dịch vụ, giao tiếp đồng bộ/bất đồng bộ, bảo mật, 9 cơ sở dữ liệu, triển khai và kiểm thử.
+
+\section{Kiến trúc tổng thể}
+\label{sec:kien-truc-tong-the}
+
+Hệ thống được tổ chức thành bốn lớp logic: lớp truy cập (frontend và gateway), lớp dịch vụ nghiệp vụ, lớp dữ liệu và lớp hạ tầng dùng chung. Frontend React gọi API qua gateway tại \code{http://localhost:8888/api/v1}; gateway bỏ hai đoạn prefix \code{/api/v1} rồi chuyển tiếp đến dịch vụ tương ứng. Mỗi dịch vụ nghiệp vụ là một ứng dụng Spring Boot độc lập, sở hữu database riêng, có cấu hình, Dockerfile và kiểm thử riêng.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/kien-truc-tong-the}}
+\caption{Kiến trúc tổng thể hệ thống theo microservices và database-per-service}
+\label{fig:kien-truc}
+\end{figure}
+
+\subsection{Nguyên tắc thiết kế}
+
+\begin{itemize}
+  \item \textbf{Tách miền nghiệp vụ:} mỗi dịch vụ chịu trách nhiệm cho một nhóm nghiệp vụ có ranh giới rõ ràng; dịch vụ không truy cập trực tiếp dữ liệu của dịch vụ khác mà gọi internal API hoặc dùng sự kiện.
+  \item \textbf{Gateway là cửa ngõ duy nhất:} client chỉ biết một địa chỉ API; gateway xử lý CORS, xác thực tại biên, giới hạn tần suất, ngắt mạch và định tuyến.
+  \item \textbf{Phòng thủ nhiều lớp:} từng dịch vụ vẫn xác minh JWT và kiểm tra quyền sở hữu, không tin hoàn toàn vào header hay gateway.
+  \item \textbf{Cô lập dữ liệu:} mỗi dịch vụ có user, grant và volume riêng; không có khóa ngoại hay câu lệnh JOIN xuyên database.
+  \item \textbf{Idempotency:} tạo booking, callback thanh toán, tiêu thụ sự kiện, tạo hóa đơn và gửi mail đều có khóa/idempotency key để chống xử lý trùng.
+  \item \textbf{Nhất quán cuối:} các luồng không thể dùng transaction phân tán được xử lý bằng outbox, inbox, saga và đối soát; không giả định mọi lời gọi mạng đều thành công.
+  \item \textbf{Cấu hình ngoài mã nguồn:} thông tin nhạy cảm đọc từ biến môi trường hoặc file cấu hình cục bộ; không commit secret.
+\end{itemize}
+
+\subsection{Thành phần và trách nhiệm}
+
+Bảng~\ref{tab:dich-vu} liệt kê mười hai module, cổng chạy và trách nhiệm chính. Cổng và context-path được dùng thống nhất trong môi trường phát triển và trong Docker Compose.
+
+\begin{longtable}{@{}L{4.1cm}C{2.4cm}L{4.0cm}L{4.0cm}@{}}
+\caption{Các module backend và trách nhiệm chính}
+\label{tab:dich-vu}\\
+\toprule
+\textbf{Module} & \textbf{Cổng / context} & \textbf{Trách nhiệm} & \textbf{API tiêu biểu}\\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Module} & \textbf{Cổng / context} & \textbf{Trách nhiệm} & \textbf{API tiêu biểu}\\
+\midrule
+\endhead
+\bottomrule
+\endfoot
+\service{api\_gateway} & 8888 & Định tuyến \code{/api/v1}, CORS, xác thực tại biên, giới hạn tần suất, circuit breaker, mã lỗi thống nhất. & Mọi request từ frontend.\\
+\service{auth\_service} & 8080; Socket.IO 8099 \newline \code{/auth} & Đăng ký, đăng nhập, Google Sign-In, refresh/logout, introspection, hồ sơ, avatar, vai trò, quyền, trạng thái tài khoản, đánh giá. & \code{/users}, \code{/roles}, \code{/permissions}, \code{/reviews}.\\
+\service{tour\_service} & 8086 \newline \code{/tour} & Tour, lịch trình, địa điểm, phương tiện, lịch khởi hành, sức chứa, ảnh tour, snapshot danh mục cho search. & \code{/tours}, \code{/itineraries}, \code{/locations}, \code{/tour-departures}.\\
+\service{pricing\_service} & 8084 \newline \code{/pricing} & Bảng giá theo nhóm tuổi, phụ thu, kiểm tra giá nguyên VND, lấy giá theo lô. & \code{/prices}, \code{/prices/batch}.\\
+\service{booking\_service} & 8081 \newline \code{/booking} & Đặt tour, hành khách, giữ/trả chỗ, hết hạn giữ chỗ, dời lịch, hoàn tiền nội bộ, outbox mail. & \code{/book}, \code{/customer}, \code{/changes}, \code{/advice}.\\
+\service{payment\_service} & 8083 \newline \code{/payment} & Tạo giao dịch VNPay/MoMo, kiểm tra chữ ký/số tiền, callback/IPN, đối soát, phát sự kiện thanh toán. & \code{/vnpay}, \code{/momo}, \code{/reconciliation}.\\
+\service{invoice\_service} & 8090 \newline \code{/invoice} & Tạo và đọc hóa đơn theo booking/khách hàng; chống tạo trùng; tiêu thụ \code{payment.settled.v1}. & \code{/direct}, nội bộ \code{/internal/invoice}.\\
+\service{file\_service} & 8087 \newline \code{/file} & Upload ảnh tour/địa điểm/avatar lên Cloudinary; kiểm tra định dạng/kích thước; dọn ảnh; giới hạn tải xuống. & \code{/media/**}, \code{/owner/**}.\\
+\service{notification\_service} & 8093 \newline \code{/notification} & Sở hữu \code{mail\_outbox}, template, delivery attempt; gửi email bất đồng bộ, DLQ và retry. & \code{/internal/\hspace{0pt}notifications/\hspace{0pt}mail}.\\
+\service{reporting\_service} & 8092 \newline \code{/reporting} & Tổng hợp chỉ số vận hành không PII từ sự kiện; read model \code{ops\_*}, audit timeline. & \code{/internal/reports/**}.\\
+\service{search\_service} & 8089 \newline \code{/search} & Đồng bộ snapshot tour, chỉ mục Elasticsearch, cache Redis, tìm kiếm theo điểm đến/giá/ngày. & \code{/tours}, \code{/tours/search}, \code{/tours/sync}.\\
+\service{ai\_service} & 8091 \newline \code{/ai} & Hội thoại tư vấn, trích xuất tiêu chí, đọc dữ liệu tour/booking, chính sách, tra cứu booking-help. & \code{/conversations}, \code{/chat}, \code{/policies}, \code{/booking-help}.\\
+\end{longtable}
+
+\subsection{Tích hợp với hệ thống ngoài}
+
+\begin{table}[H]
+\centering
+\caption{Các tích hợp ngoài và cách kiểm soát}
+\label{tab:tich-hop}
+\small
+\begin{tabularx}{\textwidth}{@{}L{2.6cm}L{3.1cm}L{3.4cm}Y@{}}
+\toprule
+\textbf{Dịch vụ ngoài} & \textbf{Dùng bởi} & \textbf{Mục đích} & \textbf{Kiểm soát}\\
+\midrule
+Google OAuth & auth\_service & Xác thực Google ID token & Kiểm tra audience, \code{email\_verified}, thời hạn; tạo tài khoản khách hàng nếu hợp lệ.\\
+VNPay sandbox & payment\_service & Tạo URL thanh toán, nhận return/IPN & Chữ ký HMAC-SHA512, kiểm tra số tiền, mã đơn, trạng thái, xử lý lặp.\\
+MoMo AIO v2 & payment\_service & Tạo giao dịch, nhận IPN & Chữ ký, kiểm tra miền \code{payUrl}, số tiền, trạng thái; thiếu cấu hình trả 503.\\
+Cloudinary & file\_service & Lưu trữ và phân phối ảnh & Kiểm tra loại/kích thước/pixel trước khi upload; lưu public ID; dọn ảnh orphan.\\
+Groq API & ai\_service & Sinh câu trả lời/tư vấn & Chỉ gửi dữ liệu công khai hoặc dữ liệu chủ tài khoản; guard nội dung; timeout và giới hạn token.\\
+SMTP & notification\_service & Gửi email giao dịch & Outbox, số lần thử, trạng thái giao nhận; không gửi lại vô hạn khi trạng thái không rõ.\\
+n8n & booking/gateway & Lập lịch nhắc thanh toán/khởi hành & Gọi API nội bộ với \code{X-Internal-Mail-Key}; không quyết định số ghế/thanh toán.\\
+Elasticsearch/\hspace{0pt}Redis & search\_service & Chỉ mục và cache tìm kiếm & Snapshot có kiểm tra; cache generation; lỗi search không làm hỏng luồng đặt tour.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Thiết kế Frontend}
+\label{sec:thiet-ke-frontend}
+
+Frontend là ứng dụng single-page React 19, TypeScript và Vite. Mã nguồn chia theo \code{pages}, \code{layouts}, \code{components}, \code{services}, \code{store}, \code{routes}, \code{api} và \code{utils}. Ant Design cung cấp thành phần giao diện; Redux Toolkit quản lý trạng thái phiên; Axios là HTTP client.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/frontend-kien-truc}}
+\caption{Kiến trúc frontend và cách giao tiếp với backend}
+\label{fig:frontend}
+\end{figure}
+
+\subsection{Định tuyến và phân quyền giao diện}
+
+Bảng~\ref{tab:frontend-routes} tóm tắt các nhóm route chính. Route công khai nằm trong \code{MainLayout} (có header/footer); route khách hàng yêu cầu đăng nhập; route quản trị yêu cầu quyền tương ứng và được bảo vệ bởi \code{RouteGuard} và \code{PermissionGate}.
+
+\begin{table}[H]
+\centering
+\caption{Các nhóm route chính của frontend}
+\label{tab:frontend-routes}
+\small
+\begin{tabularx}{\textwidth}{@{}L{5.0cm}L{4.0cm}Y@{}}
+\toprule
+\textbf{Đường dẫn} & \textbf{Màn hình} & \textbf{Điều kiện truy cập}\\
+\midrule
+\code{/}, \code{/tours}, \code{/tours/detail/:id} & Trang chủ, danh sách, chi tiết tour & Công khai.\\
+\code{/about}, \code{/policies} & Giới thiệu, chính sách/FAQ & Công khai.\\
+\code{/login}, \code{/register} & Đăng nhập, đăng ký & Chỉ khách chưa đăng nhập.\\
+\code{/booking}, \code{/invoice/booking/:id} & Đặt tour, thanh toán/hóa đơn & Đã đăng nhập.\\
+\code{/profile} & Thông tin cá nhân, lịch sử đặt tour & Đã đăng nhập.\\
+\code{/admin} & Trang điều hướng quản trị & Có quyền quản trị.\\
+\code{/admin/operations} & Việc cần xử lý, báo cáo vận hành & Quyền vận hành/đối soát.\\
+\code{/admin/managerBooking}, \code{/admin/managerInvoice} & Quản lý booking, hóa đơn & Quyền tương ứng.\\
+\code{/admin/managerTour/*} & Tour, lịch khởi hành, lịch trình, địa điểm, giá, đánh giá & Quyền theo từng module.\\
+\code{/admin/managerUser}, \code{/admin/role}, \code{/admin/managerRole} & Người dùng, vai trò, quyền & Quyền quản trị hệ thống.\\
+\code{/admin/\hspace{0pt}paymentReconciliation} & Đối soát thanh toán & Quyền đối soát.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Trạng thái, xác thực và gọi API}
+
+Access token và refresh token được lưu trong \code{sessionStorage} (không dùng \code{localStorage}); \code{sessionService} mã hóa nhẹ dạng base64 và Redux chỉ giữ thông tin người dùng. Axios gắn \code{Authorization: Bearer} cho các request cần thiết; khi nhận 401, client thử refresh một lần rồi mới kết thúc phiên và chuyển về \code{/login}. Response được chuẩn hóa theo envelope \code{\{code, message, result\}}, với \code{code = 1000} là thành công.
+
+Chatbot AI dùng một \code{fetch} riêng thay vì Axios để kiểm soát timeout, kích thước phản hồi và cấu trúc kết quả. Socket.IO client kết nối tới auth service để nhận sự kiện đánh giá mới; khi triển khai qua Nginx, đường dẫn \code{/socket.io} được proxy tới cổng 8099.
+
+\section{Thiết kế API Gateway}
+\label{sec:gateway}
+
+\subsection{Định tuyến}
+
+Gateway khai báo route theo path prefix. Bảng~\ref{tab:route} tóm tắt các route chính; thứ tự route và predicate được giữ cố định để tránh một route quá rộng che route khác.
+
+\begin{table}[H]
+\centering
+\caption{Định tuyến chính của API Gateway}
+\label{tab:route}
+\small
+\begin{tabularx}{\textwidth}{@{}L{4.4cm}L{3.2cm}Y@{}}
+\toprule
+\textbf{Path prefix} & \textbf{Dịch vụ đích} & \textbf{Ghi chú}\\
+\midrule
+\code{/api/v1/auth/**} & auth\_service & Xác thực, tài khoản, vai trò, quyền, đánh giá; Socket.IO đi cổng riêng 8099.\\
+\code{/api/v1/tour/**} & tour\_service & Danh mục, lịch trình, địa điểm, phương tiện, lịch khởi hành.\\
+\code{/api/v1/pricing/**} & pricing\_service & Bảng giá và giá theo lô.\\
+\code{/api/v1/booking/**} & booking\_service & Booking, hành khách, dời lịch, mail nội bộ.\\
+\code{/api/v1/payment/**} & payment\_service & VNPay/MoMo, callback/IPN, đối soát.\\
+\code{/api/v1/invoice/**} & invoice\_service & Hóa đơn.\\
+\code{/api/v1/file/**} & file\_service & Ảnh, tải xuống, quyền sở hữu media.\\
+\code{/api/v1/search/**} & search\_service & Tìm kiếm, đồng bộ chỉ mục.\\
+\code{/api/v1/ai/**} & ai\_service & Hội thoại, chính sách, booking-help.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Xác thực tại biên và introspection}
+
+Gateway sử dụng \code{GlobalFilter} để kiểm tra request trước khi định tuyến. Quy trình gồm:
+
+\begin{enumerate}
+  \item Nếu là endpoint công khai đã whitelist, cho qua ngay. Whitelist được khai báo chính xác theo phương thức và dạng path, không dùng wildcard mở rộng.
+  \item Nếu không công khai, yêu cầu đúng một header \code{Authorization: Bearer <token>}. Thiếu hoặc sai định dạng trả 401.
+  \item Nếu token vừa được chấp nhận trong cửa sổ cache (mặc định 10 giây), bỏ qua introspection và định tuyến ngay.
+  \item Nếu cache miss, gọi auth service để introspect. Kết quả hợp lệ được ghi nhớ; kết quả không hợp lệ trả 401.
+  \item Nếu auth service không phản hồi hoặc circuit breaker đang mở, trả 503 kèm \code{Retry-After} thay vì 401. Điều này tránh việc auth sập bị hiểu nhầm là người dùng hết phiên.
+\end{enumerate}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/gateway-pipeline}}
+\caption{Luồng xử lý request tại API Gateway}
+\label{fig:gateway-pipeline}
+\end{figure}
+
+Endpoint \code{/auth/users/introspect} bị chặn từ bên ngoài vì nếu công khai sẽ trở thành công cụ kiểm tra token tùy ý. Gateway và search service gọi trực tiếp auth service trong mạng nội bộ. Tương tự, endpoint dispatch mail nội bộ yêu cầu khóa \code{X-Internal-Mail-Key} và chỉ chấp nhận POST.
+
+\subsection{Giới hạn tần suất}
+
+Gateway áp dụng giới hạn theo IP và theo từng endpoint xác thực/AI. Bộ đếm lưu trong bộ nhớ, có giới hạn số bucket để tránh tăng bộ nhớ không kiểm soát; đây là biện pháp phù hợp cho một gateway instance trong đồ án, không thay thế rate limiter phân tán ở production.
+
+\begin{table}[H]
+\centering
+\caption{Giới hạn tần suất mặc định tại gateway}
+\label{tab:rate-limit}
+\small
+\begin{tabularx}{\textwidth}{@{}L{4.6cm}C{3.0cm}Y@{}}
+\toprule
+\textbf{Endpoint/nhóm} & \textbf{Giới hạn mặc định} & \textbf{Biến cấu hình}\\
+\midrule
+Đăng nhập & 20 lượt/phút/IP & \code{AUTH\_LOGIN\_LIMIT}\\
+Đăng ký & 5 lượt/phút/IP & \code{AUTH\_REGISTER\_LIMIT}\\
+Google Sign-In & 10 lượt/phút/IP & \code{AUTH\_GOOGLE\_LIMIT}\\
+Làm mới token & 30 lượt/phút/IP & \code{AUTH\_REFRESH\_LIMIT}\\
+Đổi mật khẩu & 10 lượt/phút/IP & \code{AUTH\_PASSWORD\_CHANGE\_LIMIT}\\
+Tạo phiên AI & 20 lượt/30 phút/IP & \code{AI\_CREATE\_LIMIT}\\
+Chat AI & 6 lượt/phút và 40 lượt/ngày/IP & \code{AI\_CHAT\_MINUTE\_LIMIT}, \code{AI\_CHAT\_DAY\_LIMIT}\\
+Reset phiên AI & 10 lượt/phút/IP & \code{AI\_RESET\_LIMIT}\\
+Booking-help & 10 lượt/phút/IP & \code{AI\_BOOKING\_HELP\_LIMIT}\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Khi vượt giới hạn, gateway trả HTTP 429 với mã nội bộ 1429, thông điệp tiếng Việt và header \code{Retry-After} tương ứng cửa sổ thời gian. Các bucket được tách theo endpoint, nên một endpoint bị giới hạn không chặn các endpoint khác.
+
+\subsection{Circuit breaker và xử lý lỗi}
+
+Circuit breaker cho auth service mặc định mở sau 5 lỗi liên tiếp và giữ mở trong 10 giây. Khi mở, gateway trả 503 ngay mà không gọi auth, giúp giảm tải cho dịch vụ đang gặp sự cố. Lỗi 4xx từ auth (token sai/hết hạn) được coi là từ chối hợp lệ, không tính vào ngưỡng lỗi hạ tầng. Cách phân biệt này được kiểm thử trong \code{AuthUnavailableGatewayTest}.
+
+\begin{table}[H]
+\centering
+\caption{Mã lỗi và ý nghĩa thường gặp}
+\label{tab:error-code}
+\small
+\begin{tabularx}{\textwidth}{@{}C{2.0cm}C{2.2cm}Y@{}}
+\toprule
+\textbf{Mã nội bộ} & \textbf{HTTP} & \textbf{Ý nghĩa}\\
+\midrule
+1000 & 200 & Thành công; \code{result} chứa dữ liệu.\\
+1401 & 401 & Chưa đăng nhập, thiếu token hoặc token không hợp lệ.\\
+1403 & 403 & Đã xác thực nhưng không có quyền hoặc không phải chủ dữ liệu.\\
+1405 & 405 & Phương thức không được phép cho endpoint nội bộ.\\
+1429 & 429 & Vượt giới hạn tần suất; client nên chờ theo \code{Retry-After}.\\
+1503 & 503 & Dịch vụ phụ thuộc tạm thời không sẵn sàng; có thể thử lại.\\
+9999 & 500 & Lỗi hệ thống không lường trước; không trả chi tiết nhạy cảm.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Thiết kế xác thực và phân quyền}
+\label{sec:xac-thuc}
+
+\subsection{JWT và phiên đăng nhập}
+
+Auth service phát hành hai loại token:
+
+\begin{itemize}
+  \item \textbf{Access token:} dùng cho các API nghiệp vụ, thời hạn mặc định 3600 giây (1 giờ).
+  \item \textbf{Refresh token:} chỉ dùng để lấy cặp token mới, thời hạn mặc định 72000 giây (20 giờ).
+\end{itemize}
+
+Token được ký bằng HS256 với khóa dùng chung giữa auth và các dịch vụ xác minh. Claim quan trọng gồm \code{sub} (mã tài khoản), \code{iss} (\code{tour.com}), \code{iat}, \code{exp}, \code{jti}, \code{tokenType} (ACCESS/REFRESH), \code{scope}, \code{sessionEpoch} và \code{credentialVersion}. \code{sessionEpoch} cho phép thu hồi toàn bộ phiên của một tài khoản mà không cần lưu danh sách access token; \code{credentialVersion} gắn token với phiên bản thông tin xác thực.
+
+\subsection{Đăng nhập, làm mới và thu hồi phiên}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/sequence-auth}}
+\caption{Luồng đăng nhập, introspection và làm mới token}
+\label{fig:sequence-auth}
+\end{figure}
+
+Các điểm thiết kế đáng chú ý:
+
+\begin{itemize}
+  \item \textbf{Chống dò tài khoản:} nếu email không tồn tại, auth vẫn thực hiện bcrypt với một hash giả để thời gian phản hồi tương đương trường hợp thật. Tài khoản bị khóa hoặc thiếu vai trò trả cùng lỗi \code{BAD\_CREDENTIALS} như sai mật khẩu.
+  \item \textbf{Refresh token bị dùng lại:} nếu một refresh token đã bị tiêu thụ nhưng tiếp tục được dùng, hệ thống coi đây là dấu hiệu lộ token, ghi sự kiện \code{TOKEN\_REPLAY} và thu hồi toàn bộ phiên của tài khoản bằng cách tăng \code{sessionEpoch}.
+  \item \textbf{Thay đổi quyền:} khi vai trò hoặc quyền của tài khoản thay đổi, \code{sessionEpoch} được tăng trong cùng transaction với thay đổi. JWT cũ mất hiệu lực ngay; nếu chỉ cấp thêm quyền, người dùng nhận quyền mới ở lần refresh tiếp theo.
+  \item \textbf{Đăng xuất:} token hiện tại được đưa vào danh sách vô hiệu hóa; bản ghi có thời hạn bằng thời hạn token để có thể dọn dẹp sau đó.
+\end{itemize}
+
+\subsection{Google Sign-In}
+
+Auth service xác minh Google ID token bằng thư viện chính thức: kiểm tra chữ ký, audience khớp \code{GOOGLE\_CLIENT\_ID}, email đã được xác minh và token còn hiệu lực. Nếu email chưa tồn tại, hệ thống tạo tài khoản khách hàng với vai trò mặc định; nếu đã tồn tại, hệ thống đăng nhập vào tài khoản đó. Việc xác minh Google được thực hiện ngoài transaction cơ sở dữ liệu để không giữ kết nối trong lúc chờ mạng.
+
+\subsection{Phân quyền theo vai trò và quyền}
+
+Mỗi vai trò có danh sách quyền; mỗi quyền có mã duy nhất. Khi tạo JWT, auth service sinh \code{scope} gồm:
+
+\begin{itemize}
+  \item \code{SGU\_SUPER\_ADMIN} cho tài khoản quản trị cao nhất;
+  \item \code{ROLE\_<tên vai trò>} để kiểm tra vai trò;
+  \item \code{PERM:<mã quyền>} cho từng quyền được cấp.
+\end{itemize}
+
+Các dịch vụ dùng \code{@PreAuthorize} hoặc kiểm tra thủ công để bảo vệ endpoint. Ngoài quyền theo vai trò, các dịch vụ còn kiểm tra \textbf{quyền sở hữu}: booking, hóa đơn, đánh giá và tra cứu AI chỉ trả dữ liệu thuộc tài khoản đang đăng nhập. Quyền sở hữu không thể thay thế bằng cách gửi một \code{accountId} khác trong body.
+
+\subsection{Vòng đời tài khoản}
+
+Tài khoản có ba trạng thái: \code{ACTIVE}, \code{LOCKED}, \code{ARCHIVED}. Quy tắc xử lý:
+
+\begin{itemize}
+  \item Chỉ tài khoản \code{ACTIVE} mới đăng nhập và thực hiện giao dịch.
+  \item Quản trị viên có thể khóa/mở khóa tài khoản; thao tác được ghi vào lịch sử sự kiện tài khoản.
+  \item Chỉ xóa thật tài khoản đã khóa và không có lịch sử nghiệp vụ. Tài khoản đã có booking, hóa đơn hoặc đánh giá được chuyển sang \code{ARCHIVED} để bảo toàn dữ liệu.
+  \item Trước khi lưu trữ/xóa, auth service phối hợp với booking và các dịch vụ liên quan qua internal API để kiểm tra điều kiện; không xóa dữ liệu đang được tham chiếu.
+\end{itemize}
+
+\section{Thiết kế các microservice nghiệp vụ}
+\label{sec:thiet-ke-dich-vu}
+
+\subsection{Auth service}
+\label{subsec:auth-service}
+
+Auth service quản lý danh tính và quyền truy cập. Ngoài các API xác thực, dịch vụ còn quản lý hồ sơ, avatar, vai trò, quyền, trạng thái tài khoản và đánh giá tour. Các nhóm API chính:
+
+\begin{itemize}
+  \item \code{POST /auth/users/login}, \code{/register}, \code{/google}, \code{/refresh}, \code{/logout}, \code{/Change-password}.
+  \item \code{POST /auth/users/introspect} (nội bộ), \code{GET /auth/users/\{id\}}, \code{GET /auth/users/list}, cập nhật hồ sơ/avatar.
+  \item \code{PUT /auth/users/\{id\}/\hspace{0pt}status}, \code{POST /auth/users/\{id\}/\hspace{0pt}archive}, \code{GET /auth/users/\{id\}/\hspace{0pt}events}.
+  \item \code{/auth/roles}, \code{/auth/permissions} cho quản trị vai trò/quyền.
+  \item \code{/auth/reviews} cho tạo, duyệt, xem đánh giá và kiểm tra điều kiện đánh giá.
+  \item Nhóm nội bộ \code{/internal/auth/users/**} và \code{/internal/auth/sessions/validate} cho các dịch vụ khác kiểm tra tài khoản/phiên mà không đọc trực tiếp \code{sgu\_auth}.
+\end{itemize}
+
+Auth service gọi file service để lưu avatar và gọi booking service để kiểm tra điều kiện đánh giá. Các lời gọi ra ngoài được đặt ngoài transaction để tránh giữ khóa dữ liệu trong lúc chờ mạng. Khi xóa tài khoản, auth ghi \code{auth.account.deleted.v1} vào \code{auth\_outbox} và publisher gọi file service để dọn media.
+
+\subsection{Tour service}
+\label{subsec:tour-service}
+
+Tour service là nguồn dữ liệu chính cho danh mục tour. Dịch vụ quản lý:
+
+\begin{itemize}
+  \item Tour: tiêu đề, mô tả, chương trình, thông tin nổi bật, trạng thái, liên kết bảng giá.
+  \item Lịch trình theo ngày; địa điểm khởi hành/điểm đến; phương tiện; điểm tập trung.
+  \item Lịch khởi hành: ngày đi, ngày về, sức chứa, số chỗ còn lại, trạng thái vận hành, version để chống ghi đè.
+  \item Ảnh tour: phối hợp file service để lưu ảnh và snapshot ảnh.
+  \item Snapshot danh mục cho search service, chỉ trả qua endpoint nội bộ có khóa.
+  \item Giữ/trả chỗ qua \code{departure\_hold}: booking gọi internal API để giữ ghế với TTL, tour kiểm tra sức chứa trong transaction.
+\end{itemize}
+
+Các quy tắc quan trọng gồm: ngày đi phải ở tương lai, ngày về sau ngày đi, sức chứa từ 1 đến 32767, không xóa tour/lịch đã có lịch sử booking hoặc dời lịch. Khi lịch khởi hành thay đổi, tour service phát sự kiện để cập nhật snapshot ảnh/danh mục tìm kiếm. Giá được lấy từ pricing service; nếu pricing tạm thời không phản hồi, thông tin lịch khởi hành vẫn được trả nhưng giá có thể thiếu, tránh làm hỏng toàn bộ trang chi tiết.
+
+\subsection{Pricing service}
+\label{subsec:pricing-service}
+
+Pricing service quản lý bảng giá theo nhóm tuổi: người lớn, trẻ em, trẻ nhỏ, em bé và phụ thu phòng đơn. Mỗi bảng giá có các mức giá nguyên VND trong khoảng 0--9.999.999.999; giá người lớn phải lớn hơn 0. Dịch vụ hỗ trợ:
+
+\begin{itemize}
+  \item Tạo, sửa, xem bảng giá theo mã.
+  \item Lấy giá theo lô (\code{POST /prices/batch}) và qua internal API \code{/internal/pricing/\hspace{0pt}prices/batch} để tour/\hspace{0pt}booking giảm số lời gọi.
+  \item Kiểm tra quyền ghi: chỉ tài khoản có quyền quản lý giá mới được tạo/sửa.
+\end{itemize}
+
+Giá người lớn là giá chuẩn cho hiển thị và tìm kiếm; khi thanh toán, hệ thống tính theo từng hành khách và nhóm tuổi tương ứng. Quy tắc giá nguyên VND tránh sai số làm tròn khi tính tổng tiền.
+
+\subsection{Booking service}
+\label{subsec:booking-service}
+
+Booking service là trung tâm của luồng đặt tour. Dịch vụ quản lý booking, danh sách hành khách, giữ chỗ, hết hạn giữ chỗ, dời lịch, hoàn tiền nội bộ và outbox mail. Hình~\ref{fig:sequence-booking} mô tả luồng tạo booking.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/sequence-booking}}
+\caption{Luồng tạo booking và giữ chỗ}
+\label{fig:sequence-booking}
+\end{figure}
+
+Các quy tắc chính:
+
+\begin{itemize}
+  \item \textbf{Kiểm tra quyền sở hữu:} \code{userId} trong request phải trùng tài khoản đang đăng nhập.
+  \item \textbf{Giới hạn giữ chỗ:} tối đa 5 lượt giữ chỗ đang hoạt động và 40 ghế đang giữ cho mỗi tài khoản; mỗi booking tối đa 40 hành khách.
+  \item \textbf{Chống bán quá chỗ:} gọi tour service giữ chỗ; tour kiểm tra sức chứa trong transaction trước khi ghi \code{departure\_hold}.
+  \item \textbf{Hạn thanh toán:} nếu còn hơn 7 ngày, hạn là \(\min(\text{ngày đặt}+6, \text{ngày đi}-6)\) lúc 08:00; nếu còn tối đa 7 ngày, hạn là \(\min(\text{thời điểm đặt}+15\text{ phút}, \text{giờ đi})\).
+  \item \textbf{Chốt giá:} giá được chụp tại thời điểm tạo booking và lưu trong \code{booking\_price\_snapshot}; thanh toán không tính lại theo giá hiện tại.
+  \item \textbf{Chống trùng:} \code{clientKey} do client sinh; nếu request gửi lại cùng khóa và cùng nội dung, hệ thống trả booking đã tạo thay vì tạo mới.
+  \item \textbf{Giải phóng chỗ:} worker định kỳ kiểm tra reservation hết hạn, trả chỗ và ghi sự kiện mail; thao tác trả chỗ có bù trừ khi lỗi.
+\end{itemize}
+
+Ngoài luồng tạo booking, dịch vụ còn cung cấp API cho payment service lấy thông tin thanh toán/quote, API dời lịch cho khách và quản trị, API kiểm tra điều kiện đánh giá và API nội bộ để n8n lập lượt nhắc.
+
+\subsection{Payment service}
+\label{subsec:payment-service}
+
+Payment service tích hợp VNPay và MoMo sandbox. Luồng thanh toán được mô tả ở Hình~\ref{fig:sequence-payment}.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/sequence-payment}}
+\caption{Luồng thanh toán và xác nhận giao dịch}
+\label{fig:sequence-payment}
+\end{figure}
+
+Các điểm thiết kế:
+
+\begin{itemize}
+  \item \textbf{Quote do server tính:} client không quyết định số tiền; payment service lấy quote từ booking service và đối chiếu với số tiền mong đợi của client.
+  \item \textbf{Chữ ký:} VNPay dùng HMAC-SHA512 trên chuỗi tham số chuẩn hóa; MoMo dùng chữ ký theo tài liệu AIO v2. Callback/IPN phải vượt qua kiểm tra chữ ký trước khi xử lý.
+  \item \textbf{Kiểm tra số tiền và mã đơn:} số tiền, mã giao dịch, trạng thái và thời hạn phải khớp; không tin dữ liệu client gửi.
+  \item \textbf{Xử lý lặp:} callback lặp được nhận diện theo mã giao dịch; kết quả đã xử lý được trả lại thay vì tạo bản ghi mới.
+  \item \textbf{Sự kiện thanh toán:} sau khi xác nhận, payment ghi \code{payment.settled.v1} hoặc \code{payment.refunded.v1} vào \code{payment\_outbox}; publisher đẩy lên RabbitMQ để invoice, notification và reporting tiêu thụ.
+  \item \textbf{Đối soát:} các giao dịch treo, giao dịch đã thanh toán nhưng chưa ghi nhận hoặc cần hoàn tiền được đưa vào danh sách đối soát. Người vận hành ghi nhận bằng chứng; hệ thống không tự chuyển tiền ngân hàng.
+  \item \textbf{Cấu hình bắt buộc:} payment service từ chối khởi động nếu thiếu \code{VNPAY\_HASH\_SECRET} hoặc \code{VNPAY\_TMN\_CODE}; MoMo thiếu cấu hình sẽ báo chưa sẵn sàng thay vì tạo giao dịch giả.
+\end{itemize}
+
+\subsection{Invoice service}
+\label{subsec:invoice-service}
+
+Invoice service tạo và đọc hóa đơn. Hóa đơn gắn với booking và tài khoản; mỗi booking chỉ có một hóa đơn (ràng buộc \code{uk\_invoice\_booking}). Dịch vụ kiểm tra quyền đọc theo chủ sở hữu hoặc quyền quản trị, kiểm tra số tiền và trạng thái thanh toán trước khi tạo. Hóa đơn được tạo chủ yếu từ sự kiện \code{payment.settled.v1}: consumer ghi \code{invoice\_inbox} để chống trùng rồi upsert hóa đơn trong transaction cục bộ. Với luồng thanh toán cũ (legacy), hóa đơn có thể được tạo qua API trực tiếp; với luồng giữ chỗ mới, booking phải thanh toán qua cổng và không tạo hóa đơn tiền mặt trực tiếp.
+
+\subsection{File service}
+\label{subsec:file-service}
+
+File service quản lý ảnh tour, ảnh địa điểm và avatar. Dịch vụ kiểm tra:
+
+\begin{itemize}
+  \item Tối đa 10 ảnh mỗi lượt, 5 MiB mỗi ảnh, tổng 25 MiB; avatar tối đa 2 MiB.
+  \item Chỉ nhận JPEG, PNG, WebP; kiểm tra chữ ký tệp (magic bytes), không tin \code{Content-Type} do client khai báo.
+  \item Tối đa 20 triệu pixel; chỉ nhận ảnh tĩnh, không nhận SVG tải lên.
+  \item Giới hạn số luồng giải mã ảnh đồng thời để tránh cạn bộ nhớ.
+\end{itemize}
+
+Ảnh được tải lên Cloudinary; metadata và public ID được lưu trong \code{file\_mgmt}. Khi ảnh bị thay hoặc xóa, dịch vụ kiểm tra ảnh còn được tham chiếu hay không trước khi dọn; thao tác dọn dẹp được thiết kế để có thể thử lại khi lỗi mạng. Các endpoint tải xuống có giới hạn theo IP để giảm lạm dụng. File service dùng \code{avatar\_media\_lock} và \code{tour\_media\_lock} để chống tái tạo media sau khi đã xóa (tombstone) và nhận sự kiện dọn media từ auth/tour.
+
+\subsection{Notification service}
+\label{subsec:notification-service}
+
+Notification service sở hữu toàn bộ việc gửi email. Dịch vụ nhận sự kiện qua RabbitMQ (và API nội bộ idempotent), ghi \code{mail\_outbox}, rồi worker gửi qua SMTP theo batch. Các bảng chính gồm \code{mail\_outbox}, \code{mail\_template}, \code{mail\_delivery\_attempt}, \code{mail\_suppression}. Trạng thái mail gồm \code{PENDING}, \code{CLAIMED}, \code{DISPATCHING}, \code{SENT}, \code{RETRY}, \code{FAILED}, \code{UNKNOWN}, \code{SKIPPED}. Khóa \code{eventKey} bảo đảm không gửi trùng; sự kiện lỗi được đưa vào DLQ và có thể replay có kiểm soát.
+
+\subsection{Reporting service}
+\label{subsec:reporting-service}
+
+Reporting service xây dựng read model vận hành từ sự kiện: \code{ops\_booking}, \code{ops\_payment}, \code{ops\_refund}, \code{ops\_invoice}, \code{ops\_tour}, \code{ops\_user} và \code{operation\_audit}. Dịch vụ chỉ đọc dữ liệu trong \code{sgu\_reporting}, không truy vấn database nguồn và không lưu PII. Toàn bộ endpoint nội bộ nằm dưới \code{/internal/reports} và yêu cầu header \code{X-Internal-Reporting-Key} tối thiểu 32 ký tự:
+
+\begin{itemize}
+  \item \code{POST /internal/\hspace{0pt}reports/audit} ghi một mục audit; \code{GET /internal/\hspace{0pt}reports/audit?page=0} trả audit timeline 20 bản ghi mỗi trang, mới nhất trước.
+  \item \code{GET /internal/\hspace{0pt}reports/operations?from=...\&through=...} trả sáu chỉ số vận hành: \code{bookings}, \code{expired}, \code{collected}, \code{schedule\_\hspace{0pt}refunds}, \code{reconciliation\_\hspace{0pt}refunds} và \code{confirmed\_\hspace{0pt}passengers}; khoảng thời gian tối đa 31 ngày.
+  \item \code{POST /internal/\hspace{0pt}reports/projections/\hspace{0pt}\{bookings,payments,\hspace{0pt}invoices,tours,\hspace{0pt}users,refunds\}} upsert idempotent vào các bảng \code{ops\_*}.
+\end{itemize}
+
+Consumer RabbitMQ ghi \code{reporting\_inbox} trước khi xử lý để chống trùng, retry có backoff (1--60 giây) rồi chuyển sự kiện lỗi sang \code{reporting.events.dlq}. Audit timeline chỉ lưu các mã vận hành (\code{bookingId}, \code{paymentId}, \code{invoiceId}, \code{tourId}, \code{departureId}, \code{refundId}), không lưu email, số điện thoại hay dữ liệu thanh toán.
+
+\subsection{Search service}
+\label{subsec:search-service}
+
+Search service duy trì chỉ mục Elasticsearch và cache Redis. Dịch vụ đọc snapshot danh mục từ tour service, kiểm tra tính hợp lệ của từng bản ghi, so sánh với chỉ mục hiện tại và chỉ cập nhật phần thay đổi. Sau khi cập nhật, dịch vụ tăng \code{generation} trong Redis để vô hiệu hóa cache cũ.
+
+Các đặc điểm:
+
+\begin{itemize}
+  \item Đồng bộ theo chu kỳ (mặc định 60 giây) và có endpoint ép đồng bộ ngay.
+  \item Phân trang có thứ tự ổn định để tránh trùng/sót bản ghi khi chỉ mục thay đổi.
+  \item Giới hạn kích thước trang và cửa sổ kết quả của Elasticsearch.
+  \item Nếu Elasticsearch/Redis tạm thời không sẵn sàng, lỗi được cô lập; luồng đặt tour không phụ thuộc search.
+\end{itemize}
+
+\subsection{AI service}
+\label{subsec:ai-service}
+
+AI service cung cấp trợ lý tư vấn tour, trả lời chính sách và tra cứu booking-help. Hình~\ref{fig:sequence-ai} mô tả luồng hội thoại.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/sequence-ai}}
+\caption{Luồng hội thoại AI và tra cứu booking có kiểm soát}
+\label{fig:sequence-ai}
+\end{figure}
+
+Thiết kế an toàn gồm:
+
+\begin{itemize}
+  \item \textbf{Kế hoạch có kiểu:} mô hình trả về kế hoạch/tiêu chí có cấu trúc; backend kiểm tra trước khi gọi API tour, giá hoặc booking.
+  \item \textbf{Dữ liệu có nguồn:} giá, lịch, chỗ và trạng thái booking do backend cung cấp; mô hình không tự suy ra giá hoặc tình trạng chỗ.
+  \item \textbf{Không có tool nguy hiểm:} không chạy mã, không truy vấn SQL tùy ý, không ghi dữ liệu, không đặt tour, không thu tiền, không gửi mail.
+  \item \textbf{Chống prompt injection:} chặn yêu cầu lộ secret, chạy lệnh, đổi vai trò hệ thống hoặc vượt phạm vi; giới hạn kích thước input và prompt.
+  \item \textbf{Booking-help:} giữ JWT của chính tài khoản, gọi booking service để kiểm tra quyền sở hữu; không đưa booking của người khác vào ngữ cảnh mô hình.
+  \item \textbf{Phiên nhẹ:} phiên lưu RAM có TTL (mặc định 30 phút, tối đa 100 phiên); mất phiên khi restart là chấp nhận được với vai trò tư vấn.
+\end{itemize}
+
+\section{Giao tiếp giữa các dịch vụ và nhất quán dữ liệu}
+\label{sec:giao-tiep}
+
+\subsection{Giao tiếp đồng bộ}
+
+Các dịch vụ giao tiếp qua REST/JSON. OpenFeign được dùng khi cần gọi nội bộ; gateway được dùng cho các lời gọi cần đi qua xác thực biên. Nguyên tắc:
+
+\begin{itemize}
+  \item Đặt lời gọi HTTP ra ngoài transaction cơ sở dữ liệu để không giữ khóa/kết nối trong lúc chờ mạng.
+  \item Cấu hình timeout cho từng loại lời gọi; lỗi timeout được xử lý như lỗi tạm thời, không coi là dữ liệu sai.
+  \item Dùng khóa nội bộ cho các endpoint không dành cho người dùng (snapshot danh mục, dispatch mail); so sánh khóa bằng \code{MessageDigest.isEqual} để tránh tấn công thời gian.
+  \item Không trả thông tin nội bộ (stack trace, tên bảng, secret) trong lỗi.
+\end{itemize}
+
+\subsection{Sự kiện, outbox/inbox và saga}
+\label{subsec:events}
+
+Mọi sự kiện dùng envelope chung gồm \code{eventId}, \code{eventType}, \code{occurredAt}, \code{producer}, \code{aggregateType}, \code{aggregateId}, \hspace{0pt}\code{aggregateVersion}, \code{correlationId}, \code{causationId} và \code{payload}. Producer ghi sự kiện vào bảng outbox trong cùng transaction nghiệp vụ; publisher đẩy lên exchange \code{sgu.events} với routing key là \code{eventType}. Consumer ghi inbox trước khi xử lý để bảo đảm idempotent; sự kiện lỗi được retry có backoff rồi chuyển DLQ.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/saga-outbox}}
+\caption{Luồng sự kiện bất đồng bộ với outbox, RabbitMQ, inbox và DLQ}
+\label{fig:saga-outbox}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Các sự kiện chính trong hệ thống}
+\label{tab:events}
+\small
+\begin{tabularx}{\textwidth}{@{}L{6.2cm}L{2.8cm}Y@{}}
+\toprule
+\textbf{Sự kiện} & \textbf{Producer} & \textbf{Consumer / mục đích}\\
+\midrule
+\code{booking.created.v1} & booking & Notification (email), Reporting (read model).\\
+\code{booking.confirmed.v1} & booking & Notification, Reporting.\\
+\code{booking.cancelled.v1}, \code{booking.expired.v1} & booking & Notification, Reporting.\\
+\code{booking.change.requested.v1}, \code{booking.change.approved.v1} & booking & Notification, Reporting.\\
+\code{booking.mail.requested.v1} & booking & Notification (enqueue mail idempotent).\\
+\code{payment.settled.v1}, \code{payment.refunded.v1} & payment & Invoice (tạo/cập nhật hóa đơn), Notification, Reporting.\\
+\code{tour.departure.created.v1}, \code{tour.departure.updated.v1} & tour & Notification, Reporting.\\
+\code{tour.gallery.detach.requested.v1} & tour & File (dọn gallery qua HTTP outbox).\\
+\code{auth.account.deleted.v1} & auth & File (dọn avatar/media qua HTTP outbox).\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Các luồng nghiệp vụ dài được điều phối bằng saga:
+
+\begin{itemize}
+  \item \textbf{Saga giữ chỗ:} booking giữ ghế ở tour; nếu bước sau thất bại hoặc hết hạn, saga trả ghế và cập nhật trạng thái.
+  \item \textbf{Saga thanh toán -- hóa đơn:} payment xác nhận giao dịch, phát sự kiện; invoice tạo hóa đơn; nếu quá thời gian chờ, saga kiểm tra và bù trừ.
+  \item \textbf{Saga dời lịch/hoàn tiền:} giữ chỗ lịch đích, ghi nhận yêu cầu, xử lý phản hồi và hoàn tiền nội bộ khi cần.
+\end{itemize}
+
+\begin{figure}[H]
+\centering
+\resizebox{0.96\textwidth}{!}{\input{figures/outbox}}
+\caption{Luồng email outbox và vai trò của n8n}
+\label{fig:outbox}
+\end{figure}
+
+\subsection{Idempotency và bù trừ}
+
+Không có transaction phân tán giữa các dịch vụ. Các luồng quan trọng dùng idempotency key và bù trừ:
+
+\begin{table}[H]
+\centering
+\caption{Cơ chế chống trùng và bù trừ theo luồng}
+\label{tab:idempotency}
+\small
+\begin{tabularx}{\textwidth}{@{}L{3.2cm}L{4.2cm}Y@{}}
+\toprule
+\textbf{Luồng} & \textbf{Khóa/idempotency} & \textbf{Xử lý khi lỗi hoặc gửi lại}\\
+\midrule
+Tạo booking & \code{clientKey} + tài khoản + lịch & Trả booking đã tạo nếu cùng nội dung; không trừ chỗ lần hai.\\
+Giữ/trả chỗ & \code{holdId} + khóa lịch & Kiểm tra sức chứa trong transaction; giải phóng chỗ khi hết hạn.\\
+Thanh toán & Mã giao dịch (\code{txnRef}/\code{orderId}) & Callback lặp trả kết quả cũ; kiểm tra số tiền/trạng thái trước khi ghi nhận.\\
+Hóa đơn & Mã booking + \code{eventId} & Inbox chống trùng; trả hóa đơn hiện có; không tạo bản ghi thứ hai.\\
+Email & \code{eventKey} + inbox & Worker thử lại có giới hạn; trạng thái không rõ được đối chiếu, không gửi vô hạn.\\
+Đồng bộ search & Snapshot + generation & Chỉ cập nhật phần thay đổi; cache cũ bị vô hiệu hóa sau khi cập nhật.\\
+AI & \code{requestId} + \code{conversationId} & Gửi lại cùng requestId trả kết quả đã có; không trộn hai lượt xử lý đồng thời.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Luồng dữ liệu chính}
+
+\begin{table}[H]
+\centering
+\caption{Luồng dữ liệu chính giữa các dịch vụ}
+\label{tab:luong-du-lieu}
+\small
+\begin{tabularx}{\textwidth}{@{}L{2.8cm}L{6.0cm}Y@{}}
+\toprule
+\textbf{Luồng} & \textbf{Thành phần tham gia} & \textbf{Kết quả}\\
+\midrule
+Khám phá tour & tour, pricing, file, search & Danh mục, giá, ảnh, lịch khởi hành; search trả kết quả từ chỉ mục.\\
+Đặt tour & booking, tour, pricing, notification & Booking, hành khách, snapshot giá, hold và hạn thanh toán; email xác nhận.\\
+Thanh toán & payment, booking, invoice, notification, reporting & Giao dịch đã xác minh, trạng thái booking, hóa đơn và chỉ số báo cáo.\\
+Dời lịch & booking, tour, pricing, payment & Yêu cầu dời, kiểm tra chỗ/giá, phản hồi và hoàn tiền nội bộ.\\
+Ảnh & file, tour, auth & Ảnh Cloudinary, metadata, quyền sở hữu và dọn ảnh.\\
+AI & ai, tour, pricing, booking & Câu trả lời có nguồn; booking-help chỉ đọc dữ liệu của chủ tài khoản.\\
+Email & booking, notification, SMTP, n8n & Outbox, trạng thái gửi, lượt nhắc thanh toán/khởi hành.\\
+Báo cáo & booking, payment, invoice, tour, reporting & Read model \code{ops\_*} và audit timeline, không PII.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Thiết kế bảo mật}
+\label{sec:bao-mat}
+
+Bảo mật được thiết kế theo nhiều lớp, từ biên đến từng dịch vụ và từng thao tác nghiệp vụ.
+
+\begin{table}[H]
+\centering
+\caption{Các biện pháp bảo mật chính}
+\label{tab:bao-mat}
+\small
+\begin{tabularx}{\textwidth}{@{}L{3.0cm}L{5.4cm}Y@{}}
+\toprule
+\textbf{Lớp} & \textbf{Biện pháp} & \textbf{Mục tiêu}\\
+\midrule
+Biên & JWT introspection, whitelist công khai, CORS, rate limit, circuit breaker & Chặn truy cập trái phép, giảm lạm dụng, cô lập sự cố auth.\\
+Dịch vụ & Xác minh chữ ký/issuer/exp/type; kiểm tra scope; \code{@PreAuthorize} & Phòng thủ nhiều lớp, không tin gateway tuyệt đối.\\
+Nội bộ & \code{Internal*AuthenticationFilter} + \code{X-Internal-*-Key} so sánh hằng thời gian & Chỉ dịch vụ được phép gọi endpoint nội bộ.\\
+Dữ liệu & Kiểm tra quyền sở hữu booking/hóa đơn/đánh giá; không nhận \code{accountId} tùy ý & Chống truy cập chéo tài khoản (IDOR).\\
+Đầu vào & Validation DTO, giới hạn kích thước, kiểm tra kiểu/ngày/giá & Chống dữ liệu sai, tràn số, bán quá chỗ.\\
+Tệp & Magic bytes, pixel, số lượng, kích thước, giải mã có giới hạn & Chống upload độc hại, cạn bộ nhớ, ảnh giả mạo.\\
+Thanh toán & Chữ ký, số tiền server-side, idempotency, đối soát & Chống giả mạo callback, sửa giá, xử lý trùng.\\
+Bí mật & Biến môi trường/file local, không commit secret, script preflight & Giảm nguy cơ lộ khóa JWT, SMTP, Cloudinary, VNPay, Groq.\\
+AI & Guard nội dung, prompt có giới hạn, không tool nguy hiểm, dữ liệu theo quyền & Chống prompt injection, rò rỉ dữ liệu, thao tác ngoài phạm vi.\\
+Vận hành & Healthcheck, log không chứa secret, phân quyền endpoint nội bộ & Giảm bề mặt tấn công, hỗ trợ phát hiện sự cố.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Một số quyết định bảo mật cụ thể:
+
+\begin{itemize}
+  \item \textbf{Không công khai introspection:} endpoint này bị chặn tại gateway vì nếu mở, kẻ tấn công có thể kiểm tra tính hợp lệ của token bất kỳ.
+  \item \textbf{Không phân biệt lỗi đăng nhập:} email không tồn tại, sai mật khẩu, tài khoản khóa đều trả cùng một thông điệp để giảm dò tài khoản.
+  \item \textbf{Khóa nội bộ so sánh hằng thời gian:} các endpoint dispatch mail/snapshot dùng so sánh không rò rỉ thời gian; khóa quá ngắn bị từ chối.
+  \item \textbf{Giới hạn AI theo tài khoản/IP:} gateway giới hạn tần suất trước khi request đến AI, tránh lạm dụng quota của nhà cung cấp.
+  \item \textbf{Quyền sở hữu là bắt buộc:} ngay cả khi có quyền đọc hóa đơn, người dùng thường chỉ đọc được hóa đơn của mình; quản trị viên có quyền đọc tất cả mới được phép xem toàn bộ.
+\end{itemize}
+
+\section{Cơ sở dữ liệu}
+\label{sec:co-so-du-lieu}
+
+\subsection{Chiến lược sở hữu dữ liệu}
+
+Hệ thống áp dụng \textbf{database-per-service}: mỗi microservice sở hữu trọn một database vật lý và chỉ service đó được kết nối tới. Chín database chạy trong chín container MySQL 8.4 độc lập, có user/grant và volume riêng; giữa các database không có khóa ngoại hay câu lệnh JOIN. Mỗi database có thêm cặp bảng \code{<service>\_outbox} và \code{<service>\_inbox} phục vụ truyền sự kiện tin cậy. Trong cấu hình Compose, mỗi service được trỏ tới database riêng; khi chạy bằng Maven/IDE, bảy service vẫn mặc định dùng chung \code{dbtour\_v2} cho môi trường phát triển, còn notification và reporting dùng \code{sgu\_notification}/\code{sgu\_reporting} — khác biệt này chỉ nằm ở profile local, không ảnh hưởng cách ly dữ liệu khi chạy Compose.
+
+Sự nhất quán dữ liệu giữa các service được bảo đảm bằng hai cơ chế: gọi internal API đồng bộ cho các bước cần phản hồi ngay, và truyền sự kiện bất đồng bộ qua outbox/inbox kết hợp saga cho các luồng phân tán (đặt chỗ, thanh toán, dời lịch, thông báo, báo cáo). Nhờ vậy hệ thống không cần transaction phân tán hay 2PC.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/db-per-service}}
+\caption{Kiến trúc database-per-service: mỗi dịch vụ sở hữu một database riêng}
+\label{fig:db-per-service}
+\end{figure}
+
+\begin{table}[H]
+\centering
+\caption{Database và dịch vụ sở hữu}
+\label{tab:db-owner}
+\small
+\begin{tabularx}{\textwidth}{@{}L{3.4cm}L{4.0cm}Y@{}}
+\toprule
+\textbf{Database} & \textbf{Dịch vụ sở hữu} & \textbf{Bảng chính}\\
+\midrule
+\code{sgu\_auth} & \code{auth\_service} & users, roles, permissions, permission\_role, invalidated\_token, user\_account\_event, reviews\\
+\code{sgu\_tour} & \code{tour\_service} & tour, itinerary, location, vehicles, tour\_departure, tour\_image\_ids, departure\_meeting\_point, departure\_hold\\
+\code{sgu\_pricing} & \code{pricing\_service} & prices\\
+\code{sgu\_booking} & \code{booking\_service} & booking, customer, booking\_reservation, booking\_price\_snapshot, booking\_change, booking\_change\_event, departure\_change, booking\_saga\\
+\code{sgu\_payment} & \code{payment\_service} & payment, vnpay\_transaction, momo\_transaction, payment\_reconciliation, payment\_reconciliation\_event, payment\_saga\\
+\code{sgu\_invoice} & \code{invoice\_service} & invoice\\
+\code{sgu\_file} & \code{file\_service} & file\_mgmt, file\_reference, avatar\_media\_lock, tour\_media\_lock\\
+\code{sgu\_notification} & \code{notification\_service} & mail\_outbox, mail\_template, mail\_delivery\_attempt, mail\_suppression, notification\_dead\_letter\\
+\code{sgu\_reporting} & \code{reporting\_service} & operation\_audit, ops\_booking, ops\_payment, ops\_refund, ops\_invoice, ops\_tour, ops\_user\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Hai module \code{search\_service} và \code{ai\_service} không sở hữu database nghiệp vụ: chúng đọc dữ liệu qua internal API và lưu chỉ mục sang Elasticsearch/Redis (search) hoặc giữ phiên tạm trong RAM (AI).
+
+\subsection{Danh mục bảng theo nhóm nghiệp vụ}
+
+Bảng~\ref{tab:db-groups} nhóm các bảng theo miền nghiệp vụ để thấy rõ ranh giới ownership. Một bảng chỉ thuộc đúng một database; các cột tham chiếu sang service khác là \textbf{quan hệ logic}, không phải khóa ngoại.
+
+\begin{table}[H]
+\centering
+\caption{Các nhóm bảng và nghiệp vụ tương ứng}
+\label{tab:db-groups}
+\small
+\begin{tabularx}{\textwidth}{@{}L{2.6cm}L{6.3cm}Y@{}}
+\toprule
+\textbf{Nhóm} & \textbf{Bảng} & \textbf{Vai trò}\\
+\midrule
+Tài khoản và quyền & users, roles, permissions, permission\_role, invalidated\_token, user\_account\_event & Tài khoản, vai trò, mã quyền \code{PERM:<CODE>}, token bị thu hồi, lịch sử khóa/mở khóa.\\
+Đánh giá & reviews & Đánh giá sau chuyến; tham chiếu \code{tour\_id} logic sang tour service.\\
+Danh mục tour & tour, itinerary, location, vehicles, tour\_departure, tour\_image\_ids, departure\_meeting\_point, departure\_hold & Tour, lịch trình, địa điểm, phương tiện, lịch khởi hành, sức chứa, ảnh và giữ chỗ.\\
+Giá & prices & Bảng giá theo nhóm tuổi và phụ thu phòng đơn.\\
+Đặt chỗ & booking, customer, booking\_reservation, booking\_price\_snapshot, booking\_change, booking\_change\_event, departure\_change, booking\_saga & Booking, hành khách, giữ/trả chỗ, giá tại thời điểm đặt, dời lịch, saga.\\
+Thanh toán và hóa đơn & payment, vnpay\_transaction, momo\_transaction, payment\_reconciliation, payment\_reconciliation\_event, payment\_saga, invoice & Thanh toán nội bộ, giao dịch VNPay/MoMo, đối soát, hóa đơn.\\
+Media & file\_mgmt, file\_reference, avatar\_media\_lock, tour\_media\_lock & Ảnh/avatar trên Cloudinary, tham chiếu và tombstone.\\
+Thông báo & mail\_outbox, mail\_template, mail\_delivery\_attempt, mail\_suppression & Hàng đợi email, template, lần gửi và chặn địa chỉ.\\
+Báo cáo & operation\_audit, ops\_booking, ops\_payment, ops\_refund, ops\_invoice, ops\_tour, ops\_user & Audit timeline và read model vận hành không PII.\\
+Hạ tầng sự kiện & \code{<service>\_outbox}, \code{<service>\_inbox} & Ghi sự kiện trong transaction và chống xử lý trùng.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Mô hình quan hệ thực thể}
+
+Quan hệ trong hệ thống chia làm hai loại. \textbf{Quan hệ vật lý} là khóa ngoại thật trong cùng một database và được database bảo đảm toàn vẹn, ví dụ \code{users.role\_id}, \code{permission\_role}, \code{itinerary}, \code{tour\_departure}, \code{tour\_image\_ids}, \code{booking\_price\_snapshot}, \code{booking\_reservation}, \code{customer}. \textbf{Quan hệ logic} là cột tham chiếu sang dữ liệu do service khác sở hữu, ví dụ \code{booking.account\_id}, \code{invoice.booking\_id}, \code{payment.booking\_id}, \code{tour.price\_id}; các service tự bảo đảm tính đúng khi ghi thay vì dựa vào khóa ngoại. Trong các sơ đồ dưới đây, nét liền là quan hệ vật lý còn nét đứt là quan hệ logic.
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/db-erd-auth}}
+\caption{Quan hệ thực thể nhóm tài khoản và phân quyền}
+\label{fig:db-erd-auth}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/db-erd-tour}}
+\caption{Quan hệ thực thể nhóm danh mục tour}
+\label{fig:db-erd-tour}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/db-erd-booking}}
+\caption{Quan hệ thực thể nhóm đặt chỗ}
+\label{fig:db-erd-booking}
+\end{figure}
+
+\begin{figure}[H]
+\centering
+\resizebox{\textwidth}{!}{\input{figures/db-erd-payment}}
+\caption{Quan hệ thực thể nhóm thanh toán và hóa đơn}
+\label{fig:db-erd-payment}
+\end{figure}
+
+\subsection{Khóa, chỉ mục và ràng buộc chính}
+
+Ngoài khóa chính, database dùng các khóa duy nhất và chỉ mục để phục vụ tra cứu và chống trùng. Bảng~\ref{tab:db-keys} nêu các ràng buộc tiêu biểu.
+
+\begin{table}[H]
+\centering
+\caption{Khóa duy nhất, chỉ mục và ràng buộc tiêu biểu}
+\label{tab:db-keys}
+\small
+\begin{tabularx}{\textwidth}{@{}L{3.6cm}L{5.4cm}Y@{}}
+\toprule
+\textbf{Bảng} & \textbf{Khóa hoặc chỉ mục} & \textbf{Mục đích}\\
+\midrule
+booking & \code{uk\_booking\_client\_key} (client\_key) & Chống tạo trùng booking theo khóa do client gửi lên.\\
+booking & \code{ix\_booking\_account}, \code{ix\_booking\_departure}, \code{ix\_booking\_report\_day} & Tra cứu theo tài khoản, lọc theo lịch và thống kê theo ngày.\\
+booking\_reservation & \code{ix\_reservation\_expiry} (status, expires\_at, departure\_id) & Worker tìm giữ chỗ hết hạn để trả chỗ.\\
+booking\_change & \code{uq\_active\_booking\_change} (booking\_id, active\_key) & Mỗi booking chỉ có một yêu cầu dời lịch đang hiệu lực.\\
+tour\_departure & \code{ix\_departure\_open}, \code{ix\_departure\_date} & Tìm lịch còn mở theo tour và theo ngày.\\
+itinerary & \code{ux\_itinerary\_tour\_day} (tour\_id, day\_number) & Mỗi tour chỉ có một mục lịch trình cho mỗi ngày.\\
+invoice & \code{uk\_invoice\_booking} (booking\_id) & Mỗi booking chỉ có một hóa đơn.\\
+vnpay\_transaction & PK \code{txn\_ref} & Chống trùng callback theo mã giao dịch.\\
+momo\_transaction & \code{ux\_momo\_request} (request\_id) & Chống tạo trùng yêu cầu MoMo.\\
+mail\_outbox & \code{uq\_mail\_event} (event\_key), \code{ix\_mail\_due} & Chống gửi trùng và lấy mail đến hạn.\\
+\code{*\_outbox} & \code{uk\_outbox\_event\_id} (event\_id) & Mỗi sự kiện chỉ được publish một lần.\\
+\code{*\_inbox} & PK (consumer, event\_id) & Consumer bỏ qua sự kiện đã xử lý.\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Trạng thái nghiệp vụ}
+
+Các thực thể chính dùng cột trạng thái dạng chuỗi với tập giá trị cố định, giúp truy vết luồng xử lý và viết truy vấn thống kê đơn giản.
+
+\begin{table}[H]
+\centering
+\caption{Giá trị trạng thái theo thực thể}
+\label{tab:db-status}
+\small
+\begin{tabularx}{\textwidth}{@{}L{6.6cm}Y@{}}
+\toprule
+\textbf{Cột} & \textbf{Giá trị}\\
+\midrule
+\code{booking.status} & PENDING\_PAYMENT, CONFIRMED, CANCELLED, EXPIRED\\
+\code{booking\_reservation.status} & HELD, CHECKOUT, PAID, EXPIRED, CANCELLED\\
+\code{customer.booking\_type} & ADULT, CHILD, TODDLER, INFANT\\
+\code{invoice.status} & PAID, PENDING, REFUNDED\\
+\code{payment.status} & PENDING, UNPAID, PAID, REFUNDED\\
+\code{vnpay\_transaction.status} & PENDING, PAID, FAILED, REFUNDED, CLOSED\_UNPAID\\
+\code{mail\_outbox.status} & PENDING, CLAIMED, DISPATCHING, SENT, RETRY, FAILED, UNKNOWN, SKIPPED\\
+\code{tour\_departure.operational\_status} & OPEN, REPLACEMENT\_ONLY, SUSPENDED\\
+\code{departure\_hold.status} & HELD, RELEASED, EXPIRED\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Khởi tạo và dữ liệu mẫu}
+
+Mỗi database có một file SQL khởi tạo riêng trong \code{data\_seed/microservices/}, được mount vào container và tự chạy khi volume còn trống. Bảng~\ref{tab:db-seed} tóm tắt quy mô dữ liệu mẫu.
+
+\begin{table}[H]
+\centering
+\caption{Quy mô dữ liệu mẫu}
+\label{tab:db-seed}
+\small
+\begin{tabularx}{\textwidth}{@{}L{4.6cm}Y@{}}
+\toprule
+\textbf{Thành phần} & \textbf{Giá trị}\\
+\midrule
+Database nghiệp vụ & 9 (\code{sgu\_auth} → \code{sgu\_reporting})\\
+Bảng nghiệp vụ & Khoảng 40 bảng, chưa kể outbox/inbox và bảng kỹ thuật\\
+Tour và bảng giá & 15 tour, 15 bảng giá theo nhóm tuổi\\
+Lịch khởi hành & Hàng trăm lịch trải dài đến hết mùa cao điểm\\
+Booking và hành khách & Booking mẫu ở nhiều trạng thái, có hành khách theo nhóm tuổi\\
+Đánh giá & Đánh giá mẫu cho nhiều tour, có trạng thái duyệt\\
+Tài khoản demo & \code{admin@example.com / admin123} và \code{user1@gmail.com / user12345} (trong \code{data\_seed/database\_all.sql}; seed theo service chỉ có cấu trúc)\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\section{Thiết kế triển khai}
+\label{sec:trien-khai}
+
+\subsection{Đóng gói bằng Docker}
+
+Mỗi module có Dockerfile riêng, build nhiều tầng: tầng build dùng Maven/JDK để tạo JAR, tầng chạy dùng JRE để giảm kích thước image. Docker Compose khai báo mạng nội bộ, volume, healthcheck và thứ tự phụ thuộc. Hai file Compose được cung cấp: bản đầy đủ 9 database (\code{docker-compose.microservice.yml}) và bản phát triển một MySQL với profile \code{search}, \code{ai}, \code{mail}.
+
+\begin{table}[H]
+\centering
+\caption{Thành phần trong Docker Compose microservice}
+\label{tab:compose}
+\small
+\begin{tabularx}{\textwidth}{@{}L{3.2cm}C{2.2cm}Y@{}}
+\toprule
+\textbf{Thành phần} & \textbf{Cổng host} & \textbf{Ghi chú}\\
+\midrule
+Frontend (Nginx) & 80 & Phục vụ bản build React, proxy \code{/api} tới gateway và \code{/socket.io} tới auth.\\
+API Gateway & 8888 & Điểm vào API; phụ thuộc các dịch vụ nghiệp vụ.\\
+Auth & 8080; 8099 & 8099 là Socket.IO.\\
+Booking & 8081 & Kèm worker hết hạn giữ chỗ và outbox mail.\\
+Payment & 8083 & Yêu cầu cấu hình VNPay; MoMo tùy chọn.\\
+Pricing & 8084 & Không phụ thuộc dịch vụ ngoài.\\
+Tour & 8086 & Kèm snapshot ảnh và đồng bộ danh mục.\\
+File & 8087 & Cloudinary; giới hạn tải xuống.\\
+Search & 8089 & Cần Elasticsearch/Redis.\\
+Invoice & 8090 & Tiêu thụ sự kiện \code{payment.settled.v1}.\\
+AI & 8091 & Cần Groq key nếu muốn gọi model.\\
+Reporting & 8092 & Read model \code{ops\_*}, không PII.\\
+Notification & 8093 & Mail outbox, worker SMTP, DLQ.\\
+MySQL & Nội bộ & 9 container riêng, mỗi container một schema/user/volume.\\
+RabbitMQ & 15672 (management) & Exchange \code{sgu.events}, DLQ.\\
+Redis & 6379 (nội bộ) & Cache và search generation; rate limit nằm trong bộ nhớ gateway.\\
+Elasticsearch & 9200 & Chỉ mục tìm kiếm; mặc định tắt trong Compose, bật khi đủ RAM.\\
+n8n & 5678 & Chạy ngoài Compose microservice (profile \code{mail} của Compose gốc).\\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+\subsection{Thứ tự khởi động và healthcheck}
+
+Thứ tự khuyến nghị cho luồng đặt tour đầy đủ:
+
+\begin{center}
+\code{9 MySQL + RabbitMQ + Redis} \(\rightarrow\) \code{auth, pricing, file, tour} \(\rightarrow\) \code{booking, invoice, payment, notification, reporting} \(\rightarrow\) \code{gateway, frontend}.
+\end{center}
+
+Mỗi database có healthcheck kiểm tra bảng đặc trưng (ví dụ \code{users}, \code{tour}, \code{booking}); RabbitMQ và Redis có healthcheck riêng. Các dịch vụ ứng dụng chờ database/broker healthy trước khi khởi động. Khi một dịch vụ không lên, Compose giữ container để kiểm tra log (\code{docker compose logs}) thay vì restart vô hạn. Các biến cấu hình nhạy cảm được mount từ \code{.local} hoặc truyền qua biến môi trường; không đưa vào image.
+
+\subsection{CI và kiểm tra cấu hình}
+
+GitHub Actions chạy build/test cho từng module, kiểm tra cú pháp Docker Compose và import thử SQL trên database cô lập. Các bước này không thay thế kiểm thử tích hợp với nhà cung cấp thật, nhưng giúp phát hiện lỗi build, lỗi cấu hình và regression sớm.
+
+\section{Thiết kế kiểm thử}
+\label{sec:kiem-thu}
+
+Chiến lược kiểm thử gồm bốn lớp:
+
+\begin{enumerate}
+  \item \textbf{Unit test:} kiểm tra quy tắc nghiệp vụ, validator, tính toán giá, chính sách hạn giữ chỗ, chữ ký, guard AI.
+  \item \textbf{Integration test:} dùng H2 hoặc mock HTTP để kiểm tra controller, security filter, repository và luồng service -- repository.
+  \item \textbf{Contract test:} kiểm tra internal API và cấu trúc sự kiện giữa producer/consumer.
+  \item \textbf{Cross-service test:} kiểm tra các luồng booking -- payment -- invoice -- notification -- reporting bằng fixture H2 và bật tường minh bằng biến môi trường.
+\end{enumerate}
+
+Bảng~\ref{tab:test-summary} mô tả phạm vi kiểm thử theo module. Con số test thay đổi theo thời điểm; báo cáo không khẳng định mọi bài kiểm thử đều đạt trong mọi môi trường.
+
+\begin{table}[H]
+\centering
+\caption{Phạm vi kiểm thử theo module}
+\label{tab:test-summary}
+\small
+\begin{tabularx}{\textwidth}{@{}L{3.0cm}L{7.2cm}Y@{}}
+\toprule
+\textbf{Module} & \textbf{Phạm vi chính} & \textbf{Phụ thuộc môi trường}\\
+\midrule
+auth & Đăng nhập/JWT, refresh/revoke, Google, vai trò/quyền, vòng đời tài khoản, đánh giá & H2, mock; Google thật cần client ID.\\
+tour & Danh mục, địa điểm, lịch trình, sức chứa, giữ/trả chỗ, snapshot ảnh & H2; kiểm tra sức chứa liên module có điều kiện.\\
+pricing & Giá nguyên VND, validation, lấy giá theo lô & H2, phần lớn là unit test.\\
+booking & Giữ/trả chỗ, hết hạn, snapshot giá, dời lịch, saga, outbox mail & H2 mặc định; SMTP và cross-service bật tường minh.\\
+payment & VNPay/MoMo, chữ ký, số tiền, callback lặp, đối soát, outbox & Mock cổng thanh toán; sandbox thật cần cấu hình.\\
+invoice & Quyền đọc, chủ đơn, số tiền, inbox idempotent & H2 và mock.\\
+file & Avatar/gallery, chính sách upload, quyền tài khoản đích, tombstone & Mock Cloudinary; upload thật cần tài khoản.\\
+notification & Enqueue idempotent, template, worker, retry, DLQ & SMTP test mode.\\
+reporting & Projection, audit, giới hạn khoảng ngày & H2 và mock event.\\
+gateway & Route công khai/bảo vệ, introspection, rate limit, breaker, lỗi API & WireMock/HTTP fixture.\\
+search & Đồng bộ snapshot, lọc, phân trang, cache generation & Một số ca cần Elasticsearch/Redis thật.\\
+ai & Hội thoại, trích xuất tiêu chí, booking-help, guard, adapter model & Mock model; Groq thật cần API key.\\
+\bottomrule
+\end{tabularx}
+\end{table}

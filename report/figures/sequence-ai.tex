@@ -1,0 +1,36 @@
+\begin{tikzpicture}[x=1cm,y=1cm]
+  \node[participant] (c) at (0,0) {Client};
+  \node[participant] (g) at (3.0,0) {Gateway};
+  \node[participant] (a) at (6.0,0) {AI service};
+  \node[participant] (t) at (9.0,0) {Tour};
+  \node[participant] (b) at (12.0,0) {Booking};
+  \node[participant] (x) at (15.0,0) {Groq};
+
+  \foreach \q in {c,g,a,t,b,x} \draw[lifeline] (\q.south) -- ++(0,-9.8);
+
+  \draw[msg] (c |- 0,-0.8) -- node[above,font=\tiny]{1. tạo phiên} (g |- 0,-0.8);
+  \draw[msg] (g |- 0,-1.3) -- node[above,font=\tiny]{2. POST /conversations} (a |- 0,-1.3);
+  \draw[ret] (a |- 0,-1.8) -- node[above,font=\tiny]{3. conversationId} (c |- 0,-1.8);
+
+  \draw[msg] (c |- 0,-2.5) -- node[above,font=\tiny]{4. chat + requestId} (g |- 0,-2.5);
+  \draw[msg] (g |- 0,-3.0) -- node[above,font=\tiny]{5. chuyển tiếp} (a |- 0,-3.0);
+
+  \draw[msg] (a |- 0,-3.6) -- ++(0,-0.55) node[midway,right,font=\tiny]{6. guard, scope, merge criteria};
+
+  \draw[msg] (a |- 0,-4.4) -- node[above,font=\tiny]{7. tìm/đọc tour, giá} (t |- 0,-4.4);
+  \draw[ret] (t |- 0,-4.9) -- node[above,font=\tiny]{8. dữ liệu có nguồn} (a |- 0,-4.9);
+
+  \draw[msg] (a |- 0,-5.5) -- node[above,font=\tiny]{9. prompt + dữ liệu nền} (x |- 0,-5.5);
+  \draw[ret] (x |- 0,-6.0) -- node[above,font=\tiny]{10. kế hoạch/câu trả lời} (a |- 0,-6.0);
+  \draw[ret] (a |- 0,-6.6) -- node[above,font=\tiny]{11. câu trả lời + nguồn} (c |- 0,-6.6);
+
+  \draw[msg] (c |- 0,-7.3) -- node[above,font=\tiny]{12. booking-help + JWT} (g |- 0,-7.3);
+  \draw[msg] (g |- 0,-7.8) -- node[above,font=\tiny]{13. giữ Authorization} (a |- 0,-7.8);
+  \draw[msg] (a |- 0,-8.4) -- node[above,font=\tiny]{14. booking của chính tài khoản} (b |- 0,-8.4);
+  \draw[ret] (b |- 0,-8.9) -- node[above,font=\tiny]{15. trạng thái, hạn thanh toán} (a |- 0,-8.9);
+  \draw[ret] (a |- 0,-9.5) -- node[above,font=\tiny]{16. câu trả lời có kiểm chứng} (c |- 0,-9.5);
+
+  \node[draw=gray!50,fill=gray!4,rounded corners=2pt,font=\tiny,align=left,anchor=west]
+    at (0.2,-10.3) {AI không đọc trực tiếp cơ sở dữ liệu, không có tool chạy mã/SQL và không tự đặt tour, thu tiền hay gửi mail.\\
+    Phiên lưu RAM có TTL; frontend giữ conversationId trong sessionStorage.};
+\end{tikzpicture}
